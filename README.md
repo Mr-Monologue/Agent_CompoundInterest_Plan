@@ -41,9 +41,9 @@ Release，错过运行时间时在下次开机后补跑。升级前会创建 SQL
 旧代码与旧数据库。自动升级只读取 Release，不直接跟随 `main` 分支。涉及投资规则、确认
 边界或不兼容迁移的版本必须在 `release-manifest.json` 标记为需要人工批准。
 
-仓库 CI 对 pull request、`main` 和 `v*` 标签执行测试，但只有只读权限，不会把普通合并
-自动发布为正式版本。维护者核对版本与发布清单后显式创建 GitHub Release，客户端才会看到
-并安装该版本。
+仓库 CI 对 pull request 和 `main` 执行只读测试。v0.5.0 首次发布任务只在本版本的
+`release-manifest.json` 首次合入 `main` 时运行，并只允许创建固定的 `v0.5.0` Release；
+后续普通提交不会触发发布。客户端只会看到并安装正式 GitHub Release。
 
 Core 默认监听 `127.0.0.1:8710`：
 

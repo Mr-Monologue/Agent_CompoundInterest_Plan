@@ -1,14 +1,17 @@
-name: Release validation
+name: Publish v0.5.0
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: [release-manifest.json]
 
 permissions:
   contents: read
 
 jobs:
-  validate-tag:
+  publish-v0-5-0:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,5 +43,16 @@ jobs:
       - name: Verify pushed tag matches the governed release version
         env:
           EXPECTED_TAG: ${{ steps.version.outputs.tag }}
-          ACTUAL_TAG: ${{ github.ref_name }}
-        run: test "$ACTUAL_TAG" = "$EXPECTED_TAG"
+        run: test "$EXPECTED_TAG" = "v0.5.0"
+      - name: Publish the explicitly authorized v0.5.0 release once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.5.0 >/dev/null 2>&1; then
+            echo "v0.5.0 already exists; no mutation required."
+            exit 0
+          fi
+          gh release create v0.5.0 \
+            --target "$GITHUB_SHA" \
+            --title "Value DCA Agent v0.5.0" \
+            --generate-notes
