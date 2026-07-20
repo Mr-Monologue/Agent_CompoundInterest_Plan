@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Annotated, NoReturn
 from uuid import uuid4
@@ -80,8 +81,8 @@ def backup_database(
     temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
     try:
         with (
-            sqlite3.connect(source) as source_connection,
-            sqlite3.connect(temporary) as backup_connection,
+            closing(sqlite3.connect(source)) as source_connection,
+            closing(sqlite3.connect(temporary)) as backup_connection,
         ):
             source_connection.backup(backup_connection)
             quick_check = backup_connection.execute("PRAGMA quick_check").fetchone()
