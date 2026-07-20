@@ -1,0 +1,44 @@
+name: Release validation
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - run: uv sync --locked --all-extras --python 3.11
+      - run: uv run pytest
+      - run: uv run ruff check .
+      - run: uv run mypy src
+      - id: version
+        shell: python {0}
+        run: |
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          manifest = json.loads(Path("release-manifest.json").read_text(encoding="utf-8"))
+          version = project["project"]["version"]
+          if manifest["version"] != version:
+              raise SystemExit("release-manifest.json does not match pyproject.toml")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"tag=v{version}\n")
+      - name: Verify pushed tag matches the governed release version
+        env:
+          EXPECTED_TAG: ${{ steps.version.outputs.tag }}
+          ACTUAL_TAG: ${{ github.ref_name }}
+        run: test "$ACTUAL_TAG" = "$EXPECTED_TAG"

@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "name": "daily-risk-brief",
+  "schedule": "55 22 * * 1-5",
+  "timezone": "Asia/Shanghai",
+  "skills": ["value-dca-investor"],
+  "prompt": "Read the latest committed daily-risk report bundle through read-only MCP tools. Return [SILENT] when there is no qualifying alert. Never call a write tool.",
+  "delivery": "weixin:${WEIXIN_TARGET_ID}",
+  "note": "Enable after the risk bundle tool exists and Hermes fields are verified."
+}
+

@@ -1,0 +1,18 @@
+# Hermes Profile template. Verify field compatibility against the pinned Hermes
+# version before copying this file into a live profile.
+profile:
+  name: investor
+  soul_file: SOUL.md
+
+model:
+  provider: configured-by-user
+  model: ${HERMES_MODEL}
+
+permissions:
+  filesystem: false
+  shell: false
+  mcp_allowlist:
+    - investor-core
+
+timezone: Asia/Shanghai
+

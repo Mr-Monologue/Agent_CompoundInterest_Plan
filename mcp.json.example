@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "investor_core": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/ABSOLUTE/PATH/value-dca-agent",
+        "run",
+        "investor-mcp"
+      ],
+      "env": {
+        "INVESTOR_CORE_BASE_URL": "http://127.0.0.1:8710",
+        "INVESTOR_CORE_AUTOSTART": "true",
+        "INVESTOR_CORE_WINDOWS_TASK_NAME": "ValueDCAInvestorCore"
+      }
+    }
+  }
+}

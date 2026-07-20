@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "name": "core-health-watch",
+  "schedule": "every 15m",
+  "timezone": "Asia/Shanghai",
+  "skills": ["value-dca-investor"],
+  "prompt": "Call system_health_get with detail_level=full. The MCP may start the registered Windows Core task once when Core is unavailable. Return [SILENT] only when health.status is ok, ready.status is PASS, and data_quality is PASS. Otherwise report a concise Chinese alert with the failed checks. Never call a transaction or other write tool.",
+  "delivery": "origin",
+  "note": "Enable only after Hermes Gateway delivery and the target Cron schema are verified."
+}
