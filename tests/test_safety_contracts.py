@@ -46,6 +46,14 @@ def test_opening_positions_are_not_fabricated_buy_transactions() -> None:
     assert "opening_position_draft_commit" in safety
 
 
+def test_skill_uses_saved_context_instead_of_asking_users_for_uuids() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
+
+    assert "Use `investment_context_get` before asking for or exposing" in skill
+    assert "Never ask the user to memorize or repeatedly paste UUIDs" in skill
+    assert "investment_context_set" in skill
+
+
 def test_windows_installer_keeps_external_actions_disabled() -> None:
     installer = (PROJECT_ROOT / "install-windows.ps1").read_text(encoding="utf-8")
 

@@ -27,6 +27,12 @@ class AccountCreateRequest(RequestModel):
     actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
 
 
+class InvestmentContextSetRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    account_id: str = Field(min_length=1, max_length=80)
+    actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
+
+
 class InstrumentCreateRequest(RequestModel):
     code: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=200)

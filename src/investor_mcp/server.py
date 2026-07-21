@@ -58,6 +58,54 @@ async def core_request(
     return dependency_error()
 
 
+def context_error(message: str, *, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "data": {},
+        "meta": {"schema_version": "1.0", "data_quality": "PASS"},
+        "warnings": [],
+        "error": {
+            "code": "INVESTMENT_CONTEXT_MISMATCH",
+            "message": message,
+            "details": details or {},
+        },
+    }
+
+
+async def resolve_investment_context(
+    portfolio_id: str = "", account_id: str = ""
+) -> tuple[str, str, dict[str, Any] | None]:
+    """Fill omitted identifiers from the deterministic saved investment context."""
+    if portfolio_id and account_id:
+        return portfolio_id, account_id, None
+
+    result = await core_request("GET", "/v1/investment-context")
+    if not result.get("ok"):
+        return "", "", result
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return "", "", context_error("Investor Core returned an invalid context payload")
+    portfolio = data.get("portfolio")
+    account = data.get("account")
+    if not isinstance(portfolio, dict) or not isinstance(account, dict):
+        return "", "", context_error("Investor Core returned an incomplete context payload")
+    resolved_portfolio_id = str(portfolio.get("id", ""))
+    resolved_account_id = str(account.get("id", ""))
+    if not resolved_portfolio_id or not resolved_account_id:
+        return "", "", context_error("Investor Core returned an incomplete context payload")
+    if portfolio_id and portfolio_id != resolved_portfolio_id:
+        return "", "", context_error(
+            "the supplied portfolio differs from the saved default context",
+            details={"saved_portfolio_name": portfolio.get("name")},
+        )
+    if account_id and account_id != resolved_account_id:
+        return "", "", context_error(
+            "the supplied account differs from the saved default context",
+            details={"saved_account_name": account.get("name")},
+        )
+    return resolved_portfolio_id, resolved_account_id, None
+
+
 async def fetch_core_status(detail_level: Literal["summary", "full"]) -> dict[str, Any]:
     settings = get_settings()
     for attempt in range(2):
@@ -149,6 +197,26 @@ async def account_list(portfolio_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
+async def investment_context_get() -> dict[str, Any]:
+    """Get the saved default portfolio and account; auto-select when each is unambiguous."""
+    return await core_request("GET", "/v1/investment-context")
+
+
+@mcp.tool()
+async def investment_context_set(portfolio_id: str, account_id: str) -> dict[str, Any]:
+    """Set the default portfolio and account configuration; this does not change holdings."""
+    return await core_request(
+        "POST",
+        "/v1/investment-context",
+        payload={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
 async def instrument_create(
     code: str,
     name: str,
@@ -180,18 +248,23 @@ async def instrument_list() -> dict[str, Any]:
 @mcp.tool()
 async def holding_list(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
     """List latest deterministic holdings reconstructed from committed records."""
-    params: dict[str, Any] = {}
-    if portfolio_id:
-        params["portfolio_id"] = portfolio_id
-    if account_id:
-        params["account_id"] = account_id
-    return await core_request("GET", "/v1/holdings", params=params or None)
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "GET",
+        "/v1/holdings",
+        params={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+        },
+    )
 
 
 @mcp.tool()
 async def opening_position_draft_create(
-    portfolio_id: str,
-    account_id: str,
     instrument_code: str,
     as_of_date: str,
     total_shares: str,
@@ -200,14 +273,21 @@ async def opening_position_draft_create(
     cost_amount: str = "",
     average_cost_nav: str = "",
     note: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
 ) -> dict[str, Any]:
-    """Create an old-holding draft with exactly one cost basis; this is not a BUY."""
+    """Create an old-holding draft in the default context; this is not a BUY."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
     return await core_request(
         "POST",
         "/v1/opening-position-drafts",
         payload={
-            "portfolio_id": portfolio_id,
-            "account_id": account_id,
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
             "instrument_code": instrument_code,
             "as_of_date": as_of_date,
             "total_shares": total_shares,
@@ -226,11 +306,16 @@ async def transaction_list(
     portfolio_id: str = "", account_id: str = "", limit: int = 100
 ) -> dict[str, Any]:
     """List committed local transactions and reversals without changing state."""
-    params: dict[str, Any] = {"limit": limit}
-    if portfolio_id:
-        params["portfolio_id"] = portfolio_id
-    if account_id:
-        params["account_id"] = account_id
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "limit": limit,
+        "portfolio_id": resolved_portfolio_id,
+        "account_id": resolved_account_id,
+    }
     return await core_request("GET", "/v1/transactions", params=params)
 
 
@@ -242,8 +327,6 @@ async def transaction_draft_get(draft_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def transaction_draft_create(
-    portfolio_id: str,
-    account_id: str,
     instrument_code: str,
     side: Literal["BUY", "SELL"],
     trade_date: str,
@@ -253,14 +336,21 @@ async def transaction_draft_create(
     platform: str,
     idempotency_key: str,
     note: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
 ) -> dict[str, Any]:
-    """Create an expiring BUY or SELL record draft; this does not change holdings."""
+    """Create a BUY or SELL draft in the default context; this does not change holdings."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
     return await core_request(
         "POST",
         "/v1/transaction-drafts",
         payload={
-            "portfolio_id": portfolio_id,
-            "account_id": account_id,
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
             "instrument_code": instrument_code,
             "side": side,
             "trade_date": trade_date,

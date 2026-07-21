@@ -16,6 +16,8 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "portfolio_list",
         "account_create",
         "account_list",
+        "investment_context_get",
+        "investment_context_set",
         "instrument_create",
         "instrument_list",
         "holding_list",
@@ -46,8 +48,6 @@ def test_opening_position_tools_use_dedicated_core_paths(monkeypatch) -> None:  
     monkeypatch.setattr(server, "core_request", fake_core_request)
     asyncio.run(
         server.opening_position_draft_create(
-            "portfolio-1",
-            "account-1",
             "022463",
             "2026-07-20",
             "100.000000",
@@ -55,6 +55,8 @@ def test_opening_position_tools_use_dedicated_core_paths(monkeypatch) -> None:  
             "opening-message-1",
             average_cost_nav="1.9904",
             note="支付宝持仓页",
+            portfolio_id="portfolio-1",
+            account_id="account-1",
         )
     )
     asyncio.run(
@@ -85,6 +87,50 @@ def test_opening_position_tools_use_dedicated_core_paths(monkeypatch) -> None:  
             {"confirmation_token": "token-1", "confirmed_by": "user-1"},
         ),
     ]
+
+
+def test_opening_position_uses_default_context_when_ids_are_omitted(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        del params
+        calls.append((method, path, payload))
+        if path == "/v1/investment-context":
+            return {
+                "ok": True,
+                "data": {
+                    "portfolio": {"id": "portfolio-default", "name": "个人投资组合"},
+                    "account": {"id": "account-default", "name": "支付宝基金账户"},
+                },
+            }
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+
+    asyncio.run(
+        server.opening_position_draft_create(
+            "000032",
+            "2026-07-20",
+            "32.79",
+            "支付宝",
+            "opening-default-context",
+            average_cost_nav="1.1131",
+        )
+    )
+
+    assert calls[0] == ("GET", "/v1/investment-context", None)
+    assert calls[1][1] == "/v1/opening-position-drafts"
+    assert calls[1][2] is not None
+    assert calls[1][2]["portfolio_id"] == "portfolio-default"
+    assert calls[1][2]["account_id"] == "account-default"
 
 
 def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:  # type: ignore[no-untyped-def]
