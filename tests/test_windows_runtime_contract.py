@@ -48,6 +48,7 @@ def test_windows_core_runner_is_supervised_and_noninteractive() -> None:
     assert "while ($true)" in runner
     assert ".venv\\Scripts\\investor-core.exe" in runner
     assert "Three fast failures" in runner
+    assert "Core executable remained missing" in runner
     assert "*>>" not in runner
     assert "Read-Host" not in runner
 
@@ -93,6 +94,10 @@ def test_windows_updater_is_release_only_backup_first_and_rollback_capable() -> 
     assert "Restoring v$CurrentVersion" in updater
     assert "code rollback" in updater
     assert "rollback diagnostics" in updater
+    assert "--reinstall-package value-dca-agent" in updater
+    assert "installer: $([string]$InstallerLine)" in updater
+    assert "Export-ScheduledTask" in updater
+    assert "Register-ScheduledTask" in updater
     assert "update-state.json" in updater
 
 
@@ -104,3 +109,11 @@ def test_windows_bootstrap_uses_latest_stable_release() -> None:
     assert "raw.githubusercontent.com" not in bootstrap
     assert "-NonInteractive" in bootstrap
     assert "-SkipMcpTest" in bootstrap
+
+
+def test_windows_ci_parses_powershell_scripts() -> None:
+    workflow = (PROJECT_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "Parse Windows PowerShell scripts" in workflow
+    assert "System.Management.Automation.Language.Parser" in workflow
+    assert "runner.os == 'Windows'" in workflow

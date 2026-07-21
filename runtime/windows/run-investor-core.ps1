@@ -23,6 +23,14 @@ while ($true) {
         Add-Content -LiteralPath $SupervisorLogPath -Value (
             "$(Get-Date -Format o) Core executable is missing: $CoreExecutable"
         )
+        $ConsecutiveFastFailures++
+        if ($ConsecutiveFastFailures -ge 3) {
+            Add-Content -LiteralPath $SupervisorLogPath -Value (
+                "$(Get-Date -Format o) Core executable remained missing; " +
+                "returning control to Task Scheduler"
+            )
+            exit 1
+        }
         Start-Sleep -Seconds 5
         continue
     }

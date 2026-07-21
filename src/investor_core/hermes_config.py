@@ -39,6 +39,7 @@ def configure_investor_mcp(
             "INVESTOR_CORE_BASE_URL": core_url,
             "INVESTOR_CORE_AUTOSTART": "true",
             "INVESTOR_CORE_WINDOWS_TASK_NAME": task_name,
+            "INVESTOR_PROJECT_ROOT": str(project_root.resolve()),
         }
     )
 
@@ -51,7 +52,9 @@ def configure_investor_mcp(
                 "--directory",
                 str(project_root.resolve()),
                 "run",
-                "investor-mcp",
+                "python",
+                "-m",
+                "investor_mcp.server",
             ],
             "env": environment,
             "enabled": True,
