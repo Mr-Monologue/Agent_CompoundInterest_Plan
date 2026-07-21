@@ -3,6 +3,7 @@ param(
     [string]$InstallDir = "C:\investor\value-dca-agent",
     [string]$Repository = "Mr-Monologue/Agent_CompoundInterest_Plan",
     [string]$CoreTaskName = "ValueDCAInvestorCore",
+    [string]$UpdateTaskName = "ValueDCAAgentUpdate",
     [string]$HermesProfile = "investor",
     [switch]$CheckOnly,
     [switch]$Force,
@@ -94,6 +95,8 @@ $WorkingDirectory = Join-Path $env:TEMP "value-dca-update-$([guid]::NewGuid())"
 $RollbackRoot = $null
 $RollbackReady = $false
 $CurrentVersion = $null
+$CoreTaskXml = $null
+$UpdateTaskXml = $null
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $Headers = @{
@@ -162,6 +165,16 @@ try {
         )
     }
 
+    $ExistingCoreTask = Get-ScheduledTask -TaskName $CoreTaskName -ErrorAction SilentlyContinue
+    if ($null -ne $ExistingCoreTask) {
+        $CoreTaskXml = Export-ScheduledTask -TaskName $CoreTaskName
+    }
+    $ExistingUpdateTask = Get-ScheduledTask -TaskName $UpdateTaskName `
+        -ErrorAction SilentlyContinue
+    if ($null -ne $ExistingUpdateTask) {
+        $UpdateTaskXml = Export-ScheduledTask -TaskName $UpdateTaskName
+    }
+
     Stop-InvestorRuntime
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $RollbackRoot = Join-Path $BackupDirectory "$Timestamp-v$CurrentVersion"
@@ -193,14 +206,21 @@ try {
         throw "Release installer is missing: $Installer"
     }
     Write-UpdateLog "Installing v$AvailableVersion"
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Installer `
-        -InstallDir $InstallDir `
-        -Repository $Repository `
-        -HermesProfile $HermesProfile `
-        -NonInteractive `
-        -SkipMcpTest
-    if ($LASTEXITCODE -ne 0) {
-        throw "Release installer failed with exit code $LASTEXITCODE"
+    $InstallerOutput = @(
+        & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Installer `
+            -InstallDir $InstallDir `
+            -Repository $Repository `
+            -HermesProfile $HermesProfile `
+            -UpdateTaskName $UpdateTaskName `
+            -NonInteractive `
+            -SkipMcpTest 2>&1
+    )
+    $InstallerExitCode = $LASTEXITCODE
+    foreach ($InstallerLine in $InstallerOutput) {
+        Write-UpdateLog "installer: $([string]$InstallerLine)"
+    }
+    if ($InstallerExitCode -ne 0) {
+        throw "Release installer failed with exit code $InstallerExitCode"
     }
 
     $State = [ordered]@{
@@ -241,7 +261,7 @@ catch {
 
             Push-Location $InstallDir
             try {
-                & uv sync --python 3.11
+                & uv sync --python 3.11 --reinstall-package value-dca-agent
                 if ($LASTEXITCODE -ne 0) { throw "rollback dependency restore failed" }
                 & uv run investor db migrate
                 if ($LASTEXITCODE -ne 0) { throw "rollback migration restore failed" }
@@ -258,6 +278,22 @@ catch {
             }
             finally {
                 Pop-Location
+            }
+            if ($null -ne $CoreTaskXml) {
+                Register-ScheduledTask -TaskName $CoreTaskName -Xml $CoreTaskXml `
+                    -Force | Out-Null
+            }
+            if ($null -ne $UpdateTaskXml) {
+                try {
+                    Register-ScheduledTask -TaskName $UpdateTaskName `
+                        -Xml $UpdateTaskXml -Force | Out-Null
+                }
+                catch {
+                    Write-UpdateLog (
+                        "Could not restore the updater task while its current run is active: " +
+                        "$($_.Exception.Message)"
+                    )
+                }
             }
             Start-ScheduledTask -TaskName $CoreTaskName
             Write-UpdateLog "Rollback to v$CurrentVersion completed."

@@ -151,8 +151,38 @@ Push-Location $ProjectRoot
 $DatabaseBackup = $null
 try {
     Write-Step "Installing Python 3.11 and locked dependencies"
-    & uv sync --python 3.11
-    Assert-LastExit "dependency installation"
+    $SyncExitCode = 1
+    for ($SyncAttempt = 1; $SyncAttempt -le 5; $SyncAttempt++) {
+        if ($NonInteractive) {
+            $RespawnedProcesses = @(Get-InvestorRuntimeProcesses $ProjectRoot)
+            if ($RespawnedProcesses.Count -gt 0) {
+                Write-Warning (
+                    "Stopping runtime processes that restarted during environment sync: " +
+                    (($RespawnedProcesses | ForEach-Object {
+                        "$($_.ProcessName) PID $($_.Id)"
+                    }) -join ", ")
+                )
+                $RespawnedProcesses | Stop-Process -Force
+                Start-Sleep -Milliseconds 500
+            }
+        }
+
+        & uv sync --python 3.11 --reinstall-package value-dca-agent
+        $SyncExitCode = $LASTEXITCODE
+        if ($SyncExitCode -eq 0) {
+            break
+        }
+        if ($SyncAttempt -lt 5) {
+            Write-Warning (
+                "Environment sync attempt $SyncAttempt failed with exit code " +
+                "$SyncExitCode; retrying after clearing managed runtime processes."
+            )
+            Start-Sleep -Seconds 2
+        }
+    }
+    if ($SyncExitCode -ne 0) {
+        throw "dependency installation failed with exit code $SyncExitCode after 5 attempts"
+    }
 
     $DatabasePath = Join-Path $ProjectRoot "data\investor.db"
     if (Test-Path $DatabasePath) {
@@ -220,42 +250,38 @@ try {
         if (-not (Test-Path $UpdaterScript)) {
             throw "Windows updater script is missing: $UpdaterScript"
         }
-        $ExistingUpdateTask = Get-ScheduledTask `
-            -TaskName $UpdateTaskName `
-            -ErrorAction SilentlyContinue
-        if ($null -eq $ExistingUpdateTask -or $ExistingUpdateTask.State -ne "Running") {
-            $UpdateArguments = (
-                "`"$HiddenLauncher`" `"$UpdaterScript`" " +
-                "-InstallDir `"$ProjectRoot`" " +
-                "-Repository `"$Repository`" -CoreTaskName `"$CoreTaskName`" " +
-                "-HermesProfile `"$HermesProfile`""
+        $UpdateArguments = (
+            "`"$HiddenLauncher`" `"$UpdaterScript`" " +
+            "-InstallDir `"$ProjectRoot`" " +
+            "-Repository `"$Repository`" -CoreTaskName `"$CoreTaskName`" " +
+            "-UpdateTaskName `"$UpdateTaskName`" " +
+            "-HermesProfile `"$HermesProfile`""
+        )
+        $UpdateAction = New-ScheduledTaskAction `
+            -Execute $WScriptExecutable `
+            -Argument $UpdateArguments `
+            -WorkingDirectory $ProjectRoot
+        $UpdateTrigger = New-ScheduledTaskTrigger -Daily -At "04:00"
+        $UpdateSettings = New-ScheduledTaskSettingsSet `
+            -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries `
+            -StartWhenAvailable `
+            -RunOnlyIfNetworkAvailable `
+            -ExecutionTimeLimit (New-TimeSpan -Minutes 30) `
+            -MultipleInstances IgnoreNew
+        $UpdateDefinition = New-ScheduledTask `
+            -Action $UpdateAction `
+            -Trigger $UpdateTrigger `
+            -Principal $TaskPrincipal `
+            -Settings $UpdateSettings `
+            -Description (
+                "Checks stable GitHub releases for Value DCA, backs up the database, " +
+                "and rolls back failed updates."
             )
-            $UpdateAction = New-ScheduledTaskAction `
-                -Execute $WScriptExecutable `
-                -Argument $UpdateArguments `
-                -WorkingDirectory $ProjectRoot
-            $UpdateTrigger = New-ScheduledTaskTrigger -Daily -At "04:00"
-            $UpdateSettings = New-ScheduledTaskSettingsSet `
-                -AllowStartIfOnBatteries `
-                -DontStopIfGoingOnBatteries `
-                -StartWhenAvailable `
-                -RunOnlyIfNetworkAvailable `
-                -ExecutionTimeLimit (New-TimeSpan -Minutes 30) `
-                -MultipleInstances IgnoreNew
-            $UpdateDefinition = New-ScheduledTask `
-                -Action $UpdateAction `
-                -Trigger $UpdateTrigger `
-                -Principal $TaskPrincipal `
-                -Settings $UpdateSettings `
-                -Description (
-                    "Checks stable GitHub releases for Value DCA, backs up the database, " +
-                    "and rolls back failed updates."
-                )
-            Register-ScheduledTask `
-                -TaskName $UpdateTaskName `
-                -InputObject $UpdateDefinition `
-                -Force | Out-Null
-        }
+        Register-ScheduledTask `
+            -TaskName $UpdateTaskName `
+            -InputObject $UpdateDefinition `
+            -Force | Out-Null
     }
 
     if (-not $SkipHermes) {
