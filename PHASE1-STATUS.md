@@ -1,7 +1,7 @@
 # Phase 1 implementation status
 
 Date: 2026-07-21
-Release: 0.5.1
+Release: 0.5.2
 
 ## Implemented
 
@@ -38,6 +38,10 @@ Release: 0.5.1
 - Console-free Windows task hosting through the GUI-subsystem Windows Script Host.
 - Persistent default portfolio/account context with unambiguous automatic selection.
 - UUID-free Hermes holding and draft workflows for the normal single-account case.
+- Forced local-package restoration after an interrupted Windows environment update.
+- Installer-output capture and scheduled-task definition restoration during rollback.
+- Module-based Hermes MCP launch that avoids locking managed console entry points.
+- Guarded MCP self-repair when only the installed Core entry point is missing.
 
 ## Explicitly disabled
 
@@ -50,7 +54,7 @@ Release: 0.5.1
 
 ## Validation completed
 
-- 48 automated API, CLI, migration, ledger, MCP runtime, Windows contract and safety tests passed.
+- 58 automated API, CLI, migration, ledger, MCP runtime, Windows contract and safety tests passed.
 - BUY draft, explicit commit, duplicate commit, SELL, expiry and reversal paths passed.
 - Phase 0 to Phase 1 migration preserved existing audit data.
 - Static type analysis completed with zero errors or warnings.
@@ -66,8 +70,11 @@ Release: 0.5.1
 - Release 0.5.0 GitHub bootstrap, Core task and updater task passed on the target Windows host.
 - Target-host feedback confirmed that direct PowerShell task hosting could remain visible; 0.5.1
   replaces it with a console-free launcher.
+- The first automatic 0.5.0 to 0.5.1 attempt exposed an incomplete rollback: code and database were
+  restored but a removed `investor-core.exe` entry point was not. Release 0.5.2 forces package
+  reinstallation on rollback and preserves the previous task definitions.
 
 ## Next gate
 
-Publish release 0.5.1 through `develop` -> `release`, verify that no PowerShell window appears, and
-confirm that Hermes can list holdings and create a draft without portfolio/account UUID arguments.
+Publish release 0.5.2 through `develop` -> `release`, verify automatic recovery from a deliberately
+removed Core entry point, then confirm that Hermes lists holdings without UUID arguments.

@@ -25,4 +25,22 @@ jobs:
       - run: uv run pytest
       - run: uv run ruff check .
       - run: uv run mypy src
-
+      - name: Parse Windows PowerShell scripts
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $parseErrors = @()
+          Get-ChildItem -Path . -Filter *.ps1 -File -Recurse | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            )
+            $parseErrors += $errors
+          }
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error $_.Message }
+            throw "PowerShell parser found $($parseErrors.Count) error(s)."
+          }
