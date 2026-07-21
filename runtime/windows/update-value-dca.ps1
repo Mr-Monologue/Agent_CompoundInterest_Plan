@@ -28,6 +28,10 @@ function Write-UpdateLog([string]$Message) {
     }
 }
 
+function Quote-NativeArgument([string]$Value) {
+    return '"' + $Value.Replace('"', '\"') + '"'
+}
+
 function Get-InstalledVersion {
     $VersionFile = Join-Path $InstallDir "src\investor_core\version.py"
     if (-not (Test-Path $VersionFile)) {
@@ -206,22 +210,72 @@ try {
         throw "Release installer is missing: $Installer"
     }
     Write-UpdateLog "Installing v$AvailableVersion"
-    $InstallerOutput = @(
-        & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Installer `
-            -InstallDir $InstallDir `
-            -Repository $Repository `
-            -HermesProfile $HermesProfile `
-            -UpdateTaskName $UpdateTaskName `
-            -NonInteractive `
-            -SkipMcpTest 2>&1
+    $InstallerStdoutPath = Join-Path $WorkingDirectory "installer.stdout.log"
+    $InstallerStderrPath = Join-Path $WorkingDirectory "installer.stderr.log"
+    $PowerShellExecutable = Join-Path $env:SystemRoot `
+        "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $InstallerArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        (Quote-NativeArgument $Installer),
+        "-InstallDir",
+        (Quote-NativeArgument $InstallDir),
+        "-Repository",
+        (Quote-NativeArgument $Repository),
+        "-HermesProfile",
+        (Quote-NativeArgument $HermesProfile),
+        "-UpdateTaskName",
+        (Quote-NativeArgument $UpdateTaskName),
+        "-NonInteractive",
+        "-SkipMcpTest"
     )
-    $InstallerExitCode = $LASTEXITCODE
-    foreach ($InstallerLine in $InstallerOutput) {
-        Write-UpdateLog "installer: $([string]$InstallerLine)"
+    $InstallerProcess = Start-Process `
+        -FilePath $PowerShellExecutable `
+        -ArgumentList $InstallerArguments `
+        -RedirectStandardOutput $InstallerStdoutPath `
+        -RedirectStandardError $InstallerStderrPath `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    $InstallerExitCode = $InstallerProcess.ExitCode
+    foreach ($InstallerLine in @(Get-Content $InstallerStdoutPath -ErrorAction SilentlyContinue)) {
+        Write-UpdateLog "installer stdout: $InstallerLine"
+    }
+    foreach ($InstallerLine in @(Get-Content $InstallerStderrPath -ErrorAction SilentlyContinue)) {
+        Write-UpdateLog "installer stderr: $InstallerLine"
     }
     if ($InstallerExitCode -ne 0) {
         throw "Release installer failed with exit code $InstallerExitCode"
     }
+
+    $FinalizerScript = Join-Path $InstallDir `
+        "runtime\windows\finalize-update-task.ps1"
+    $HiddenLauncher = Join-Path $InstallDir `
+        "runtime\windows\run-powershell-hidden.vbs"
+    $WScriptExecutable = Join-Path $env:SystemRoot "System32\wscript.exe"
+    if (-not (Test-Path $FinalizerScript) -or -not (Test-Path $HiddenLauncher)) {
+        throw "Installed update-task finalizer or hidden launcher is missing."
+    }
+    $FinalizerArguments = @(
+        (Quote-NativeArgument $HiddenLauncher),
+        (Quote-NativeArgument $FinalizerScript),
+        "-InstallDir",
+        (Quote-NativeArgument $InstallDir),
+        "-Repository",
+        (Quote-NativeArgument $Repository),
+        "-CoreTaskName",
+        (Quote-NativeArgument $CoreTaskName),
+        "-UpdateTaskName",
+        (Quote-NativeArgument $UpdateTaskName),
+        "-HermesProfile",
+        (Quote-NativeArgument $HermesProfile)
+    )
+    Start-Process -FilePath $WScriptExecutable -ArgumentList $FinalizerArguments `
+        -WindowStyle Hidden | Out-Null
 
     $State = [ordered]@{
         status = "UPDATED"
