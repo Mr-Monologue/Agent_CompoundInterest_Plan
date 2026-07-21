@@ -176,14 +176,17 @@ try {
     if (-not (Test-Path $RunnerScript)) {
         throw "Windows Core supervisor script is missing: $RunnerScript"
     }
-    $PowerShellExecutable = Join-Path `
-        $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $HiddenLauncher = Join-Path $ProjectRoot "runtime\windows\run-powershell-hidden.vbs"
+    if (-not (Test-Path $HiddenLauncher)) {
+        throw "Windows hidden process launcher is missing: $HiddenLauncher"
+    }
+    $WScriptExecutable = Join-Path $env:SystemRoot "System32\wscript.exe"
     $ActionArguments = (
-        "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass " +
-        "-File `"$RunnerScript`" -ProjectRoot `"$ProjectRoot`""
+        "`"$HiddenLauncher`" `"$RunnerScript`" " +
+        "-ProjectRoot `"$ProjectRoot`""
     )
     $TaskAction = New-ScheduledTaskAction `
-        -Execute $PowerShellExecutable `
+        -Execute $WScriptExecutable `
         -Argument $ActionArguments `
         -WorkingDirectory $ProjectRoot
     $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
@@ -222,13 +225,13 @@ try {
             -ErrorAction SilentlyContinue
         if ($null -eq $ExistingUpdateTask -or $ExistingUpdateTask.State -ne "Running") {
             $UpdateArguments = (
-                "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass " +
-                "-File `"$UpdaterScript`" -InstallDir `"$ProjectRoot`" " +
+                "`"$HiddenLauncher`" `"$UpdaterScript`" " +
+                "-InstallDir `"$ProjectRoot`" " +
                 "-Repository `"$Repository`" -CoreTaskName `"$CoreTaskName`" " +
                 "-HermesProfile `"$HermesProfile`""
             )
             $UpdateAction = New-ScheduledTaskAction `
-                -Execute $PowerShellExecutable `
+                -Execute $WScriptExecutable `
                 -Argument $UpdateArguments `
                 -WorkingDirectory $ProjectRoot
             $UpdateTrigger = New-ScheduledTaskTrigger -Daily -At "04:00"

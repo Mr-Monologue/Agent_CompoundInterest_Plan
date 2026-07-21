@@ -1,7 +1,7 @@
 # Phase 1 implementation status
 
-Date: 2026-07-20  
-Release: 0.5.0
+Date: 2026-07-21
+Release: 0.5.1
 
 ## Implemented
 
@@ -35,6 +35,9 @@ Release: 0.5.0
 - Daily hidden update checks with release-manifest policy gates.
 - Verified pre-migration SQLite backups and automatic code/database rollback attempts.
 - Public-repository hygiene that excludes personal databases, environment files and logs.
+- Console-free Windows task hosting through the GUI-subsystem Windows Script Host.
+- Persistent default portfolio/account context with unambiguous automatic selection.
+- UUID-free Hermes holding and draft workflows for the normal single-account case.
 
 ## Explicitly disabled
 
@@ -60,9 +63,11 @@ Release: 0.5.0
 - Release 0.2.2 hidden runtime and Hermes-triggered automatic recovery passed on Windows.
 - Release 0.3.0 real portfolio, account, benchmark and fund onboarding passed through Hermes.
 - Release 0.4.2 passed timezone readiness and one real opening-position commit for fund 005827.
-- Release 0.5.0 GitHub bootstrap and updater remain to be validated on the target Windows host.
+- Release 0.5.0 GitHub bootstrap, Core task and updater task passed on the target Windows host.
+- Target-host feedback confirmed that direct PowerShell task hosting could remain visible; 0.5.1
+  replaces it with a console-free launcher.
 
 ## Next gate
 
-Merge and publish release 0.5.0, run the one-command GitHub bootstrap on the target host, then
-verify both scheduled tasks and a no-op update check. Continue importing legacy holdings one at a time.
+Publish release 0.5.1 through `develop` -> `release`, verify that no PowerShell window appears, and
+confirm that Hermes can list holdings and create a draft without portfolio/account UUID arguments.

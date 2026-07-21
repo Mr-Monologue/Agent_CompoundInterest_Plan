@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from investor_core.config import Settings
 
 JsonDict = dict[str, Any]
+INVESTMENT_CONTEXT_KEY = "investment_context"
 
 
 class LedgerError(Exception):
@@ -173,6 +174,235 @@ class LedgerService:
                 str(uuid4()),
             ),
         )
+
+    @staticmethod
+    def _context_payload(
+        portfolio: sqlite3.Row, account: sqlite3.Row, *, source: str
+    ) -> JsonDict:
+        return {
+            "portfolio": {
+                "id": str(portfolio["id"]),
+                "name": str(portfolio["name"]),
+                "base_currency": str(portfolio["base_currency"]),
+            },
+            "account": {
+                "id": str(account["id"]),
+                "name": str(account["name"]),
+                "platform": str(account["platform"]),
+                "currency": str(account["currency"]),
+            },
+            "source": source,
+            "user_action_required": False,
+        }
+
+    def _save_investment_context(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        portfolio: sqlite3.Row,
+        account: sqlite3.Row,
+        actor_ref: str,
+        actor_type: str,
+    ) -> None:
+        payload = {
+            "portfolio_id": str(portfolio["id"]),
+            "account_id": str(account["id"]),
+        }
+        next_version = int(
+            connection.execute(
+                "SELECT COALESCE(MAX(version), 0) + 1 FROM settings WHERE key = ?",
+                (INVESTMENT_CONTEXT_KEY,),
+            ).fetchone()[0]
+        )
+        timestamp = _iso(self._now())
+        connection.execute(
+            "UPDATE settings SET status = 'RETIRED' WHERE key = ? AND status = 'ACTIVE'",
+            (INVESTMENT_CONTEXT_KEY,),
+        )
+        connection.execute(
+            """
+            INSERT INTO settings (
+                key, version, value_json, value_hash, status, approved_by,
+                approved_at, created_at
+            ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+            """,
+            (
+                INVESTMENT_CONTEXT_KEY,
+                next_version,
+                json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                _canonical_hash(payload),
+                actor_ref,
+                timestamp,
+                timestamp,
+            ),
+        )
+        self._audit(
+            connection,
+            actor_type=actor_type,
+            actor_ref=actor_ref,
+            action="INVESTMENT_CONTEXT_SET",
+            entity_type="setting",
+            entity_id=INVESTMENT_CONTEXT_KEY,
+            details={
+                "portfolio_id": payload["portfolio_id"],
+                "account_id": payload["account_id"],
+                "version": next_version,
+            },
+            after_hash=_canonical_hash(payload),
+        )
+
+    def get_investment_context(self) -> JsonDict:
+        """Return a saved context or persist an unambiguous single active context."""
+        connection = self._connect()
+        try:
+            self._begin(connection)
+            setting = connection.execute(
+                """
+                SELECT value_json
+                FROM settings
+                WHERE key = ? AND status = 'ACTIVE'
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (INVESTMENT_CONTEXT_KEY,),
+            ).fetchone()
+            if setting is not None:
+                try:
+                    saved = json.loads(str(setting["value_json"]))
+                    saved_portfolio_id = str(saved["portfolio_id"])
+                    saved_account_id = str(saved["account_id"])
+                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+                    self._rollback_and_raise(
+                        connection,
+                        LedgerError(
+                            "INVALID_INVESTMENT_CONTEXT",
+                            "saved investment context is invalid",
+                            http_status=409,
+                        ),
+                    )
+                portfolio = connection.execute(
+                    "SELECT * FROM portfolios WHERE id = ? AND status = 'ACTIVE'",
+                    (saved_portfolio_id,),
+                ).fetchone()
+                account = connection.execute(
+                    """
+                    SELECT * FROM accounts
+                    WHERE id = ? AND portfolio_id = ? AND status = 'ACTIVE'
+                    """,
+                    (saved_account_id, saved_portfolio_id),
+                ).fetchone()
+                if portfolio is None or account is None:
+                    self._rollback_and_raise(
+                        connection,
+                        LedgerError(
+                            "INVALID_INVESTMENT_CONTEXT",
+                            "saved portfolio or account is no longer active",
+                            http_status=409,
+                        ),
+                    )
+                connection.commit()
+                return self._context_payload(portfolio, account, source="SAVED")
+
+            portfolios = connection.execute(
+                "SELECT * FROM portfolios WHERE status = 'ACTIVE' ORDER BY created_at, name"
+            ).fetchall()
+            if len(portfolios) != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "INVESTMENT_CONTEXT_REQUIRED",
+                        "a default portfolio must be selected",
+                        http_status=409,
+                        details={
+                            "portfolio_candidates": [
+                                {"id": str(row["id"]), "name": str(row["name"])}
+                                for row in portfolios
+                            ]
+                        },
+                    ),
+                )
+            portfolio = portfolios[0]
+            accounts = connection.execute(
+                """
+                SELECT * FROM accounts
+                WHERE portfolio_id = ? AND status = 'ACTIVE'
+                ORDER BY created_at, name
+                """,
+                (portfolio["id"],),
+            ).fetchall()
+            if len(accounts) != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "INVESTMENT_CONTEXT_REQUIRED",
+                        "a default account must be selected",
+                        http_status=409,
+                        details={
+                            "portfolio": {
+                                "id": str(portfolio["id"]),
+                                "name": str(portfolio["name"]),
+                            },
+                            "account_candidates": [
+                                {
+                                    "id": str(row["id"]),
+                                    "name": str(row["name"]),
+                                    "platform": str(row["platform"]),
+                                }
+                                for row in accounts
+                            ],
+                        },
+                    ),
+                )
+            account = accounts[0]
+            self._save_investment_context(
+                connection,
+                portfolio=portfolio,
+                account=account,
+                actor_ref="system:auto-singleton",
+                actor_type="SYSTEM",
+            )
+            connection.commit()
+            return self._context_payload(portfolio, account, source="AUTO_SELECTED")
+        finally:
+            connection.close()
+
+    def set_investment_context(
+        self, *, portfolio_id: str, account_id: str, actor_ref: str = "local-user"
+    ) -> JsonDict:
+        """Persist an explicit default portfolio and account without changing holdings."""
+        connection = self._connect()
+        try:
+            self._begin(connection)
+            portfolio = self._require_row(
+                connection.execute(
+                    "SELECT * FROM portfolios WHERE id = ? AND status = 'ACTIVE'",
+                    (portfolio_id,),
+                ).fetchone(),
+                "PORTFOLIO_NOT_FOUND",
+                "active portfolio was not found",
+            )
+            account = self._require_row(
+                connection.execute(
+                    """
+                    SELECT * FROM accounts
+                    WHERE id = ? AND portfolio_id = ? AND status = 'ACTIVE'
+                    """,
+                    (account_id, portfolio_id),
+                ).fetchone(),
+                "ACCOUNT_NOT_FOUND",
+                "active account was not found in the selected portfolio",
+            )
+            self._save_investment_context(
+                connection,
+                portfolio=portfolio,
+                account=account,
+                actor_ref=actor_ref,
+                actor_type="AGENT" if actor_ref == "hermes" else "USER",
+            )
+            connection.commit()
+            return self._context_payload(portfolio, account, source="SAVED")
+        finally:
+            connection.close()
 
     def create_portfolio(
         self,
