@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     core_base_url: str = "http://127.0.0.1:8710"
     core_autostart: bool = False
     core_windows_task_name: str = ""
+    project_root: Path = Path(".")
     core_start_timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
     core_log_path: Path = Path("logs/investor-core.log")
     confirmation_ttl_minutes: int = Field(default=15, ge=1, le=1440)

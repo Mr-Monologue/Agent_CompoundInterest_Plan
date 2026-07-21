@@ -40,12 +40,13 @@ def test_configure_investor_mcp_preserves_profile_and_other_servers(tmp_path: Pa
     investor = result["mcp_servers"]["investor_core"]
     assert "url" not in investor
     assert investor["command"] == "uv"
-    assert investor["args"][-2:] == ["run", "investor-mcp"]
+    assert investor["args"][-4:] == ["run", "python", "-m", "investor_mcp.server"]
     assert investor["tools"] == {"include": ["system_health_get"]}
     assert investor["env"] == {
         "PRESERVE_ME": "yes",
         "INVESTOR_CORE_BASE_URL": "http://127.0.0.1:8710",
         "INVESTOR_CORE_AUTOSTART": "true",
         "INVESTOR_CORE_WINDOWS_TASK_NAME": "ValueDCAInvestorCore",
+        "INVESTOR_PROJECT_ROOT": str((tmp_path / "value-dca-agent").resolve()),
     }
     assert config_path.with_suffix(".yaml.bak").exists()

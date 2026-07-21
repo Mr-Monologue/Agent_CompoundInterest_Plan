@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.5.1",
+  "version": "0.5.2",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
   "database_revision": "0003_opening_position",
   "minimum_current_version": "0.4.2",
-  "notes": "Console-free Windows supervision and persistent default investment context."
+  "notes": "Repairable Windows runtime entry points and complete automatic-update rollback."
 }
