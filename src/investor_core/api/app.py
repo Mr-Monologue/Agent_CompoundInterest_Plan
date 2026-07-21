@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from investor_core.api.schemas import (
     AccountCreateRequest,
     InstrumentCreateRequest,
+    InvestmentContextSetRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     TransactionDraftCommitRequest,
@@ -99,6 +100,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/accounts")
     def account_list(portfolio_id: str | None = None) -> dict[str, Any]:
         return success({"items": ledger.list_accounts(portfolio_id)})
+
+    @app.get("/v1/investment-context")
+    def investment_context_get() -> dict[str, Any]:
+        return success(ledger.get_investment_context())
+
+    @app.post("/v1/investment-context")
+    def investment_context_set(request: InvestmentContextSetRequest) -> dict[str, Any]:
+        return success(
+            ledger.set_investment_context(
+                portfolio_id=request.portfolio_id,
+                account_id=request.account_id,
+                actor_ref=request.actor_ref,
+            )
+        )
 
     @app.post("/v1/instruments")
     def instrument_create(request: InstrumentCreateRequest) -> dict[str, Any]:

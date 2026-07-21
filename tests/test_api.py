@@ -114,6 +114,36 @@ def test_transaction_draft_api_requires_commit_before_holding_changes(tmp_path: 
     assert commit_result["holding"]["cost_amount"] == "100.00"
 
 
+def test_investment_context_api_auto_selects_and_persists_single_account(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    client = TestClient(
+        create_app(Settings(environment=Environment.TEST, db_path=database_path))
+    )
+    portfolio = client.post("/v1/portfolios", json={"name": "个人投资组合"}).json()[
+        "data"
+    ]
+    account = client.post(
+        "/v1/accounts",
+        json={
+            "portfolio_id": portfolio["id"],
+            "name": "支付宝基金账户",
+            "platform": "支付宝",
+        },
+    ).json()["data"]
+
+    first = client.get("/v1/investment-context")
+    second = client.get("/v1/investment-context")
+
+    assert first.status_code == 200
+    assert first.json()["data"]["source"] == "AUTO_SELECTED"
+    assert first.json()["data"]["portfolio"]["id"] == portfolio["id"]
+    assert first.json()["data"]["account"]["id"] == account["id"]
+    assert second.json()["data"]["source"] == "SAVED"
+
+
 def test_opening_position_api_uses_a_dedicated_confirmed_import_path(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)

@@ -29,8 +29,9 @@ $p="$env:TEMP\value-dca-bootstrap.ps1"; irm https://raw.githubusercontent.com/Mr
 doctor、Hermes Profile、Skill、MCP 注册和健康检查。无人值守升级只会终止本项目自己的
 `investor-core`/`investor-mcp` 进程，不关闭 Hermes；下一次工具调用会自动重连。
 
-安装器会创建当前用户的 `ValueDCAInvestorCore` Windows 计划任务。Core 在登录后以隐藏
-方式运行，不显示 PowerShell 窗口；运行器会在 Core 退出后自动重启。Hermes MCP 在一次
+安装器会创建当前用户的 `ValueDCAInvestorCore` Windows 计划任务。Core 在登录后通过
+Windows GUI 子系统宿主静默运行，不创建 PowerShell 控制台窗口；运行器会在 Core 退出后
+自动重启。Hermes MCP 在一次
 调用发现 Core 不可用时，也会启动该任务、等待 `/ready` 通过并重试原调用。Core 自己维护
 滚动日志 `logs\investor-core.log`，托管器生命周期写入 `logs\investor-core-supervisor.log`。
 Cron、微信和券商连接仍保持禁用。
@@ -41,9 +42,9 @@ Release，错过运行时间时在下次开机后补跑。升级前会创建 SQL
 旧代码与旧数据库。自动升级只读取 Release，不直接跟随 `main` 分支。涉及投资规则、确认
 边界或不兼容迁移的版本必须在 `release-manifest.json` 标记为需要人工批准。
 
-仓库 CI 对 pull request 和 `main` 执行只读测试。v0.5.0 首次发布任务只在本版本的
-`release-manifest.json` 首次合入 `main` 时运行，并只允许创建固定的 `v0.5.0` Release；
-后续普通提交不会触发发布。客户端只会看到并安装正式 GitHub Release。
+仓库 CI 对 pull request 和受控分支执行只读测试。版本从 `develop` 合入长期 `release`
+分支验证，发布时创建 `v*` 标签，再将 `release` 合入受保护的 `main`。客户端只会看到并
+安装正式 GitHub Release，不跟随普通分支提交。
 
 Core 默认监听 `127.0.0.1:8710`：
 
@@ -83,6 +84,10 @@ doctor/readiness。安装器通过锁文件自动安装依赖，不应让 Hermes
 0.5.0 起，GitHub Release 成为唯一发布源；Windows 引导安装、每日自动检查、升级前数据库
 备份、失败回滚和发布清单策略均进入正式运行契约。个人数据库、`.env`、日志和确认令牌永远
 不进入 Git 仓库。
+
+0.5.1 起，Windows Core 和升级器通过无控制台 GUI 宿主运行；Hermes 使用持久化默认投资
+上下文自动解析组合与账户。单组合、单账户场景会自动选中，用户无需查看、记忆或重复填写
+UUID；只有出现多个候选时才按名称和平台选择一次。
 
 CLI 仍保留为恢复和诊断入口：
 

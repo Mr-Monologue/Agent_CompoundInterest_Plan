@@ -86,6 +86,37 @@ def opening_draft(
     )
 
 
+def test_single_portfolio_and_account_become_persistent_default_context(
+    tmp_path: Path,
+) -> None:
+    service, expected = build_service(tmp_path)
+    portfolio = expected["portfolio"]
+    account = expected["account"]
+    assert isinstance(portfolio, dict)
+    assert isinstance(account, dict)
+
+    selected = service.get_investment_context()
+    saved = service.get_investment_context()
+
+    assert selected["source"] == "AUTO_SELECTED"
+    assert selected["portfolio"]["id"] == portfolio["id"]
+    assert selected["account"]["id"] == account["id"]
+    assert saved["source"] == "SAVED"
+    assert saved["portfolio"]["name"] == "测试组合"
+    assert saved["account"]["name"] == "测试账户"
+
+
+def test_ambiguous_portfolios_require_an_explicit_default_context(tmp_path: Path) -> None:
+    service, _context = build_service(tmp_path)
+    service.create_portfolio(name="第二组合")
+
+    with pytest.raises(LedgerError) as captured:
+        service.get_investment_context()
+
+    assert captured.value.code == "INVESTMENT_CONTEXT_REQUIRED"
+    assert len(captured.value.details["portfolio_candidates"]) == 2
+
+
 def test_opening_position_requires_exact_commit_and_is_not_a_trade(tmp_path: Path) -> None:
     service, context = build_service(tmp_path)
     created = opening_draft(service, context)
