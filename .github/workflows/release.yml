@@ -1,15 +1,15 @@
-name: Publish v0.5.0
+name: Publish release branch version
 
 on:
   push:
-    branches: [main]
+    branches: [release]
     paths: [release-manifest.json]
 
 permissions:
   contents: read
 
 jobs:
-  publish-v0-5-0:
+  publish:
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -26,6 +26,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy src
       - id: version
+        name: Verify project version and release manifest agree
         shell: python {0}
         run: |
           import json
@@ -36,23 +37,21 @@ jobs:
           project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
           manifest = json.loads(Path("release-manifest.json").read_text(encoding="utf-8"))
           version = project["project"]["version"]
+          expected_tag = f"v{version}"
           if manifest["version"] != version:
               raise SystemExit("release-manifest.json does not match pyproject.toml")
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-              output.write(f"tag=v{version}\n")
-      - name: Verify pushed tag matches the governed release version
-        env:
-          EXPECTED_TAG: ${{ steps.version.outputs.tag }}
-        run: test "$EXPECTED_TAG" = "v0.5.0"
-      - name: Publish the explicitly authorized v0.5.0 release once
+              output.write(f"tag={expected_tag}\n")
+      - name: Create the governed tag and release once
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          if gh release view v0.5.0 >/dev/null 2>&1; then
-            echo "v0.5.0 already exists; no mutation required."
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "$RELEASE_TAG already exists; no mutation required."
             exit 0
           fi
-          gh release create v0.5.0 \
+          gh release create "$RELEASE_TAG" \
             --target "$GITHUB_SHA" \
-            --title "Value DCA Agent v0.5.0" \
+            --title "Value DCA Agent $RELEASE_TAG" \
             --generate-notes
