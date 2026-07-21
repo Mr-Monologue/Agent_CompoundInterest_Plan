@@ -250,6 +250,8 @@ try {
         if (-not (Test-Path $UpdaterScript)) {
             throw "Windows updater script is missing: $UpdaterScript"
         }
+        $ExistingUpdateTask = Get-ScheduledTask -TaskName $UpdateTaskName `
+            -ErrorAction SilentlyContinue
         $UpdateArguments = (
             "`"$HiddenLauncher`" `"$UpdaterScript`" " +
             "-InstallDir `"$ProjectRoot`" " +
@@ -278,10 +280,23 @@ try {
                 "Checks stable GitHub releases for Value DCA, backs up the database, " +
                 "and rolls back failed updates."
             )
-        Register-ScheduledTask `
-            -TaskName $UpdateTaskName `
-            -InputObject $UpdateDefinition `
-            -Force | Out-Null
+        try {
+            Register-ScheduledTask `
+                -TaskName $UpdateTaskName `
+                -InputObject $UpdateDefinition `
+                -Force | Out-Null
+        }
+        catch {
+            if ($null -ne $ExistingUpdateTask -and $ExistingUpdateTask.State -eq "Running") {
+                Write-Warning (
+                    "The updater task is currently running; its console-free definition " +
+                    "will be installed by the post-update finalizer."
+                )
+            }
+            else {
+                throw
+            }
+        }
     }
 
     if (-not $SkipHermes) {

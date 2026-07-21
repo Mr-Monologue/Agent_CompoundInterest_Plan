@@ -95,10 +95,28 @@ def test_windows_updater_is_release_only_backup_first_and_rollback_capable() -> 
     assert "code rollback" in updater
     assert "rollback diagnostics" in updater
     assert "--reinstall-package value-dca-agent" in updater
-    assert "installer: $([string]$InstallerLine)" in updater
+    assert "Start-Process" in updater
+    assert "RedirectStandardOutput" in updater
+    assert "RedirectStandardError" in updater
+    assert "-SkipMcpTest 2>&1" not in updater
+    assert "installer stdout: $InstallerLine" in updater
+    assert "installer stderr: $InstallerLine" in updater
     assert "Export-ScheduledTask" in updater
     assert "Register-ScheduledTask" in updater
+    assert "finalize-update-task.ps1" in updater
     assert "update-state.json" in updater
+
+
+def test_windows_update_task_finalizer_waits_then_installs_gui_host() -> None:
+    finalizer = (
+        PROJECT_ROOT / "runtime/windows/finalize-update-task.ps1"
+    ).read_text(encoding="utf-8-sig")
+
+    assert 'State -ne "Running"' in finalizer
+    assert "Register-ScheduledTask" in finalizer
+    assert "wscript.exe" in finalizer
+    assert "run-powershell-hidden.vbs" in finalizer
+    assert "Read-Host" not in finalizer
 
 
 def test_windows_bootstrap_uses_latest_stable_release() -> None:
