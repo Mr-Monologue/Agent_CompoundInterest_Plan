@@ -1,7 +1,7 @@
 # Phase 1 implementation status
 
 Date: 2026-07-21
-Release: 0.5.2
+Release: 0.5.3
 
 ## Implemented
 
@@ -42,6 +42,8 @@ Release: 0.5.2
 - Installer-output capture and scheduled-task definition restoration during rollback.
 - Module-based Hermes MCP launch that avoids locking managed console entry points.
 - Guarded MCP self-repair when only the installed Core entry point is missing.
+- PowerShell 5.1-safe child-process stdout/stderr capture for unattended installs.
+- Detached post-update finalization of the updater task after its running instance exits.
 
 ## Explicitly disabled
 
@@ -54,7 +56,7 @@ Release: 0.5.2
 
 ## Validation completed
 
-- 58 automated API, CLI, migration, ledger, MCP runtime, Windows contract and safety tests passed.
+- 59 automated API, CLI, migration, ledger, MCP runtime, Windows contract and safety tests passed.
 - BUY draft, explicit commit, duplicate commit, SELL, expiry and reversal paths passed.
 - Phase 0 to Phase 1 migration preserved existing audit data.
 - Static type analysis completed with zero errors or warnings.
@@ -73,8 +75,11 @@ Release: 0.5.2
 - The first automatic 0.5.0 to 0.5.1 attempt exposed an incomplete rollback: code and database were
   restored but a removed `investor-core.exe` entry point was not. Release 0.5.2 forces package
   reinstallation on rollback and preserves the previous task definitions.
+- A subsequent 0.5.2 attempt exposed Windows PowerShell 5.1 native-stderr behavior: uv's normal
+  resolver progress was promoted to a terminating error by `2>&1`. Release 0.5.3 uses redirected
+  files and `Start-Process` exit status instead.
 
 ## Next gate
 
-Publish release 0.5.2 through `develop` -> `release`, verify automatic recovery from a deliberately
-removed Core entry point, then confirm that Hermes lists holdings without UUID arguments.
+Publish release 0.5.3 through `develop` -> `release`, verify the real 0.5.0 upgrade on the target
+host, then confirm both scheduled tasks use `wscript.exe` and Hermes lists holdings without UUIDs.
