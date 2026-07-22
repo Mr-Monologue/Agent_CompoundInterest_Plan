@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.7.0",
+  "version": "0.7.1",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
   "database_revision": "0006_market_nav_verification",
   "minimum_current_version": "0.5.3",
-  "notes": "Canary-gated fund NAV synchronization with immutable independent-source corroboration, conflict blocking and complete evidence audit."
+  "notes": "Harden Windows fund NAV synchronization with bounded direct parsing, 60-second defaults, timing audit and evidence-only investment language."
 }
