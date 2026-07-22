@@ -62,6 +62,18 @@ def test_windows_installer_keeps_external_actions_disabled() -> None:
     assert "hermes mcp test investor_core" in installer
 
 
+def test_skill_requires_core_market_calculations_and_source_evidence() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
+    policy_path = PROJECT_ROOT / "skills/value-dca-investor/references/data-quality-policy.md"
+    policy = policy_path.read_text(encoding="utf-8")
+
+    assert "market_nav_snapshot_record" in skill
+    assert "portfolio_valuation_get" in skill
+    assert "never derive those values in prose" in skill
+    assert "missing or stale NAV" in policy
+    assert "must then remain absent" in policy
+
+
 def test_cron_examples_are_disabled() -> None:
     for path in (PROJECT_ROOT / "cron").rglob("*.json"):
         assert '"enabled": false' in path.read_text(encoding="utf-8")
