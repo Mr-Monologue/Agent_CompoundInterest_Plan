@@ -66,7 +66,7 @@ def test_release_manifest_matches_project_version() -> None:
     assert manifest["schema_version"] == 1
     assert manifest["channel"] == "stable"
     assert manifest["version"] == project["project"]["version"]
-    assert manifest["database_revision"] == "0004_market_nav"
+    assert manifest["database_revision"] == "0005_market_data_sync"
 
 
 def test_release_workflow_publishes_only_from_the_long_lived_release_branch() -> None:
@@ -108,9 +108,9 @@ def test_windows_updater_is_release_only_backup_first_and_rollback_capable() -> 
 
 
 def test_windows_update_task_finalizer_waits_then_installs_gui_host() -> None:
-    finalizer = (
-        PROJECT_ROOT / "runtime/windows/finalize-update-task.ps1"
-    ).read_text(encoding="utf-8-sig")
+    finalizer = (PROJECT_ROOT / "runtime/windows/finalize-update-task.ps1").read_text(
+        encoding="utf-8-sig"
+    )
 
     assert 'State -ne "Running"' in finalizer
     assert "Register-ScheduledTask" in finalizer

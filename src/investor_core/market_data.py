@@ -70,8 +70,10 @@ class MarketDataService:
         self._ledger = LedgerService(settings, now=now)
 
     def _connect(self) -> sqlite3.Connection:
-        path = ":memory:" if str(self.settings.db_path) == ":memory:" else str(
-            Path(self.settings.db_path).resolve()
+        path = (
+            ":memory:"
+            if str(self.settings.db_path) == ":memory:"
+            else str(Path(self.settings.db_path).resolve())
         )
         connection = sqlite3.connect(path, timeout=10.0, isolation_level=None)
         connection.row_factory = sqlite3.Row
@@ -89,9 +91,7 @@ class MarketDataService:
 
     @classmethod
     def _snapshot_data(cls, row: sqlite3.Row) -> JsonDict:
-        quality, warnings = cls._quality(
-            str(row["source_type"]), str(row["verification_status"])
-        )
+        quality, warnings = cls._quality(str(row["source_type"]), str(row["verification_status"]))
         return {
             "id": row["id"],
             "instrument_id": row["instrument_id"],
@@ -172,6 +172,33 @@ class MarketDataService:
                 raise LedgerError(
                     "INSTRUMENT_NOT_FOUND", "active instrument was not found", http_status=404
                 )
+            semantic_existing = connection.execute(
+                """
+                SELECT m.*, i.code AS instrument_code, i.name AS instrument_name
+                FROM market_nav_snapshots m
+                JOIN instruments i ON i.id = m.instrument_id
+                WHERE m.instrument_id = ?
+                  AND m.nav_date = ?
+                  AND m.nav_micros = ?
+                  AND m.source_type = ?
+                  AND m.source_name = ?
+                  AND COALESCE(m.source_ref, '') = COALESCE(?, '')
+                ORDER BY m.observed_at DESC, m.rowid DESC
+                LIMIT 1
+                """,
+                (
+                    instrument["id"],
+                    payload["nav_date"],
+                    nav_micros,
+                    normalized_source_type,
+                    normalized_source_name,
+                    payload["source_ref"],
+                ),
+            ).fetchone()
+            if semantic_existing is not None:
+                connection.commit()
+                data = self._snapshot_data(semantic_existing)
+                return {"snapshot": data, "created": False, "warnings": data["warnings"]}
             existing = connection.execute(
                 """
                 SELECT m.*, i.code AS instrument_code, i.name AS instrument_name
@@ -291,9 +318,7 @@ class MarketDataService:
             )
         except ValueError as exc:
             raise LedgerError("INVALID_DATE", "as_of_date must be an ISO date") from exc
-        holdings = self._ledger.list_holdings(
-            portfolio_id=portfolio_id, account_id=account_id
-        )
+        holdings = self._ledger.list_holdings(portfolio_id=portfolio_id, account_id=account_id)
         positions: list[JsonDict] = []
         warnings: list[str] = []
         total_market_minor = 0
@@ -435,9 +460,11 @@ class MarketDataService:
             for position in positions:
                 market_value = position["market_value"]
                 if market_value is not None:
-                    weight = Decimal(str(market_value)) / (
-                        Decimal(total_market_minor) / MONEY_SCALE
-                    ) * Decimal(100)
+                    weight = (
+                        Decimal(str(market_value))
+                        / (Decimal(total_market_minor) / MONEY_SCALE)
+                        * Decimal(100)
+                    )
                     position["weight_pct"] = f"{weight:.2f}"
 
         return {

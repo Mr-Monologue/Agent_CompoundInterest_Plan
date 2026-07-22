@@ -68,6 +68,7 @@ def test_skill_requires_core_market_calculations_and_source_evidence() -> None:
     policy = policy_path.read_text(encoding="utf-8")
 
     assert "market_nav_snapshot_record" in skill
+    assert "market-data synchronization capability" in skill
     assert "portfolio_valuation_get" in skill
     assert "never derive those values in prose" in skill
     assert "missing or stale NAV" in policy

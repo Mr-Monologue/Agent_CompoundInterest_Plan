@@ -35,13 +35,17 @@ and commit tools. Require the platform-reported `as_of_date`, `total_shares`, an
 historical `BUY`. Present every Core-derived cost value and rounding warning as deterministic facts,
 not as model arithmetic.
 
-For market-dependent holdings, record only a sourced observation with
-`market_nav_snapshot_record`; include the exact NAV date, observation timestamp, source type,
-source name, verification status, and source reference when available. A NAV observation changes
-neither holdings nor cost basis. Use `portfolio_valuation_get` for market value, unrealized P&L,
-return, and market-value weights; never derive those values in prose. If Core returns
-`SOURCE_ERROR`, do not repeat partial position amounts as a portfolio conclusion. Call a snapshot
-"real-time" only when Core supplies current, non-stale NAV evidence for every committed holding.
+For a current market-dependent request, use the available market-data synchronization capability
+for the saved investment context before valuation. The sync performs its own provider canary and
+records only sourced observations; it changes neither holdings nor cost basis. Do not ask the user
+to choose an internal provider or supply fund codes already present in committed holdings.
+
+Use `market_nav_snapshot_record` only when the user is deliberately supplying an external sourced
+observation that automatic synchronization cannot obtain; include its exact NAV date, observation
+timestamp, source type, source name, verification status, and source reference when available. Use
+`portfolio_valuation_get` for market value, unrealized P&L, return, and market-value weights; never derive those values in prose. If Core returns `SOURCE_ERROR`, do not repeat partial position amounts
+as a portfolio conclusion. Call a snapshot "real-time" only when Core supplies current, non-stale
+NAV evidence for every committed holding.
 
 ## Enforce safety
 

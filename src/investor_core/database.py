@@ -23,13 +23,15 @@ REQUIRED_TABLES = {
     "instruments",
     "job_runs",
     "market_nav_snapshots",
+    "market_data_source_health",
+    "market_sync_runs",
     "portfolios",
     "schema_meta",
     "settings",
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0004_market_nav"
+EXPECTED_ALEMBIC_REVISION = "0005_market_data_sync"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -105,7 +107,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Market NAV schema is current"
+            schema_message = "Market data sync schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",
