@@ -108,12 +108,16 @@ stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止
 逐标的结果和运行状态。当前该来源仍按单一聚合源处理为 `WARNING`，不会自动升级为
 `VERIFIED`；任一标的失败时同步批次降级为 `SOURCE_ERROR`，且不会为失败标的填充数值。
 同步工具默认解析已保存的投资上下文和当前持仓，用户无需提供 UUID 或重复输入基金代码。
+若当前 Hermes 会话还连接了 Wind 等专业数据能力或官方来源，Agent 会把其工具返回的同日
+净值及证据引用交给 Core 复核。完全一致时记录不可变的 `MATCH` 关系并把该标的估值质量提升
+为 `PASS`；不同值记录为 `CONFLICT`，组合质量立即降为 `SOURCE_ERROR`，金额汇总保持为空。
+仓库不复制或捆绑任何专业数据供应商的专有实现、凭证或数据。
 
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
 uv run investor setup init --portfolio-name "个人投资组合" --account-name "默认账户" --platform "支付宝"
-uv run investor instrument add 003096 --name "示例基金" --asset-type FUND --role CORE
+uv run investor instrument add FUND001 --name "示例基金" --asset-type FUND --role CORE
 ```
 
 之后可通过 Hermes 使用 `transaction_draft_create` 生成真实外部成交的限时记录草稿。只有用户明确提供

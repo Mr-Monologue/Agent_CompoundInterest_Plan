@@ -368,6 +368,46 @@ async def market_data_sync(
 
 
 @mcp.tool()
+async def market_nav_verification_record(
+    instrument_code: str,
+    nav_date: str,
+    nav: str,
+    source_type: Literal["OFFICIAL", "PLATFORM"],
+    source_name: str,
+    source_ref: str,
+    observed_at: str,
+    currency: str = "CNY",
+) -> dict[str, Any]:
+    """Corroborate a synced NAV with independent tool-sourced evidence."""
+    return await core_request(
+        "POST",
+        "/v1/market-data/verifications",
+        payload={
+            "instrument_code": instrument_code,
+            "nav_date": nav_date,
+            "nav": nav,
+            "currency": currency,
+            "source_type": source_type,
+            "source_name": source_name,
+            "source_ref": source_ref,
+            "observed_at": observed_at,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def market_nav_verification_list(
+    instrument_code: str = "", limit: int = 100
+) -> dict[str, Any]:
+    """List immutable cross-source NAV matches and conflicts."""
+    params: dict[str, Any] = {"limit": limit}
+    if instrument_code:
+        params["instrument_code"] = instrument_code
+    return await core_request("GET", "/v1/market-data/verifications", params=params)
+
+
+@mcp.tool()
 async def portfolio_valuation_get(
     as_of_date: str = "", portfolio_id: str = "", account_id: str = ""
 ) -> dict[str, Any]:

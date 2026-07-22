@@ -20,11 +20,17 @@ Release target: 0.7.0
 - Provider health and sync-run audit records, including per-instrument raw summary hashes.
 - Bounded parallel fetch, provider timeout handling and partial-run `SOURCE_ERROR` propagation.
 - Real canary and six-current-holding contract checks against AKShare 1.18.72.
+- Immutable cross-source verification links between a primary aggregator observation and an
+  independently sourced `OFFICIAL` or `PLATFORM` observation.
+- Exact same-date/same-value matching that upgrades valuation quality to `PASS` without mutating
+  either source snapshot.
+- Conflict evidence that remains stored and forces `SOURCE_ERROR` with no portfolio amount totals.
+- Provider-neutral MCP verification bridge for connected Wind/professional or official tools.
 
 ## Deliberately not implemented yet
 
-- Second-source or official fund-company cross-validation.
-- Automatic promotion of user-entered or aggregator data to `VERIFIED`.
+- Bundled credentials or proprietary implementation for a second-source data vendor.
+- Automatic promotion of user-entered data or same-upstream endpoints to independently verified.
 - Unattended daily market sync and official NAV backfill Cron.
 - Index PE/PB percentile calculations or fund-to-index proxy mappings.
 - DCA amount recommendations, weekly plans, risk rules or sell proposals.
@@ -32,9 +38,12 @@ Release target: 0.7.0
 
 ## Next target-host gate
 
-1. Upgrade a backed-up 0.6.0 database to revision `0005_market_data_sync`.
+1. Upgrade a backed-up 0.6.0 database to revision `0006_market_nav_verification`.
 2. Confirm six committed holdings remain unchanged after migration.
 3. Ask Hermes for the current investment situation without naming internal tools.
 4. Verify Hermes autonomously runs market sync and valuation for all six holdings.
-5. Confirm all snapshots remain `WARNING` until an independent source corroborates them.
-6. Verify one provider failure produces `SOURCE_ERROR` with no aggregate amount conclusion.
+5. Confirm primary-only snapshots remain `WARNING` when no independent tool is available.
+6. With a connected professional or official data tool, confirm exact matches become `PASS` and
+   all evidence appears in `market_nav_verification_list`.
+7. Inject one isolated mismatch and verify it produces `SOURCE_ERROR` with no aggregate amount
+   conclusion.
