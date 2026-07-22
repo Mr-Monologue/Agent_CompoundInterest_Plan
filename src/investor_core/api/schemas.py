@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Self
 
@@ -86,3 +86,16 @@ class TransactionReversalDraftCreateRequest(RequestModel):
 class TransactionDraftCommitRequest(RequestModel):
     confirmation_token: str = Field(min_length=1, max_length=200)
     confirmed_by: str = Field(min_length=1, max_length=120)
+
+
+class MarketNavSnapshotCreateRequest(RequestModel):
+    instrument_code: str = Field(min_length=1, max_length=40)
+    nav_date: date
+    nav: Decimal = Field(gt=0)
+    currency: str = Field(default="CNY", min_length=3, max_length=3)
+    source_type: Literal["OFFICIAL", "PLATFORM", "AGGREGATOR", "USER"]
+    source_name: str = Field(min_length=1, max_length=200)
+    source_ref: str | None = Field(default=None, max_length=1000)
+    verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED"
+    observed_at: datetime
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)

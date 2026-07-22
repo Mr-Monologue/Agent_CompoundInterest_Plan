@@ -246,6 +246,67 @@ async def instrument_list() -> dict[str, Any]:
 
 
 @mcp.tool()
+async def market_nav_snapshot_record(
+    instrument_code: str,
+    nav_date: str,
+    nav: str,
+    source_type: Literal["OFFICIAL", "PLATFORM", "AGGREGATOR", "USER"],
+    source_name: str,
+    observed_at: str,
+    verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED",
+    source_ref: str = "",
+    currency: str = "CNY",
+) -> dict[str, Any]:
+    """Record an immutable sourced NAV observation; this never changes holdings."""
+    return await core_request(
+        "POST",
+        "/v1/market-nav-snapshots",
+        payload={
+            "instrument_code": instrument_code,
+            "nav_date": nav_date,
+            "nav": nav,
+            "currency": currency,
+            "source_type": source_type,
+            "source_name": source_name,
+            "source_ref": source_ref or None,
+            "verification_status": verification_status,
+            "observed_at": observed_at,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def market_nav_snapshot_list(
+    instrument_code: str = "", limit: int = 100
+) -> dict[str, Any]:
+    """List sourced NAV observations without estimating missing market data."""
+    params: dict[str, Any] = {"limit": limit}
+    if instrument_code:
+        params["instrument_code"] = instrument_code
+    return await core_request("GET", "/v1/market-nav-snapshots", params=params)
+
+
+@mcp.tool()
+async def portfolio_valuation_get(
+    as_of_date: str = "", portfolio_id: str = "", account_id: str = ""
+) -> dict[str, Any]:
+    """Value committed holdings from stored NAV observations in the default context."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "account_id": resolved_account_id,
+    }
+    if as_of_date:
+        params["as_of_date"] = as_of_date
+    return await core_request("GET", "/v1/portfolio-valuation", params=params)
+
+
+@mcp.tool()
 async def holding_list(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
     """List latest deterministic holdings reconstructed from committed records."""
     resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
