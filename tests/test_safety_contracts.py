@@ -68,10 +68,26 @@ def test_skill_requires_core_market_calculations_and_source_evidence() -> None:
     policy = policy_path.read_text(encoding="utf-8")
 
     assert "market_nav_snapshot_record" in skill
+    assert "market-data synchronization capability" in skill
     assert "portfolio_valuation_get" in skill
     assert "never derive those values in prose" in skill
+    assert "market_nav_verification_record" in skill
+    assert "never copy a primary-provider value into the verification call" in skill
+    assert "same upstream publisher" in skill
     assert "missing or stale NAV" in policy
+    assert "same-date, same-value `MATCH`" in policy
     assert "must then remain absent" in policy
+
+
+def test_skill_does_not_invent_allocation_or_sell_triggers() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
+    policy_path = PROJECT_ROOT / "skills/value-dca-investor/references/data-quality-policy.md"
+    policy = policy_path.read_text(encoding="utf-8")
+
+    assert "Never describe an allocation as too high, too low" in skill
+    assert "require the exact Core rule result and reason code" in skill
+    assert "Never claim a scheduled report will run or fail" in skill
+    assert "observations, not allocation or\nsell rules" in policy
 
 
 def test_cron_examples_are_disabled() -> None:

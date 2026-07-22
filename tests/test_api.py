@@ -119,18 +119,14 @@ def test_investment_context_api_auto_selects_and_persists_single_account(
 ) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
-    client = TestClient(
-        create_app(Settings(environment=Environment.TEST, db_path=database_path))
-    )
-    portfolio = client.post("/v1/portfolios", json={"name": "个人投资组合"}).json()[
-        "data"
-    ]
+    client = TestClient(create_app(Settings(environment=Environment.TEST, db_path=database_path)))
+    portfolio = client.post("/v1/portfolios", json={"name": "个人投资组合"}).json()["data"]
     account = client.post(
         "/v1/accounts",
         json={
             "portfolio_id": portfolio["id"],
-            "name": "支付宝基金账户",
-            "platform": "支付宝",
+            "name": "测试账户",
+            "platform": "测试平台",
         },
     ).json()["data"]
 
@@ -150,15 +146,13 @@ def test_opening_position_api_uses_a_dedicated_confirmed_import_path(tmp_path: P
     settings = Settings(environment=Environment.TEST, db_path=database_path)
     client = TestClient(create_app(settings))
 
-    portfolio = client.post("/v1/portfolios", json={"name": "个人投资组合"}).json()[
-        "data"
-    ]
+    portfolio = client.post("/v1/portfolios", json={"name": "个人投资组合"}).json()["data"]
     account = client.post(
         "/v1/accounts",
         json={
             "portfolio_id": portfolio["id"],
-            "name": "支付宝基金账户",
-            "platform": "支付宝",
+            "name": "测试账户",
+            "platform": "测试平台",
         },
     ).json()["data"]
     client.post(
@@ -178,18 +172,18 @@ def test_opening_position_api_uses_a_dedicated_confirmed_import_path(tmp_path: P
             "account_id": account["id"],
             "instrument_code": "022463",
             "as_of_date": "2026-07-20",
-            "total_shares": "123.910000",
-            "average_cost_nav": "1.9904",
-            "platform": "支付宝",
+            "total_shares": "100.000000",
+            "average_cost_nav": "1.2500",
+            "platform": "测试平台",
             "idempotency_key": "api-opening-001",
-            "note": "支付宝持仓页",
+            "note": "测试平台持仓页",
         },
     )
     assert draft_response.status_code == 200
     draft_result = draft_response.json()["data"]
     assert draft_result["draft"]["action"] == "OPENING"
-    assert draft_result["draft"]["cost_amount"] == "246.63"
-    assert draft_result["draft"]["average_cost_nav"] == "1.990400"
+    assert draft_result["draft"]["cost_amount"] == "125.00"
+    assert draft_result["draft"]["average_cost_nav"] == "1.250000"
     assert draft_result["cost_basis_input"] == "AVERAGE_COST_NAV"
     assert client.get("/v1/holdings").json()["data"]["items"] == []
 
@@ -213,31 +207,29 @@ def test_opening_position_api_uses_a_dedicated_confirmed_import_path(tmp_path: P
     assert commit_response.status_code == 200
     commit_result = commit_response.json()["data"]
     assert commit_result["transaction"]["kind"] == "OPENING"
-    assert commit_result["holding"]["total_shares"] == "123.910000"
-    assert commit_result["holding"]["cost_amount"] == "246.63"
-    assert commit_result["holding"]["average_cost_nav"] == "1.990400"
+    assert commit_result["holding"]["total_shares"] == "100.000000"
+    assert commit_result["holding"]["cost_amount"] == "125.00"
+    assert commit_result["holding"]["average_cost_nav"] == "1.250000"
 
 
 def test_opening_position_api_requires_exactly_one_cost_basis(tmp_path: Path) -> None:
     client = TestClient(
-        create_app(
-            Settings(environment=Environment.TEST, db_path=tmp_path / "not-used.db")
-        )
+        create_app(Settings(environment=Environment.TEST, db_path=tmp_path / "not-used.db"))
     )
     payload = {
         "portfolio_id": "portfolio-1",
         "account_id": "account-1",
-        "instrument_code": "005827",
+        "instrument_code": "FUND001",
         "as_of_date": "2026-07-17",
-        "total_shares": "123.91",
-        "platform": "支付宝",
+        "total_shares": "100.00",
+        "platform": "测试平台",
         "idempotency_key": "invalid-opening",
     }
 
     missing = client.post("/v1/opening-position-drafts", json=payload)
     both = client.post(
         "/v1/opening-position-drafts",
-        json={**payload, "cost_amount": "246.63", "average_cost_nav": "1.9904"},
+        json={**payload, "cost_amount": "125.00", "average_cost_nav": "1.2500"},
     )
 
     assert missing.status_code == 422

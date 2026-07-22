@@ -22,6 +22,11 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "instrument_list",
         "market_nav_snapshot_record",
         "market_nav_snapshot_list",
+        "market_data_canary_run",
+        "market_data_status_get",
+        "market_data_sync",
+        "market_nav_verification_record",
+        "market_nav_verification_list",
         "portfolio_valuation_get",
         "holding_list",
         "opening_position_draft_create",
@@ -51,20 +56,18 @@ def test_opening_position_tools_use_dedicated_core_paths(monkeypatch) -> None:  
     monkeypatch.setattr(server, "core_request", fake_core_request)
     asyncio.run(
         server.opening_position_draft_create(
-            "022463",
+            "FUND007",
             "2026-07-20",
             "100.000000",
-            "支付宝",
+            "测试平台",
             "opening-message-1",
-            average_cost_nav="1.9904",
-            note="支付宝持仓页",
+            average_cost_nav="1.250000",
+            note="测试持仓页",
             portfolio_id="portfolio-1",
             account_id="account-1",
         )
     )
-    asyncio.run(
-        server.opening_position_draft_commit("draft-1", "token-1", "user-1")
-    )
+    asyncio.run(server.opening_position_draft_commit("draft-1", "token-1", "user-1"))
 
     assert calls == [
         (
@@ -73,14 +76,14 @@ def test_opening_position_tools_use_dedicated_core_paths(monkeypatch) -> None:  
             {
                 "portfolio_id": "portfolio-1",
                 "account_id": "account-1",
-                "instrument_code": "022463",
+                "instrument_code": "FUND007",
                 "as_of_date": "2026-07-20",
                 "total_shares": "100.000000",
                 "cost_amount": None,
-                "average_cost_nav": "1.9904",
-                "platform": "支付宝",
+                "average_cost_nav": "1.250000",
+                "platform": "测试平台",
                 "idempotency_key": "opening-message-1",
-                "note": "支付宝持仓页",
+                "note": "测试持仓页",
                 "actor_ref": "hermes",
             },
         ),
@@ -111,7 +114,7 @@ def test_opening_position_uses_default_context_when_ids_are_omitted(
                 "ok": True,
                 "data": {
                     "portfolio": {"id": "portfolio-default", "name": "个人投资组合"},
-                    "account": {"id": "account-default", "name": "支付宝基金账户"},
+                    "account": {"id": "account-default", "name": "测试账户"},
                 },
             }
         return {"ok": True}
@@ -120,10 +123,10 @@ def test_opening_position_uses_default_context_when_ids_are_omitted(
 
     asyncio.run(
         server.opening_position_draft_create(
-            "000032",
+            "FUND002",
             "2026-07-20",
             "32.79",
-            "支付宝",
+            "测试平台",
             "opening-default-context",
             average_cost_nav="1.1131",
         )
@@ -153,13 +156,9 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
     monkeypatch.setattr(server, "core_request", fake_core_request)
 
     asyncio.run(server.portfolio_create("个人投资组合"))
-    asyncio.run(server.account_create("portfolio-1", "支付宝基金账户", "支付宝"))
-    asyncio.run(server.instrument_create("000510", "中证A500", "INDEX", role="CORE"))
-    asyncio.run(
-        server.instrument_create(
-            "022463", "富国中证A500ETF发起式联接A", "FUND", role="CORE"
-        )
-    )
+    asyncio.run(server.account_create("portfolio-1", "测试账户", "测试平台"))
+    asyncio.run(server.instrument_create("INDEX001", "测试指数", "INDEX", role="CORE"))
+    asyncio.run(server.instrument_create("FUND007", "测试基金G", "FUND", role="CORE"))
 
     assert calls == [
         (
@@ -172,8 +171,8 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
             "/v1/accounts",
             {
                 "portfolio_id": "portfolio-1",
-                "name": "支付宝基金账户",
-                "platform": "支付宝",
+                "name": "测试账户",
+                "platform": "测试平台",
                 "currency": "CNY",
                 "actor_ref": "hermes",
             },
@@ -182,8 +181,8 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
             "POST",
             "/v1/instruments",
             {
-                "code": "000510",
-                "name": "中证A500",
+                "code": "INDEX001",
+                "name": "测试指数",
                 "asset_type": "INDEX",
                 "currency": "CNY",
                 "role": "CORE",
@@ -194,12 +193,117 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
             "POST",
             "/v1/instruments",
             {
-                "code": "022463",
-                "name": "富国中证A500ETF发起式联接A",
+                "code": "FUND007",
+                "name": "测试基金G",
                 "asset_type": "FUND",
                 "currency": "CNY",
                 "role": "CORE",
                 "actor_ref": "hermes",
             },
         ),
+    ]
+
+
+def test_market_data_sync_resolves_context_and_current_holding_codes(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None, dict[str, Any] | None, float]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        timeout_seconds: float = 10.0,
+    ) -> dict[str, Any]:
+        calls.append((method, path, params, payload, timeout_seconds))
+        if path == "/v1/investment-context":
+            return {
+                "ok": True,
+                "data": {
+                    "portfolio": {"id": "portfolio-default", "name": "个人投资组合"},
+                    "account": {"id": "account-default", "name": "测试账户"},
+                },
+            }
+        if path == "/v1/holdings":
+            return {
+                "ok": True,
+                "data": {
+                    "items": [
+                        {"instrument_code": "FUND001"},
+                        {"instrument_code": "FUND002"},
+                        {"instrument_code": "FUND001"},
+                    ]
+                },
+            }
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+
+    result = asyncio.run(server.market_data_sync(as_of_date="2026-07-21"))
+
+    assert result == {"ok": True}
+    assert calls[0][1] == "/v1/investment-context"
+    assert calls[1][1] == "/v1/holdings"
+    assert calls[2] == (
+        "POST",
+        "/v1/market-data/sync",
+        None,
+        {
+            "provider_id": "AKSHARE_OPEN_FUND",
+            "instrument_codes": ["FUND001", "FUND002"],
+            "as_of_date": "2026-07-21",
+            "actor_ref": "hermes",
+        },
+        120.0,
+    )
+
+
+def test_market_nav_verification_records_external_tool_evidence(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        timeout_seconds: float = 10.0,
+    ) -> dict[str, Any]:
+        del params, timeout_seconds
+        calls.append((method, path, payload))
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+
+    result = asyncio.run(
+        server.market_nav_verification_record(
+            instrument_code="FUND001",
+            nav_date="2026-07-21",
+            nav="1.534500",
+            source_type="PLATFORM",
+            source_name="Independent professional platform",
+            source_ref="professional:FUND001:2026-07-21",
+            observed_at="2026-07-21T22:05:00+08:00",
+        )
+    )
+
+    assert result == {"ok": True}
+    assert calls == [
+        (
+            "POST",
+            "/v1/market-data/verifications",
+            {
+                "instrument_code": "FUND001",
+                "nav_date": "2026-07-21",
+                "nav": "1.534500",
+                "currency": "CNY",
+                "source_type": "PLATFORM",
+                "source_name": "Independent professional platform",
+                "source_ref": "professional:FUND001:2026-07-21",
+                "observed_at": "2026-07-21T22:05:00+08:00",
+                "actor_ref": "hermes",
+            },
+        )
     ]

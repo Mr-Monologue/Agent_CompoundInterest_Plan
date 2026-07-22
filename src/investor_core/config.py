@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     transaction_amount_tolerance_bps: int = Field(default=100, ge=0, le=1000)
     transaction_amount_tolerance_minor: int = Field(default=5, ge=0, le=10000)
     market_nav_max_age_days: int = Field(default=7, ge=0, le=31)
+    market_akshare_enabled: bool = True
+    market_provider_canary_code: str = "710001"
+    market_provider_timeout_seconds: float = Field(default=60.0, ge=1.0, le=120.0)
 
     @property
     def database_url(self) -> str:
