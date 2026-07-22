@@ -79,6 +79,17 @@ def test_skill_requires_core_market_calculations_and_source_evidence() -> None:
     assert "must then remain absent" in policy
 
 
+def test_skill_does_not_invent_allocation_or_sell_triggers() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
+    policy_path = PROJECT_ROOT / "skills/value-dca-investor/references/data-quality-policy.md"
+    policy = policy_path.read_text(encoding="utf-8")
+
+    assert "Never describe an allocation as too high, too low" in skill
+    assert "require the exact Core rule result and reason code" in skill
+    assert "Never claim a scheduled report will run or fail" in skill
+    assert "observations, not allocation or\nsell rules" in policy
+
+
 def test_cron_examples_are_disabled() -> None:
     for path in (PROJECT_ROOT / "cron").rglob("*.json"):
         assert '"enabled": false' in path.read_text(encoding="utf-8")
