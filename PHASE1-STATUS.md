@@ -68,7 +68,7 @@ Release: 0.5.3
 - Release 0.2.0 installed successfully and upgraded the Phase 0 database to Phase 1.
 - Release 0.2.2 hidden runtime and Hermes-triggered automatic recovery passed on Windows.
 - Release 0.3.0 real portfolio, account, benchmark and fund onboarding passed through Hermes.
-- Release 0.4.2 passed timezone readiness and one real opening-position commit for fund 005827.
+- Release 0.4.2 passed timezone readiness and one target-host opening-position commit.
 - Release 0.5.0 GitHub bootstrap, Core task and updater task passed on the target Windows host.
 - Target-host feedback confirmed that direct PowerShell task hosting could remain visible; 0.5.1
   replaces it with a console-free launcher.

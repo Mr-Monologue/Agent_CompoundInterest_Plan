@@ -11,7 +11,10 @@ from investor_core.api.schemas import (
     AccountCreateRequest,
     InstrumentCreateRequest,
     InvestmentContextSetRequest,
+    MarketDataCanaryRequest,
+    MarketDataSyncRequest,
     MarketNavSnapshotCreateRequest,
+    MarketNavVerificationCreateRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     TransactionDraftCommitRequest,
@@ -23,6 +26,7 @@ from investor_core.health import build_doctor_report
 from investor_core.ledger import LedgerError, LedgerService
 from investor_core.logging_config import build_uvicorn_log_config
 from investor_core.market_data import MarketDataService
+from investor_core.market_sync import MarketSyncService
 from investor_core.version import __version__
 
 
@@ -44,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     runtime_settings = settings or get_settings()
     ledger = LedgerService(runtime_settings)
     market_data = MarketDataService(runtime_settings)
+    market_sync = MarketSyncService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -172,9 +177,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             idempotency_key=request.idempotency_key,
             cost_amount=(str(request.cost_amount) if request.cost_amount is not None else None),
             average_cost_nav=(
-                str(request.average_cost_nav)
-                if request.average_cost_nav is not None
-                else None
+                str(request.average_cost_nav) if request.average_cost_nav is not None else None
             ),
             note=request.note,
             actor_ref=request.actor_ref,
@@ -270,13 +273,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         instrument_code: str | None = None,
         limit: int = Query(default=100, ge=1, le=500),
     ) -> dict[str, Any]:
-        items = market_data.list_nav_snapshots(
-            instrument_code=instrument_code, limit=limit
-        )
+        items = market_data.list_nav_snapshots(instrument_code=instrument_code, limit=limit)
         quality = "WARNING" if any(i["data_quality"] == "WARNING" for i in items) else "PASS"
-        warnings = list(
-            dict.fromkeys(warning for item in items for warning in item["warnings"])
-        )
+        warnings = list(dict.fromkeys(warning for item in items for warning in item["warnings"]))
         return success({"items": items}, warnings=warnings, data_quality=quality)
 
     @app.get("/v1/portfolio-valuation")
@@ -295,6 +294,73 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             warnings=result["warnings"],
             data_quality=result["data_quality"],
         )
+
+    @app.post("/v1/market-data/canary")
+    def market_data_canary_run(request: MarketDataCanaryRequest) -> dict[str, Any]:
+        result = market_sync.run_canary(
+            provider_id=request.provider_id,
+            instrument_code=request.instrument_code,
+            as_of_date_value=(request.as_of_date.isoformat() if request.as_of_date else None),
+        )
+        quality = "PASS" if result["status"] == "PASS" else "SOURCE_ERROR"
+        warnings = [] if quality == "PASS" else ["Market data provider canary failed"]
+        return success(result, warnings=warnings, data_quality=quality)
+
+    @app.post("/v1/market-data/sync")
+    def market_data_sync(request: MarketDataSyncRequest) -> dict[str, Any]:
+        result = market_sync.sync_navs(
+            provider_id=request.provider_id,
+            instrument_codes=request.instrument_codes,
+            as_of_date_value=(request.as_of_date.isoformat() if request.as_of_date else None),
+            actor_ref=request.actor_ref,
+        )
+        return success(
+            result,
+            warnings=result["warnings"],
+            data_quality=result["data_quality"],
+        )
+
+    @app.get("/v1/market-data/status")
+    def market_data_status_get(
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        return success(market_sync.status(limit=limit))
+
+    @app.post("/v1/market-data/verifications")
+    def market_nav_verification_create(
+        request: MarketNavVerificationCreateRequest,
+    ) -> dict[str, Any]:
+        result = market_data.record_nav_verification(
+            instrument_code=request.instrument_code,
+            nav_date_value=request.nav_date.isoformat(),
+            nav=str(request.nav),
+            currency=request.currency,
+            source_type=request.source_type,
+            source_name=request.source_name,
+            source_ref=request.source_ref,
+            observed_at_value=request.observed_at.isoformat(),
+            actor_ref=request.actor_ref,
+        )
+        warnings = result.pop("warnings")
+        quality = result.pop("data_quality")
+        return success(result, warnings=warnings, data_quality=quality)
+
+    @app.get("/v1/market-data/verifications")
+    def market_nav_verification_list(
+        instrument_code: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        items = market_data.list_nav_verifications(
+            instrument_code=instrument_code,
+            limit=limit,
+        )
+        quality = "SOURCE_ERROR" if any(item["status"] == "CONFLICT" for item in items) else "PASS"
+        warnings = (
+            ["One or more independent NAV observations conflict with the primary source"]
+            if quality == "SOURCE_ERROR"
+            else []
+        )
+        return success({"items": items}, warnings=warnings, data_quality=quality)
 
     return app
 
