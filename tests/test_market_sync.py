@@ -11,7 +11,7 @@ from conftest import migrate_database
 from investor_core.config import Environment, Settings
 from investor_core.ledger import LedgerService
 from investor_core.market_data import MarketDataService
-from investor_core.market_providers import CanaryResult, NavObservation
+from investor_core.market_providers import AkshareOpenFundProvider, CanaryResult, NavObservation
 from investor_core.market_sync import MarketSyncService
 
 
@@ -107,6 +107,7 @@ def test_sync_records_single_source_navs_as_warning_and_is_idempotent(
     assert first["status"] == "PASS"
     assert first["data_quality"] == "WARNING"
     assert first["succeeded_count"] == 2
+    assert all("timings_ms" in item for item in first["items"])
     assert all(item["created"] is True for item in first["items"])
     assert all(item["created"] is False for item in second["items"])
     assert len(service.status()["runs"]) == 2
@@ -196,3 +197,19 @@ def test_sync_status_shape_is_json_serializable(tmp_path: Path) -> None:
 
     status: dict[str, Any] = service.status()
     assert status["runs"][0]["details"]["single_source"] is True
+
+
+def test_production_provider_receives_configured_timeout(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    settings = Settings(
+        environment=Environment.TEST,
+        db_path=database_path,
+        market_provider_timeout_seconds=73,
+    )
+
+    service = MarketSyncService(settings)
+    provider = service._provider("AKSHARE_OPEN_FUND")
+
+    assert isinstance(provider, AkshareOpenFundProvider)
+    assert provider.timeout_seconds == 73
