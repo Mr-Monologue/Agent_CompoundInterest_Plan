@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import importlib.metadata
 import json
+import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
+from zoneinfo import ZoneInfo
+
+import httpx
 
 from investor_core.ledger import LedgerError
 
 AKSHARE_PROVIDER_ID = "AKSHARE_OPEN_FUND"
-AKSHARE_CONTRACT_VERSION = "fund_open_fund_info_em.unit-nav.v1"
+AKSHARE_CONTRACT_VERSION = "eastmoney.pingzhongdata.unit-nav.v2"
+MAX_PROVIDER_RESPONSE_BYTES = 5 * 1024 * 1024
+_NAV_TREND_PATTERN = re.compile(
+    r"(?:var\s+)?Data_netWorthTrend\s*=\s*(\[.*?\])\s*;",
+    re.DOTALL,
+)
+_OBJECT_PATTERN = re.compile(r"\{([^{}]*)\}")
+_TIMESTAMP_PATTERN = re.compile(r"""(?:^|,)\s*["']?x["']?\s*:\s*(\d+)""")
+_NAV_PATTERN = re.compile(r"""(?:^|,)\s*["']?y["']?\s*:\s*(-?\d+(?:\.\d+)?)""")
 
 
 @dataclass(frozen=True)
@@ -29,6 +41,7 @@ class NavObservation:
     raw_hash: str
     library_version: str
     contract_version: str
+    timings_ms: dict[str, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -61,27 +74,35 @@ def _canonical_hash(payload: dict[str, Any]) -> str:
 
 
 class AkshareOpenFundProvider:
-    """AKShare adapter for open-fund confirmed unit NAV history.
+    """AKShare-compatible adapter for Eastmoney confirmed open-fund NAV history.
 
-    The adapter deliberately imports AKShare lazily so Core health and the local
-    ledger remain usable when the optional external dependency or network fails.
+    AKShare's public function evaluates the provider's entire JavaScript payload.
+    That path can exceed the Windows service budget and its underlying request has
+    no timeout. This adapter preserves the provider identity and pinned contract,
+    but downloads the same public payload with a real timeout and parses only the
+    flat NAV series without executing remote JavaScript.
     """
 
     provider_id = AKSHARE_PROVIDER_ID
-    source_name = "AKShare / Eastmoney open-fund NAV"
+    source_name = "Eastmoney open-fund NAV (AKShare-compatible)"
     source_type = "AGGREGATOR"
     contract_version = AKSHARE_CONTRACT_VERSION
-    required_columns = frozenset({"净值日期", "单位净值"})
+    _headers: ClassVar[dict[str, str]] = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+        ),
+        "Referer": "https://fund.eastmoney.com/",
+    }
 
-    def _module(self) -> Any:
-        try:
-            return importlib.import_module("akshare")
-        except ImportError as exc:
-            raise LedgerError(
-                "PROVIDER_UNAVAILABLE",
-                "AKShare is not installed in the locked runtime",
-                http_status=503,
-            ) from exc
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float = 60.0,
+        transport: httpx.BaseTransport | None = None,
+    ) -> None:
+        self.timeout_seconds = timeout_seconds
+        self._transport = transport
 
     @staticmethod
     def _library_version() -> str:
@@ -90,39 +111,43 @@ class AkshareOpenFundProvider:
         except importlib.metadata.PackageNotFoundError:
             return "unknown"
 
-    def _fetch_frame(self, instrument_code: str) -> Any:
-        module = self._module()
-        fetch = getattr(module, "fund_open_fund_info_em", None)
-        if not callable(fetch):
-            raise LedgerError(
-                "PROVIDER_CONTRACT_MISMATCH",
-                "AKShare fund_open_fund_info_em is unavailable",
-                http_status=503,
-            )
+    def _download_payload(self, instrument_code: str) -> tuple[str, int]:
+        url = f"https://fund.eastmoney.com/pingzhongdata/{instrument_code}.js"
+        started = time.perf_counter()
         try:
-            return fetch(symbol=instrument_code, indicator="单位净值走势")
-        except Exception as exc:
+            with httpx.Client(
+                timeout=httpx.Timeout(self.timeout_seconds),
+                follow_redirects=False,
+                headers=self._headers,
+                transport=self._transport,
+                trust_env=self._transport is None,
+            ) as client:
+                response = client.get(url)
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise LedgerError(
+                "PROVIDER_TIMEOUT",
+                "Eastmoney open-fund NAV request timed out",
+                details={"instrument_code": instrument_code},
+                http_status=503,
+            ) from exc
+        except httpx.HTTPError as exc:
             raise LedgerError(
                 "PROVIDER_FETCH_FAILED",
-                "AKShare open-fund NAV request failed",
+                "Eastmoney open-fund NAV request failed",
                 details={"instrument_code": instrument_code, "error_type": type(exc).__name__},
                 http_status=503,
             ) from exc
 
-    @staticmethod
-    def _parse_date(value: Any) -> date:
-        if isinstance(value, datetime):
-            return value.date()
-        if isinstance(value, date):
-            return value
-        try:
-            return date.fromisoformat(str(value)[:10])
-        except ValueError as exc:
+        payload = response.content
+        if len(payload) > MAX_PROVIDER_RESPONSE_BYTES:
             raise LedgerError(
-                "PROVIDER_CONTRACT_MISMATCH",
-                "AKShare returned an invalid NAV date",
+                "PROVIDER_RESPONSE_TOO_LARGE",
+                "Eastmoney open-fund NAV response exceeded the safety limit",
+                details={"instrument_code": instrument_code, "response_bytes": len(payload)},
                 http_status=503,
-            ) from exc
+            )
+        return response.text, round((time.perf_counter() - started) * 1000)
 
     @staticmethod
     def _parse_nav(value: Any) -> Decimal:
@@ -131,34 +156,25 @@ class AkshareOpenFundProvider:
         except InvalidOperation as exc:
             raise LedgerError(
                 "PROVIDER_CONTRACT_MISMATCH",
-                "AKShare returned an invalid unit NAV",
+                "Eastmoney returned an invalid unit NAV",
                 http_status=503,
             ) from exc
         if not nav.is_finite() or nav <= 0:
             raise LedgerError(
                 "PROVIDER_CONTRACT_MISMATCH",
-                "AKShare returned a non-positive unit NAV",
+                "Eastmoney returned a non-positive unit NAV",
                 http_status=503,
             )
         return nav
 
     def fetch_nav(self, instrument_code: str, as_of: date) -> NavObservation:
         normalized_code = instrument_code.strip().upper()
-        frame = self._fetch_frame(normalized_code)
-        columns = {str(column) for column in getattr(frame, "columns", [])}
-        if not self.required_columns.issubset(columns):
-            raise LedgerError(
-                "PROVIDER_CONTRACT_MISMATCH",
-                "AKShare open-fund NAV columns changed",
-                details={"expected": sorted(self.required_columns), "actual": sorted(columns)},
-                http_status=503,
-            )
-
-        eligible: list[tuple[date, Decimal]] = []
-        for _, row in frame.iterrows():
-            nav_date = self._parse_date(row["净值日期"])
-            if nav_date <= as_of:
-                eligible.append((nav_date, self._parse_nav(row["单位净值"])))
+        payload, download_ms = self._download_payload(normalized_code)
+        parse_started = time.perf_counter()
+        eligible = [
+            item for item in self._parse_payload(payload, normalized_code) if item[0] <= as_of
+        ]
+        parse_ms = round((time.perf_counter() - parse_started) * 1000)
         if not eligible:
             raise LedgerError(
                 "MARKET_DATA_NOT_FOUND",
@@ -182,11 +198,46 @@ class AkshareOpenFundProvider:
             observed_at=observed_at,
             source_type=self.source_type,
             source_name=self.source_name,
-            source_ref=(f"akshare://fund_open_fund_info_em/{normalized_code}?indicator=unit-nav"),
+            source_ref=(f"https://fund.eastmoney.com/pingzhongdata/{normalized_code}.js"),
             raw_hash=_canonical_hash(raw_payload),
             library_version=self._library_version(),
             contract_version=self.contract_version,
+            timings_ms={"download": download_ms, "parse": parse_ms},
         )
+
+    @staticmethod
+    def _parse_payload(payload: str, instrument_code: str) -> list[tuple[date, Decimal]]:
+        trend = _NAV_TREND_PATTERN.search(payload)
+        if trend is None:
+            raise LedgerError(
+                "PROVIDER_CONTRACT_MISMATCH",
+                "Eastmoney open-fund NAV series is unavailable",
+                details={"instrument_code": instrument_code},
+                http_status=503,
+            )
+
+        observations: list[tuple[date, Decimal]] = []
+        timezone = ZoneInfo("Asia/Shanghai")
+        for item in _OBJECT_PATTERN.finditer(trend.group(1)):
+            fields = item.group(1)
+            timestamp_match = _TIMESTAMP_PATTERN.search(fields)
+            nav_match = _NAV_PATTERN.search(fields)
+            if timestamp_match is None or nav_match is None:
+                continue
+            timestamp_ms = int(timestamp_match.group(1))
+            nav_date = (
+                datetime.fromtimestamp(timestamp_ms / 1000, tz=UTC).astimezone(timezone).date()
+            )
+            nav = AkshareOpenFundProvider._parse_nav(nav_match.group(1))
+            observations.append((nav_date, nav))
+        if not observations:
+            raise LedgerError(
+                "PROVIDER_CONTRACT_MISMATCH",
+                "Eastmoney open-fund NAV series contained no parseable observations",
+                details={"instrument_code": instrument_code},
+                http_status=503,
+            )
+        return observations
 
     def canary(self, instrument_code: str, as_of: date) -> CanaryResult:
         checked_at = datetime.now(UTC)
@@ -216,14 +267,15 @@ class AkshareOpenFundProvider:
                 "instrument_code": observation.instrument_code,
                 "latest_nav_date": observation.nav_date.isoformat(),
                 "raw_hash": observation.raw_hash,
+                "timings_ms": observation.timings_ms,
             },
         )
 
 
-def build_provider(provider_id: str) -> MarketDataProvider:
+def build_provider(provider_id: str, *, timeout_seconds: float = 60.0) -> MarketDataProvider:
     normalized = provider_id.strip().upper()
     if normalized == AKSHARE_PROVIDER_ID:
-        return AkshareOpenFundProvider()
+        return AkshareOpenFundProvider(timeout_seconds=timeout_seconds)
     raise LedgerError(
         "PROVIDER_NOT_FOUND",
         "market data provider is not registered",
