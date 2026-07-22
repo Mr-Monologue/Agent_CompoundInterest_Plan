@@ -22,13 +22,14 @@ REQUIRED_TABLES = {
     "holding_snapshots",
     "instruments",
     "job_runs",
+    "market_nav_snapshots",
     "portfolios",
     "schema_meta",
     "settings",
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0003_opening_position"
+EXPECTED_ALEMBIC_REVISION = "0004_market_nav"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -104,7 +105,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Opening-position schema is current"
+            schema_message = "Market NAV schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",

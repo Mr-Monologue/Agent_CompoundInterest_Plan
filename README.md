@@ -1,8 +1,8 @@
 # Value DCA Agent
 
-个人价值定投 Agent 系统的 V1 工程实现。当前仓库处于 Phase 1：在 Phase 0
-运行基线上提供组合、账户、标的、交易草稿、显式确认、幂等提交、冲正、持仓
-重建、审计记录和受控 MCP 工具。
+个人价值定投 Agent 系统的 V1 工程实现。当前仓库处于 Phase 2：在受控账本基础上
+增加可审计净值快照、数据质量分级和确定性持仓估值，同时保留交易草稿、显式确认、
+幂等提交、冲正、持仓重建和受控 MCP 工具。
 
 系统只做研究、计划、记录和复盘，不连接交易接口，也不自动确认金融操作。
 
@@ -98,6 +98,11 @@ UUID；只有出现多个候选时才按名称和平台选择一次。
 stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止错误。升级任务自身正在
 运行时，新的无控制台任务定义由独立 finalizer 在当前任务退出后安装，避免自更新冲突。
 
+0.6.0 起，Core 支持不可变的基金净值快照。每条记录保留净值日期、采集时间、来源类型、
+来源名称、验证状态、来源引用和内容哈希。`portfolio_valuation_get` 只用已提交份额和已存储
+净值确定性计算市值、持有盈亏、收益率及市值权重；任一非零持仓缺少净值或净值超过允许
+新鲜度时，组合质量为 `SOURCE_ERROR`，总市值和组合金额结论保持为空。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
@@ -110,7 +115,7 @@ uv run investor instrument add 003096 --name "示例基金" --asset-type FUND --
 
 ## 当前边界
 
-- `/health` 只验证进程存活；`/ready` 同时验证 SQLite、WAL 和 Phase 1 迁移版本。
+- `/health` 只验证进程存活；`/ready` 同时验证 SQLite、WAL 和 Phase 2 迁移版本。
 - `investor db migrate` 与 `alembic upgrade head` 使用同一迁移链。
 - MCP 按只读、草稿写入和确认写入分级；`OPENING` 是旧持仓基线，`TRADE` 才代表用户在
   外部平台完成的真实交易。
@@ -121,6 +126,6 @@ uv run investor instrument add 003096 --name "示例基金" --asset-type FUND --
 
 ## 后续开发顺序
 
-1. Phase 2：数据适配器 canary、同步、质量分级和官方净值回填。
-2. Phase 3：估值、风险和周计划。
+1. Phase 2 后续：官方/聚合数据适配器 canary、自动同步和来源交叉验证。
+2. Phase 3：风险、指数估值和周计划。
 3. Phase 4 以后：观察池、重检、卖出建议、组合过渡、绩效和复盘。

@@ -38,14 +38,15 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "holding_snapshots",
         "instruments",
         "job_runs",
+        "market_nav_snapshots",
         "portfolios",
         "schema_meta",
         "settings",
         "transaction_drafts",
         "transactions",
     }
-    assert phase == ("1",)
-    assert revision == ("0003_opening_position",)
+    assert phase == ("2",)
+    assert revision == ("0004_market_nav",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -100,3 +101,46 @@ def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Pa
         idempotency_key="new-opening",
     )
     assert opening["draft"]["action"] == "OPENING"
+
+
+def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0003_opening_position")
+    service = LedgerService(Settings(environment=Environment.TEST, db_path=database_path))
+    portfolio = service.create_portfolio(name="个人投资组合")
+    account = service.create_account(
+        portfolio_id=str(portfolio["id"]),
+        name="支付宝基金账户",
+        platform="支付宝",
+    )
+    service.create_instrument(code="005827", name="易方达蓝筹精选混合")
+    opening = service.create_opening_position_draft(
+        portfolio_id=str(portfolio["id"]),
+        account_id=str(account["id"]),
+        instrument_code="005827",
+        as_of_date_value="2026-07-17",
+        total_shares="123.91",
+        average_cost_nav="1.9904",
+        platform="支付宝",
+        idempotency_key="opening-before-market-migration",
+    )
+    service.commit_opening_position_draft(
+        draft_id=str(opening["draft"]["id"]),
+        confirmation_token=str(opening["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    before = service.list_holdings()
+
+    migrate_database(database_path)
+
+    after = LedgerService(
+        Settings(environment=Environment.TEST, db_path=database_path)
+    ).list_holdings()
+    assert after == before
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (
+            0,
+        )
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0004_market_nav",
+        )
