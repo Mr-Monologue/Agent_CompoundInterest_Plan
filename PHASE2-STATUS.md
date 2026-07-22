@@ -1,7 +1,7 @@
 # Phase 2 market data and valuation status
 
 Date: 2026-07-22
-Release target: 0.7.0
+Release target: 0.7.1
 
 ## Implemented in this increment
 
