@@ -176,20 +176,20 @@ def test_opening_position_derives_total_cost_from_platform_average_cost(
         account_id=str(account["id"]),
         instrument_code="DEMO001",
         as_of_date_value="2026-07-17",
-        total_shares="123.91",
-        average_cost_nav="1.9904",
-        platform="支付宝",
+        total_shares="100.00",
+        average_cost_nav="1.2500",
+        platform="测试平台",
         idempotency_key="average-cost-opening",
-        note="支付宝持仓页",
+        note="测试平台持仓页",
     )
     draft = created["draft"]
     token = created["confirmation_token"]
     assert isinstance(draft, dict)
     assert isinstance(token, str)
     assert created["cost_basis_input"] == "AVERAGE_COST_NAV"
-    assert draft["total_shares"] == "123.910000"
-    assert draft["average_cost_nav"] == "1.990400"
-    assert draft["cost_amount"] == "246.63"
+    assert draft["total_shares"] == "100.000000"
+    assert draft["average_cost_nav"] == "1.250000"
+    assert draft["cost_amount"] == "125.00"
     assert any("rounded to CNY 0.01" in warning for warning in created["warnings"])
 
     committed = service.commit_opening_position_draft(
@@ -199,9 +199,9 @@ def test_opening_position_derives_total_cost_from_platform_average_cost(
     )
     holding = committed["holding"]
     assert isinstance(holding, dict)
-    assert holding["total_shares"] == "123.910000"
-    assert holding["cost_amount"] == "246.63"
-    assert holding["average_cost_nav"] == "1.990400"
+    assert holding["total_shares"] == "100.000000"
+    assert holding["cost_amount"] == "125.00"
+    assert holding["average_cost_nav"] == "1.250000"
 
 
 def test_opening_position_requires_exactly_one_cost_basis(tmp_path: Path) -> None:
@@ -215,8 +215,8 @@ def test_opening_position_requires_exactly_one_cost_basis(tmp_path: Path) -> Non
         "account_id": str(account["id"]),
         "instrument_code": "DEMO001",
         "as_of_date_value": "2026-07-17",
-        "total_shares": "123.91",
-        "platform": "支付宝",
+        "total_shares": "100.00",
+        "platform": "测试平台",
         "idempotency_key": "invalid-cost-basis",
     }
 
@@ -227,8 +227,8 @@ def test_opening_position_requires_exactly_one_cost_basis(tmp_path: Path) -> Non
     with pytest.raises(LedgerError) as duplicate:
         service.create_opening_position_draft(
             **common,
-            cost_amount="246.63",
-            average_cost_nav="1.9904",
+            cost_amount="125.00",
+            average_cost_nav="1.2500",
         )
     assert duplicate.value.code == "OPENING_COST_BASIS_REQUIRED"
 
@@ -534,7 +534,7 @@ def test_index_benchmark_cannot_create_transaction_draft(tmp_path: Path) -> None
             amount="100.00",
             nav="1.250000",
             shares="80.000000",
-            platform="支付宝",
+            platform="测试平台",
             idempotency_key="index-must-not-trade",
         )
 
