@@ -38,11 +38,16 @@ class MarketSyncService:
         settings: Settings,
         *,
         now: Callable[[], datetime] = utc_now,
-        provider_factory: Callable[[str], MarketDataProvider] = build_provider,
+        provider_factory: Callable[[str], MarketDataProvider] | None = None,
     ) -> None:
         self.settings = settings
         self._now = now
-        self._provider_factory = provider_factory
+        self._provider_factory = provider_factory or (
+            lambda provider_id: build_provider(
+                provider_id,
+                timeout_seconds=settings.market_provider_timeout_seconds,
+            )
+        )
         self._market_data = MarketDataService(settings, now=now)
 
     def _connect(self) -> sqlite3.Connection:
@@ -76,7 +81,7 @@ class MarketSyncService:
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(provider.canary, instrument_code, as_of)
         try:
-            return future.result(timeout=self.settings.market_provider_timeout_seconds)
+            return future.result(timeout=self.settings.market_provider_timeout_seconds + 5)
         except FutureTimeoutError:
             future.cancel()
             return CanaryResult(
@@ -228,7 +233,7 @@ class MarketSyncService:
         for code in codes:
             try:
                 observation = futures[code].result(
-                    timeout=self.settings.market_provider_timeout_seconds
+                    timeout=self.settings.market_provider_timeout_seconds + 5
                 )
                 stored = self._market_data.record_nav_snapshot(
                     instrument_code=observation.instrument_code,
@@ -249,6 +254,7 @@ class MarketSyncService:
                         "nav_date": observation.nav_date.isoformat(),
                         "nav": str(observation.nav),
                         "raw_hash": observation.raw_hash,
+                        "timings_ms": observation.timings_ms,
                         "snapshot": stored["snapshot"],
                         "created": stored["created"],
                     }
