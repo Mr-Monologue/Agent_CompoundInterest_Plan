@@ -24,3 +24,7 @@ the only basis for a sell conclusion. Do not calculate PE percentiles for `NOT_A
 
 At model degradation L2 or L3, deliver Core facts and deterministic templates only. State that the
 explanation layer is degraded; never fill the missing narrative with guesses.
+
+Performance, loss, market-value weight, and an instrument role are observations, not allocation or
+sell rules. Without a Core-supplied target, threshold, trigger state, and reason code, describe the
+numbers neutrally and do not label a weight inadequate or a loss as a triggered risk action.
