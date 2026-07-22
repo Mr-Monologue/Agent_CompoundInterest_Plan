@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0004_market_nav",
+  "database_revision": "0005_market_data_sync",
   "minimum_current_version": "0.5.3",
-  "notes": "Auditable NAV snapshots, market-data quality gates and deterministic portfolio valuation."
+  "notes": "Canary-gated AKShare fund NAV synchronization with provider health, run audit and conservative single-source quality."
 }

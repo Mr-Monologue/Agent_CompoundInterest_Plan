@@ -38,11 +38,14 @@ async def core_request(
     *,
     params: dict[str, Any] | None = None,
     payload: dict[str, Any] | None = None,
+    timeout_seconds: float = 10.0,
 ) -> dict[str, Any]:
     settings = get_settings()
     for attempt in range(2):
         try:
-            async with httpx.AsyncClient(base_url=settings.core_base_url, timeout=10.0) as client:
+            async with httpx.AsyncClient(
+                base_url=settings.core_base_url, timeout=timeout_seconds
+            ) as client:
                 response = await client.request(method, path, params=params, json=payload)
                 result = response.json()
                 if isinstance(result, dict):
@@ -94,14 +97,22 @@ async def resolve_investment_context(
     if not resolved_portfolio_id or not resolved_account_id:
         return "", "", context_error("Investor Core returned an incomplete context payload")
     if portfolio_id and portfolio_id != resolved_portfolio_id:
-        return "", "", context_error(
-            "the supplied portfolio differs from the saved default context",
-            details={"saved_portfolio_name": portfolio.get("name")},
+        return (
+            "",
+            "",
+            context_error(
+                "the supplied portfolio differs from the saved default context",
+                details={"saved_portfolio_name": portfolio.get("name")},
+            ),
         )
     if account_id and account_id != resolved_account_id:
-        return "", "", context_error(
-            "the supplied account differs from the saved default context",
-            details={"saved_account_name": account.get("name")},
+        return (
+            "",
+            "",
+            context_error(
+                "the supplied account differs from the saved default context",
+                details={"saved_account_name": account.get("name")},
+            ),
         )
     return resolved_portfolio_id, resolved_account_id, None
 
@@ -277,14 +288,83 @@ async def market_nav_snapshot_record(
 
 
 @mcp.tool()
-async def market_nav_snapshot_list(
-    instrument_code: str = "", limit: int = 100
-) -> dict[str, Any]:
+async def market_nav_snapshot_list(instrument_code: str = "", limit: int = 100) -> dict[str, Any]:
     """List sourced NAV observations without estimating missing market data."""
     params: dict[str, Any] = {"limit": limit}
     if instrument_code:
         params["instrument_code"] = instrument_code
     return await core_request("GET", "/v1/market-nav-snapshots", params=params)
+
+
+@mcp.tool()
+async def market_data_canary_run(
+    provider_id: Literal["AKSHARE_OPEN_FUND"] = "AKSHARE_OPEN_FUND",
+    instrument_code: str = "",
+    as_of_date: str = "",
+) -> dict[str, Any]:
+    """Test the configured market-data adapter contract without recording a NAV."""
+    return await core_request(
+        "POST",
+        "/v1/market-data/canary",
+        payload={
+            "provider_id": provider_id,
+            "instrument_code": instrument_code or None,
+            "as_of_date": as_of_date or None,
+        },
+    )
+
+
+@mcp.tool()
+async def market_data_status_get(limit: int = 20) -> dict[str, Any]:
+    """Read provider canary and synchronization status without fetching new data."""
+    return await core_request("GET", "/v1/market-data/status", params={"limit": limit})
+
+
+@mcp.tool()
+async def market_data_sync(
+    as_of_date: str = "",
+    provider_id: Literal["AKSHARE_OPEN_FUND"] = "AKSHARE_OPEN_FUND",
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Sync sourced NAVs for current committed FUND holdings after a provider canary."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    holdings = await core_request(
+        "GET",
+        "/v1/holdings",
+        params={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+        },
+    )
+    if not holdings.get("ok"):
+        return holdings
+    data = holdings.get("data")
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return context_error("Investor Core returned an invalid holdings payload")
+    instrument_codes = list(
+        dict.fromkeys(
+            str(item.get("instrument_code", ""))
+            for item in items
+            if isinstance(item, dict) and item.get("instrument_code")
+        )
+    )
+    return await core_request(
+        "POST",
+        "/v1/market-data/sync",
+        payload={
+            "provider_id": provider_id,
+            "instrument_codes": instrument_codes,
+            "as_of_date": as_of_date or None,
+            "actor_ref": "hermes",
+        },
+        timeout_seconds=120.0,
+    )
 
 
 @mcp.tool()

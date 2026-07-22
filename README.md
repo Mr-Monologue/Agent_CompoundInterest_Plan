@@ -1,8 +1,8 @@
 # Value DCA Agent
 
 个人价值定投 Agent 系统的 V1 工程实现。当前仓库处于 Phase 2：在受控账本基础上
-增加可审计净值快照、数据质量分级和确定性持仓估值，同时保留交易草稿、显式确认、
-幂等提交、冲正、持仓重建和受控 MCP 工具。
+增加 canary 准入的基金净值同步、可审计净值快照、数据质量分级和确定性持仓估值，
+同时保留交易草稿、显式确认、幂等提交、冲正、持仓重建和受控 MCP 工具。
 
 系统只做研究、计划、记录和复盘，不连接交易接口，也不自动确认金融操作。
 
@@ -103,6 +103,12 @@ stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止
 净值确定性计算市值、持有盈亏、收益率及市值权重；任一非零持仓缺少净值或净值超过允许
 新鲜度时，组合质量为 `SOURCE_ERROR`，总市值和组合金额结论保持为空。
 
+0.7.0 起，Core 增加锁定版本的 AKShare 开放式基金净值适配器。每次同步前必须先通过
+真实函数和字段契约 canary；同步结果保存 provider/library/contract 版本、原始观测摘要哈希、
+逐标的结果和运行状态。当前该来源仍按单一聚合源处理为 `WARNING`，不会自动升级为
+`VERIFIED`；任一标的失败时同步批次降级为 `SOURCE_ERROR`，且不会为失败标的填充数值。
+同步工具默认解析已保存的投资上下文和当前持仓，用户无需提供 UUID 或重复输入基金代码。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
@@ -115,7 +121,7 @@ uv run investor instrument add 003096 --name "示例基金" --asset-type FUND --
 
 ## 当前边界
 
-- `/health` 只验证进程存活；`/ready` 同时验证 SQLite、WAL 和 Phase 2 迁移版本。
+- `/health` 只验证进程存活；`/ready` 同时验证 SQLite、WAL 和 Phase 2 同步迁移版本。
 - `investor db migrate` 与 `alembic upgrade head` 使用同一迁移链。
 - MCP 按只读、草稿写入和确认写入分级；`OPENING` 是旧持仓基线，`TRADE` 才代表用户在
   外部平台完成的真实交易。
@@ -126,6 +132,6 @@ uv run investor instrument add 003096 --name "示例基金" --asset-type FUND --
 
 ## 后续开发顺序
 
-1. Phase 2 后续：官方/聚合数据适配器 canary、自动同步和来源交叉验证。
+1. Phase 2 后续：第二校验源或官方回填、连续交易日 canary 和同步 Cron。
 2. Phase 3：风险、指数估值和周计划。
 3. Phase 4 以后：观察池、重检、卖出建议、组合过渡、绩效和复盘。
