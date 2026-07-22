@@ -25,6 +25,8 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "market_data_canary_run",
         "market_data_status_get",
         "market_data_sync",
+        "market_nav_verification_record",
+        "market_nav_verification_list",
         "portfolio_valuation_get",
         "holding_list",
         "opening_position_draft_create",
@@ -256,3 +258,52 @@ def test_market_data_sync_resolves_context_and_current_holding_codes(
         },
         120.0,
     )
+
+
+def test_market_nav_verification_records_external_tool_evidence(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        timeout_seconds: float = 10.0,
+    ) -> dict[str, Any]:
+        del params, timeout_seconds
+        calls.append((method, path, payload))
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+
+    result = asyncio.run(
+        server.market_nav_verification_record(
+            instrument_code="FUND001",
+            nav_date="2026-07-21",
+            nav="1.534500",
+            source_type="PLATFORM",
+            source_name="Independent professional platform",
+            source_ref="professional:FUND001:2026-07-21",
+            observed_at="2026-07-21T22:05:00+08:00",
+        )
+    )
+
+    assert result == {"ok": True}
+    assert calls == [
+        (
+            "POST",
+            "/v1/market-data/verifications",
+            {
+                "instrument_code": "FUND001",
+                "nav_date": "2026-07-21",
+                "nav": "1.534500",
+                "currency": "CNY",
+                "source_type": "PLATFORM",
+                "source_name": "Independent professional platform",
+                "source_ref": "professional:FUND001:2026-07-21",
+                "observed_at": "2026-07-21T22:05:00+08:00",
+                "actor_ref": "hermes",
+            },
+        )
+    ]

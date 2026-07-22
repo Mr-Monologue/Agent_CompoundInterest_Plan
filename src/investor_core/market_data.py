@@ -303,6 +303,240 @@ class MarketDataService:
         with self._connect() as connection:
             return [self._snapshot_data(row) for row in connection.execute(query, parameters)]
 
+    @staticmethod
+    def _verification_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": row["id"],
+            "status": row["status"],
+            "nav_delta": _nav(int(row["nav_delta_micros"])),
+            "verified_at": row["verified_at"],
+            "actor_ref": row["actor_ref"],
+            "record_hash": row["record_hash"],
+            "primary_snapshot": {
+                "id": row["primary_snapshot_id"],
+                "instrument_code": row["instrument_code"],
+                "instrument_name": row["instrument_name"],
+                "nav_date": row["primary_nav_date"],
+                "nav": _nav(int(row["primary_nav_micros"])),
+                "source_type": row["primary_source_type"],
+                "source_name": row["primary_source_name"],
+                "source_ref": row["primary_source_ref"],
+            },
+            "evidence_snapshot": {
+                "id": row["evidence_snapshot_id"],
+                "instrument_code": row["instrument_code"],
+                "instrument_name": row["instrument_name"],
+                "nav_date": row["evidence_nav_date"],
+                "nav": _nav(int(row["evidence_nav_micros"])),
+                "source_type": row["evidence_source_type"],
+                "source_name": row["evidence_source_name"],
+                "source_ref": row["evidence_source_ref"],
+            },
+        }
+
+    @staticmethod
+    def _verification_query() -> str:
+        return """
+            SELECT
+                v.*,
+                i.code AS instrument_code,
+                i.name AS instrument_name,
+                p.nav_date AS primary_nav_date,
+                p.nav_micros AS primary_nav_micros,
+                p.source_type AS primary_source_type,
+                p.source_name AS primary_source_name,
+                p.source_ref AS primary_source_ref,
+                e.nav_date AS evidence_nav_date,
+                e.nav_micros AS evidence_nav_micros,
+                e.source_type AS evidence_source_type,
+                e.source_name AS evidence_source_name,
+                e.source_ref AS evidence_source_ref
+            FROM market_nav_verifications v
+            JOIN market_nav_snapshots p ON p.id = v.primary_snapshot_id
+            JOIN market_nav_snapshots e ON e.id = v.evidence_snapshot_id
+            JOIN instruments i ON i.id = p.instrument_id
+        """
+
+    def record_nav_verification(
+        self,
+        *,
+        instrument_code: str,
+        nav_date_value: str,
+        nav: str,
+        source_type: str,
+        source_name: str,
+        source_ref: str,
+        observed_at_value: str,
+        currency: str = "CNY",
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Compare independent evidence with a stored aggregator observation."""
+        normalized_code = instrument_code.strip().upper()
+        normalized_source_type = source_type.strip().upper()
+        normalized_source_name = source_name.strip()
+        normalized_source_ref = source_ref.strip()
+        if normalized_source_type not in {"OFFICIAL", "PLATFORM"}:
+            raise LedgerError(
+                "INVALID_VERIFICATION_SOURCE",
+                "independent verification requires an OFFICIAL or PLATFORM source",
+            )
+        if not normalized_source_ref:
+            raise LedgerError(
+                "VERIFICATION_EVIDENCE_REQUIRED",
+                "source_ref is required for independent market data verification",
+            )
+        try:
+            nav_date = date.fromisoformat(nav_date_value)
+        except ValueError as exc:
+            raise LedgerError("INVALID_DATE", "nav_date must be an ISO date") from exc
+
+        with self._connect() as connection:
+            primary = connection.execute(
+                """
+                SELECT m.*, i.code AS instrument_code, i.name AS instrument_name
+                FROM market_nav_snapshots m
+                JOIN instruments i ON i.id = m.instrument_id
+                WHERE i.code = ?
+                  AND m.nav_date = ?
+                  AND m.source_type = 'AGGREGATOR'
+                ORDER BY m.observed_at DESC, m.rowid DESC
+                LIMIT 1
+                """,
+                (normalized_code, nav_date.isoformat()),
+            ).fetchone()
+        if primary is None:
+            raise LedgerError(
+                "PRIMARY_NAV_MISSING",
+                "no aggregator NAV exists for the requested instrument and date",
+                http_status=409,
+            )
+        if str(primary["source_name"]).casefold() == normalized_source_name.casefold():
+            raise LedgerError(
+                "SOURCE_NOT_INDEPENDENT",
+                "verification evidence must come from a different named source",
+            )
+
+        evidence_result = self.record_nav_snapshot(
+            instrument_code=normalized_code,
+            nav_date_value=nav_date.isoformat(),
+            nav=nav,
+            currency=currency,
+            source_type=normalized_source_type,
+            source_name=normalized_source_name,
+            source_ref=normalized_source_ref,
+            verification_status="UNVERIFIED",
+            observed_at_value=observed_at_value,
+            actor_ref=actor_ref,
+        )
+        evidence = evidence_result["snapshot"]
+        primary_micros = int(primary["nav_micros"])
+        evidence_micros = _scaled(str(evidence["nav"]), NAV_SCALE, "nav")
+        delta = abs(primary_micros - evidence_micros)
+        status = "MATCH" if delta == 0 else "CONFLICT"
+        record_payload = {
+            "primary_snapshot_id": str(primary["id"]),
+            "evidence_snapshot_id": str(evidence["id"]),
+            "status": status,
+            "nav_delta_micros": delta,
+        }
+        record_hash = _canonical_hash(record_payload)
+        verified_at = _iso(self._now())
+
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                self._verification_query() + " WHERE v.record_hash = ?",
+                (record_hash,),
+            ).fetchone()
+            created = row is None
+            if row is None:
+                verification_id = str(uuid4())
+                connection.execute(
+                    """
+                    INSERT INTO market_nav_verifications (
+                        id, primary_snapshot_id, evidence_snapshot_id, status,
+                        nav_delta_micros, verified_at, actor_ref, record_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        verification_id,
+                        record_payload["primary_snapshot_id"],
+                        record_payload["evidence_snapshot_id"],
+                        status,
+                        delta,
+                        verified_at,
+                        actor_ref,
+                        record_hash,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO audit_events (
+                        id, occurred_at, actor_type, actor_ref, action, entity_type,
+                        entity_id, after_hash, details_json, trace_id
+                    ) VALUES (?, ?, 'AGENT', ?, ?, 'market_nav_verification', ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        verified_at,
+                        actor_ref,
+                        "MARKET_NAV_CORROBORATED" if status == "MATCH" else "MARKET_NAV_CONFLICT",
+                        verification_id,
+                        record_hash,
+                        json.dumps(
+                            {
+                                "instrument_code": normalized_code,
+                                "nav_date": nav_date.isoformat(),
+                                "primary_source_name": primary["source_name"],
+                                "evidence_source_name": normalized_source_name,
+                                "status": status,
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        str(uuid4()),
+                    ),
+                )
+                row = connection.execute(
+                    self._verification_query() + " WHERE v.id = ?",
+                    (verification_id,),
+                ).fetchone()
+            connection.commit()
+            assert row is not None
+            result = self._verification_data(row)
+            result["created"] = created
+            result["data_quality"] = "PASS" if status == "MATCH" else "SOURCE_ERROR"
+            result["warnings"] = (
+                []
+                if status == "MATCH"
+                else ["Independent NAV evidence conflicts with the primary observation"]
+            )
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def list_nav_verifications(
+        self, *, instrument_code: str | None = None, limit: int = 100
+    ) -> list[JsonDict]:
+        if limit < 1 or limit > 500:
+            raise LedgerError("INVALID_LIMIT", "limit must be between 1 and 500")
+        query = self._verification_query() + " WHERE 1 = 1"
+        parameters: list[Any] = []
+        if instrument_code:
+            query += " AND i.code = ?"
+            parameters.append(instrument_code.strip().upper())
+        query += " ORDER BY v.verified_at DESC LIMIT ?"
+        parameters.append(limit)
+        with self._connect() as connection:
+            return [
+                self._verification_data(row)
+                for row in connection.execute(query, parameters).fetchall()
+            ]
+
     def portfolio_valuation(
         self,
         *,
@@ -397,6 +631,26 @@ class MarketDataService:
 
                 row = nav_rows[0]
                 snapshot = self._snapshot_data(row)
+                corroboration_row = connection.execute(
+                    self._verification_query()
+                    + """
+                      WHERE p.instrument_id = ?
+                        AND p.nav_date = ?
+                        AND v.status = 'MATCH'
+                        AND p.nav_micros = e.nav_micros
+                      ORDER BY v.verified_at DESC
+                      LIMIT 1
+                    """,
+                    (holding["instrument_id"], row["nav_date"]),
+                ).fetchone()
+                corroboration = (
+                    self._verification_data(corroboration_row)
+                    if corroboration_row is not None
+                    else None
+                )
+                if corroboration is not None:
+                    snapshot["data_quality"] = "PASS"
+                    snapshot["warnings"] = []
                 age_days = (as_of - date.fromisoformat(str(row["nav_date"]))).days
                 if age_days > self.settings.market_nav_max_age_days:
                     complete = False
@@ -442,6 +696,14 @@ class MarketDataService:
                 position.update(
                     {
                         "nav_snapshot": snapshot,
+                        "corroboration": (
+                            {
+                                **corroboration,
+                                "source_count": 2,
+                            }
+                            if corroboration is not None
+                            else None
+                        ),
                         "nav_age_days": age_days,
                         "data_quality": snapshot["data_quality"],
                         "market_value": _money(market_minor),

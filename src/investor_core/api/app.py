@@ -14,6 +14,7 @@ from investor_core.api.schemas import (
     MarketDataCanaryRequest,
     MarketDataSyncRequest,
     MarketNavSnapshotCreateRequest,
+    MarketNavVerificationCreateRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     TransactionDraftCommitRequest,
@@ -324,6 +325,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=20, ge=1, le=100),
     ) -> dict[str, Any]:
         return success(market_sync.status(limit=limit))
+
+    @app.post("/v1/market-data/verifications")
+    def market_nav_verification_create(
+        request: MarketNavVerificationCreateRequest,
+    ) -> dict[str, Any]:
+        result = market_data.record_nav_verification(
+            instrument_code=request.instrument_code,
+            nav_date_value=request.nav_date.isoformat(),
+            nav=str(request.nav),
+            currency=request.currency,
+            source_type=request.source_type,
+            source_name=request.source_name,
+            source_ref=request.source_ref,
+            observed_at_value=request.observed_at.isoformat(),
+            actor_ref=request.actor_ref,
+        )
+        warnings = result.pop("warnings")
+        quality = result.pop("data_quality")
+        return success(result, warnings=warnings, data_quality=quality)
+
+    @app.get("/v1/market-data/verifications")
+    def market_nav_verification_list(
+        instrument_code: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        items = market_data.list_nav_verifications(
+            instrument_code=instrument_code,
+            limit=limit,
+        )
+        quality = "SOURCE_ERROR" if any(item["status"] == "CONFLICT" for item in items) else "PASS"
+        warnings = (
+            ["One or more independent NAV observations conflict with the primary source"]
+            if quality == "SOURCE_ERROR"
+            else []
+        )
+        return success({"items": items}, warnings=warnings, data_quality=quality)
 
     return app
 

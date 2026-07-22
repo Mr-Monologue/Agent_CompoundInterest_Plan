@@ -112,3 +112,15 @@ class MarketDataSyncRequest(RequestModel):
     instrument_codes: list[str] = Field(min_length=1, max_length=100)
     as_of_date: date | None = None
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class MarketNavVerificationCreateRequest(RequestModel):
+    instrument_code: str = Field(min_length=1, max_length=40)
+    nav_date: date
+    nav: Decimal = Field(gt=0)
+    currency: str = Field(default="CNY", min_length=3, max_length=3)
+    source_type: Literal["OFFICIAL", "PLATFORM"]
+    source_name: str = Field(min_length=1, max_length=200)
+    source_ref: str = Field(min_length=1, max_length=1000)
+    observed_at: datetime
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)

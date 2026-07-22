@@ -188,3 +188,102 @@ def test_conflicting_latest_navs_block_amount_conclusions(tmp_path: Path) -> Non
     assert result["meta"]["data_quality"] == "SOURCE_ERROR"
     assert result["data"]["totals"] is None
     assert result["data"]["positions"][0]["error"] == "NAV_CONFLICT"
+
+
+def test_independent_matching_evidence_corroborates_aggregator_nav(tmp_path: Path) -> None:
+    client, portfolio_id, account_id = _client_with_holding(tmp_path)
+    primary = client.post(
+        "/v1/market-nav-snapshots",
+        json={
+            "instrument_code": "FUND001",
+            "nav_date": "2026-07-21",
+            "nav": "1.534500",
+            "source_type": "AGGREGATOR",
+            "source_name": "Primary market adapter",
+            "source_ref": "primary:FUND001:2026-07-21",
+            "observed_at": "2026-07-21T22:00:00+08:00",
+        },
+    )
+    assert primary.json()["meta"]["data_quality"] == "WARNING"
+
+    verification = client.post(
+        "/v1/market-data/verifications",
+        json={
+            "instrument_code": "FUND001",
+            "nav_date": "2026-07-21",
+            "nav": "1.534500",
+            "source_type": "PLATFORM",
+            "source_name": "Independent professional platform",
+            "source_ref": "professional:FUND001:2026-07-21",
+            "observed_at": "2026-07-21T22:05:00+08:00",
+        },
+    )
+
+    assert verification.status_code == 200
+    payload = verification.json()
+    assert payload["meta"]["data_quality"] == "PASS"
+    assert payload["data"]["status"] == "MATCH"
+    assert payload["data"]["created"] is True
+    assert payload["data"]["primary_snapshot"]["source_type"] == "AGGREGATOR"
+    assert payload["data"]["evidence_snapshot"]["source_type"] == "PLATFORM"
+
+    valuation = client.get(
+        "/v1/portfolio-valuation",
+        params={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "as_of_date": "2026-07-21",
+        },
+    ).json()
+    assert valuation["meta"]["data_quality"] == "PASS"
+    assert valuation["data"]["totals"]["market_value"] == "153.45"
+    position = valuation["data"]["positions"][0]
+    assert position["corroboration"]["status"] == "MATCH"
+    assert position["corroboration"]["source_count"] == 2
+
+
+def test_independent_conflicting_evidence_blocks_amount_conclusions(tmp_path: Path) -> None:
+    client, portfolio_id, account_id = _client_with_holding(tmp_path)
+    client.post(
+        "/v1/market-nav-snapshots",
+        json={
+            "instrument_code": "FUND001",
+            "nav_date": "2026-07-21",
+            "nav": "1.534500",
+            "source_type": "AGGREGATOR",
+            "source_name": "Primary market adapter",
+            "source_ref": "primary:FUND001:2026-07-21",
+            "observed_at": "2026-07-21T22:00:00+08:00",
+        },
+    )
+
+    verification = client.post(
+        "/v1/market-data/verifications",
+        json={
+            "instrument_code": "FUND001",
+            "nav_date": "2026-07-21",
+            "nav": "1.535000",
+            "source_type": "OFFICIAL",
+            "source_name": "Fund manager disclosure",
+            "source_ref": "https://example.invalid/FUND001/2026-07-21",
+            "observed_at": "2026-07-21T22:05:00+08:00",
+        },
+    )
+
+    assert verification.status_code == 200
+    payload = verification.json()
+    assert payload["meta"]["data_quality"] == "SOURCE_ERROR"
+    assert payload["data"]["status"] == "CONFLICT"
+    assert payload["data"]["nav_delta"] == "0.000500"
+
+    valuation = client.get(
+        "/v1/portfolio-valuation",
+        params={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "as_of_date": "2026-07-21",
+        },
+    ).json()
+    assert valuation["meta"]["data_quality"] == "SOURCE_ERROR"
+    assert valuation["data"]["totals"] is None
+    assert valuation["data"]["positions"][0]["error"] == "NAV_CONFLICT"

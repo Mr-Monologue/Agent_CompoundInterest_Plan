@@ -4,7 +4,7 @@
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0005_market_data_sync",
+  "database_revision": "0006_market_nav_verification",
   "minimum_current_version": "0.5.3",
-  "notes": "Canary-gated AKShare fund NAV synchronization with provider health, run audit and conservative single-source quality."
+  "notes": "Canary-gated fund NAV synchronization with immutable independent-source corroboration, conflict blocking and complete evidence audit."
 }
