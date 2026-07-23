@@ -201,6 +201,7 @@ def test_independent_matching_evidence_corroborates_aggregator_nav(tmp_path: Pat
             "source_type": "AGGREGATOR",
             "source_name": "Primary market adapter",
             "source_ref": "primary:FUND001:2026-07-21",
+            "source_lineage": "EASTMONEY",
             "observed_at": "2026-07-21T22:00:00+08:00",
         },
     )
@@ -215,6 +216,7 @@ def test_independent_matching_evidence_corroborates_aggregator_nav(tmp_path: Pat
             "source_type": "PLATFORM",
             "source_name": "Independent professional platform",
             "source_ref": "professional:FUND001:2026-07-21",
+            "source_lineage": "WIND",
             "observed_at": "2026-07-21T22:05:00+08:00",
         },
     )
@@ -226,6 +228,8 @@ def test_independent_matching_evidence_corroborates_aggregator_nav(tmp_path: Pat
     assert payload["data"]["created"] is True
     assert payload["data"]["primary_snapshot"]["source_type"] == "AGGREGATOR"
     assert payload["data"]["evidence_snapshot"]["source_type"] == "PLATFORM"
+    assert payload["data"]["primary_snapshot"]["source_lineage"] == "EASTMONEY"
+    assert payload["data"]["evidence_snapshot"]["source_lineage"] == "WIND"
 
     valuation = client.get(
         "/v1/portfolio-valuation",
@@ -253,6 +257,7 @@ def test_independent_conflicting_evidence_blocks_amount_conclusions(tmp_path: Pa
             "source_type": "AGGREGATOR",
             "source_name": "Primary market adapter",
             "source_ref": "primary:FUND001:2026-07-21",
+            "source_lineage": "EASTMONEY",
             "observed_at": "2026-07-21T22:00:00+08:00",
         },
     )
@@ -266,6 +271,7 @@ def test_independent_conflicting_evidence_blocks_amount_conclusions(tmp_path: Pa
             "source_type": "OFFICIAL",
             "source_name": "Fund manager disclosure",
             "source_ref": "https://example.invalid/FUND001/2026-07-21",
+            "source_lineage": "FUND_MANAGER_OFFICIAL",
             "observed_at": "2026-07-21T22:05:00+08:00",
         },
     )
@@ -287,3 +293,79 @@ def test_independent_conflicting_evidence_blocks_amount_conclusions(tmp_path: Pa
     assert valuation["meta"]["data_quality"] == "SOURCE_ERROR"
     assert valuation["data"]["totals"] is None
     assert valuation["data"]["positions"][0]["error"] == "NAV_CONFLICT"
+
+
+def test_same_upstream_alias_cannot_corroborate_eastmoney(tmp_path: Path) -> None:
+    client, _, _ = _client_with_holding(tmp_path)
+    client.post(
+        "/v1/market-nav-snapshots",
+        json={
+            "instrument_code": "FUND001",
+            "nav_date": "2026-07-21",
+            "nav": "1.534500",
+            "source_type": "AGGREGATOR",
+            "source_name": "Eastmoney open-fund NAV (AKShare-compatible)",
+            "source_ref": "https://fund.eastmoney.com/FUND001",
+            "observed_at": "2026-07-21T22:00:00+08:00",
+        },
+    )
+
+    verification = client.post(
+        "/v1/market-data/verifications",
+        json={
+            "instrument_code": "FUND001",
+            "nav_date": "2026-07-21",
+            "nav": "1.534500",
+            "source_type": "PLATFORM",
+            "source_name": "天天基金",
+            "source_ref": "https://fund.eastmoney.com/FUND001",
+            "source_lineage": "EASTMONEY",
+            "observed_at": "2026-07-21T22:05:00+08:00",
+        },
+    )
+
+    assert verification.status_code == 400
+    assert verification.json()["error"]["code"] == "SOURCE_NOT_INDEPENDENT"
+
+
+def test_portfolio_brief_exposes_unavailable_decision_capabilities(tmp_path: Path) -> None:
+    client, portfolio_id, account_id = _client_with_holding(tmp_path)
+    client.post(
+        "/v1/market-nav-snapshots",
+        json={
+            "instrument_code": "FUND001",
+            "nav_date": "2026-07-21",
+            "nav": "1.500000",
+            "source_type": "AGGREGATOR",
+            "source_name": "Eastmoney open-fund NAV (AKShare-compatible)",
+            "source_ref": "https://fund.eastmoney.com/FUND001",
+            "observed_at": "2026-07-21T22:00:00+08:00",
+        },
+    )
+
+    response = client.get(
+        "/v1/portfolio-brief",
+        params={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "as_of_date": "2026-07-21",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["narrative_contract"]["mode"] == "FACTS_ONLY"
+    assert data["capabilities"]["allocation_assessment"] == {
+        "available": False,
+        "reason_code": "ALLOCATION_TARGETS_NOT_CONFIGURED",
+    }
+    assert data["capabilities"]["instrument_role_update"]["available"] is False
+    assert data["role_summary"]["UNASSIGNED"]["assessment"] == "NOT_AVAILABLE"
+    assert data["source_evidence"] == {
+        "upstream_lineages": ["EASTMONEY"],
+        "independence_assessment": "SINGLE_UPSTREAM",
+    }
+    assert data["valuation"]["positions"][0]["policy_assessment"]["sell_rule"] == "NOT_EVALUATED"
+    serialized = str(data).casefold()
+    assert "too high" not in serialized
+    assert "too low" not in serialized

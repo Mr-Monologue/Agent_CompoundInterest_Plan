@@ -25,6 +25,9 @@ description: Operate a personal long-term value-DCA investment assistant through
     import date into a market-data gap, cost-basis problem, or execution conclusion.
 11. Never claim a scheduled report will run or fail unless current tool output confirms that the
     job is enabled and that its implemented dependencies are available.
+12. For portfolio overviews, prefer `portfolio_brief_get` over assembling a narrative from separate
+    holding and valuation calls. Obey its `narrative_contract`, capability flags, reason codes, and
+    `NOT_AVAILABLE` assessments literally; never override them with model judgment.
 
 Portfolio, account, and instrument setup may use their exact `*_create` tools only when the user
 has supplied the identifying attributes. Treat `INDEX` instruments as non-tradable benchmarks;
@@ -50,7 +53,11 @@ to choose an internal provider or supply fund codes already present in committed
 After primary synchronization, independently corroborate the same-date NAVs when a connected
 professional-data or official-source tool is available in the current session. Use only values
 returned by that tool, preserve its source identity and evidence reference, and pass them to
-`market_nav_verification_record`; never copy a primary-provider value into the verification call.
+`market_nav_verification_record` with the registered upstream `source_lineage`.
+In every case, never copy a primary-provider value into the verification call.
+AKShare, 东方财富 and 天天基金 all resolve to
+the same `EASTMONEY` lineage and cannot corroborate one another. Unknown or conflicting lineage
+cannot upgrade evidence to `PASS`.
 If no independent source tool is available, continue with the primary snapshots at `WARNING`
 without asking the user to configure an internal provider. A `MATCH` may upgrade that NAV to
 `PASS`; a `CONFLICT` is `SOURCE_ERROR` and blocks all portfolio amount conclusions.
@@ -61,6 +68,10 @@ timestamp, source type, source name, verification status, and source reference w
 `portfolio_valuation_get` for market value, unrealized P&L, return, and market-value weights; never derive those values in prose. If Core returns `SOURCE_ERROR`, do not repeat partial position amounts
 as a portfolio conclusion. Call a snapshot "real-time" only when Core supplies current, non-stale
 NAV evidence for every committed holding.
+
+When `portfolio_brief_get` reports a capability as unavailable, state the limitation only when it
+is relevant to the user's request. Do not recommend, offer, or imply that action. `ROLE_UNASSIGNED`
+is a factual configuration state, not permission to offer a role mutation.
 
 ## Enforce safety
 
