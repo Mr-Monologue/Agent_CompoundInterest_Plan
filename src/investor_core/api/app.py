@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from investor_core.api.schemas import (
     AccountCreateRequest,
     InstrumentCreateRequest,
+    InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
     MarketDataCanaryRequest,
     MarketDataSyncRequest,
@@ -144,6 +145,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/instruments")
     def instrument_list() -> dict[str, Any]:
         return success({"items": ledger.list_instruments()})
+
+    @app.patch("/v1/instruments/{instrument_code}/role")
+    def instrument_role_update(
+        instrument_code: str, request: InstrumentRoleUpdateRequest
+    ) -> dict[str, Any]:
+        return success(
+            ledger.update_instrument_role(
+                code=instrument_code,
+                role=request.role,
+                expected_current_role=request.expected_current_role,
+                reason=request.reason,
+                actor_ref=request.actor_ref,
+            )
+        )
 
     @app.post("/v1/transaction-drafts")
     def transaction_draft_create(request: TransactionDraftCreateRequest) -> dict[str, Any]:
