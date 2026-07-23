@@ -26,8 +26,9 @@ description: Operate a personal long-term value-DCA investment assistant through
 11. Never claim a scheduled report will run or fail unless current tool output confirms that the
     job is enabled and that its implemented dependencies are available.
 12. For portfolio overviews, prefer `portfolio_brief_get` over assembling a narrative from separate
-    holding and valuation calls. Obey its `narrative_contract`, capability flags, reason codes, and
-    `NOT_AVAILABLE` assessments literally; never override them with model judgment.
+    holding and valuation calls. When its `narrative_contract.mode` is `EXACT_TEXT`, return
+    `display_text` verbatim as the entire answer. Do not add a greeting, heading, summary,
+    interpretation, adjective, priority, recommendation, question, or next action.
 
 Portfolio, account, and instrument setup may use their exact `*_create` tools only when the user
 has supplied the identifying attributes. Treat `INDEX` instruments as non-tradable benchmarks;
@@ -71,7 +72,9 @@ NAV evidence for every committed holding.
 
 When `portfolio_brief_get` reports a capability as unavailable, state the limitation only when it
 is relevant to the user's request. Do not recommend, offer, or imply that action. `ROLE_UNASSIGNED`
-is a factual configuration state, not permission to offer a role mutation.
+is a factual configuration state, not permission to infer a target role. Use
+`instrument_role_update` only after the user explicitly states the instrument and new role. Pass
+the last Core-returned role as `expected_current_role`; never silently overwrite a changed role.
 
 ## Enforce safety
 

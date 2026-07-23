@@ -848,7 +848,8 @@ class MarketDataService:
                         "instrument_name": holding["instrument_name"],
                         "finding_code": "ROLE_UNASSIGNED",
                         "severity": "INFO",
-                        "mutation_available": False,
+                        "mutation_available": True,
+                        "mutation_tool": "instrument_role_update",
                     }
                 )
             position["policy_assessment"] = {
@@ -876,10 +877,57 @@ class MarketDataService:
                 "reason_code": "WEEKLY_PLAN_NOT_IMPLEMENTED",
             },
             "instrument_role_update": {
-                "available": False,
-                "reason_code": "ROLE_UPDATE_NOT_IMPLEMENTED",
+                "available": True,
+                "reason_code": "AVAILABLE_WITH_EXPECTED_CURRENT_ROLE",
             },
         }
+        display_lines = [
+            "投资状况概览",
+            f"数据日期: {valuation['as_of_date']}",
+            f"数据质量: {valuation['data_quality']}",
+            "",
+            "持仓事实:",
+        ]
+        for position in valuation["positions"]:
+            holding = position["holding"]
+            line = (
+                f"- {holding['instrument_code']} {holding['instrument_name']} | "
+                f"角色 {holding['role']} | 份额 {holding['total_shares']} | "
+                f"成本 ¥{holding['cost_amount']}"
+            )
+            if position["market_value"] is not None:
+                line += (
+                    f" | 市值 ¥{position['market_value']} | "
+                    f"未实现盈亏 ¥{position['unrealized_pnl']} | "
+                    f"收益率 {position['return_pct']}% | 权重 {position['weight_pct']}%"
+                )
+            else:
+                line += f" | 估值不可用 ({position.get('error', 'SOURCE_ERROR')})"
+            display_lines.append(line)
+        if valuation["totals"] is not None:
+            totals = valuation["totals"]
+            display_lines.extend(
+                [
+                    "",
+                    (
+                        f"合计: 市值 ¥{totals['market_value']} | 成本 ¥{totals['cost_amount']} | "
+                        f"未实现盈亏 ¥{totals['unrealized_pnl']}"
+                    ),
+                ]
+            )
+        if valuation["warnings"]:
+            display_lines.extend(["", "数据限制:"])
+            display_lines.extend(f"- {warning}" for warning in valuation["warnings"])
+        display_lines.extend(
+            [
+                "",
+                "当前能力边界:",
+                "- 未配置分配目标, 不能判断角色占比是否合理.",
+                "- 未配置确定性风险规则, 不能判断风险规则是否触发.",
+                "- 未实现卖出规则与周度计划, 不能生成卖出或定投结论.",
+                "- 角色变更工具可用; 仅在用户明确指定新角色时调用.",
+            ]
+        )
         return {
             "as_of_date": valuation["as_of_date"],
             "context": {"portfolio": portfolio, "account": account},
@@ -900,7 +948,9 @@ class MarketDataService:
                 ),
             },
             "narrative_contract": {
-                "mode": "FACTS_ONLY",
+                "mode": "EXACT_TEXT",
+                "response_field": "display_text",
+                "additions_allowed": False,
                 "prohibited_inferences": [
                     "ALLOCATION_IMBALANCE",
                     "PERFORMANCE_ADJECTIVE",
@@ -910,9 +960,9 @@ class MarketDataService:
                     "UNAVAILABLE_MUTATION",
                 ],
                 "instruction": (
-                    "Report values and limitations literally. Do not infer allocation quality, "
-                    "risk, sell actions, or DCA actions when the corresponding capability "
-                    "is unavailable."
+                    "Return display_text exactly. Do not add headings, summaries, interpretations, "
+                    "priorities, recommendations, questions, or next actions."
                 ),
             },
+            "display_text": "\n".join(display_lines),
         }

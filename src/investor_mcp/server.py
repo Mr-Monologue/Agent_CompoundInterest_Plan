@@ -33,7 +33,7 @@ def dependency_error() -> dict[str, Any]:
 
 
 async def core_request(
-    method: Literal["GET", "POST"],
+    method: Literal["GET", "POST", "PATCH"],
     path: str,
     *,
     params: dict[str, Any] | None = None,
@@ -257,6 +257,26 @@ async def instrument_list() -> dict[str, Any]:
 
 
 @mcp.tool()
+async def instrument_role_update(
+    code: str,
+    role: Literal["CORE", "SATELLITE", "UNASSIGNED"],
+    expected_current_role: Literal["CORE", "SATELLITE", "UNASSIGNED"],
+    reason: str,
+) -> dict[str, Any]:
+    """Update an explicitly requested instrument role with stale-write protection and audit."""
+    return await core_request(
+        "PATCH",
+        f"/v1/instruments/{code}/role",
+        payload={
+            "role": role,
+            "expected_current_role": expected_current_role,
+            "reason": reason,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
 async def market_nav_snapshot_record(
     instrument_code: str,
     nav_date: str,
@@ -437,7 +457,7 @@ async def portfolio_valuation_get(
 async def portfolio_brief_get(
     as_of_date: str = "", portfolio_id: str = "", account_id: str = ""
 ) -> dict[str, Any]:
-    """Get the deterministic portfolio brief and its explicit decision boundaries."""
+    """Get a deterministic brief. Return data.display_text exactly, with no added analysis."""
     resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
         portfolio_id, account_id
     )

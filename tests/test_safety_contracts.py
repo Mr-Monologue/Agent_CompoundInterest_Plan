@@ -88,8 +88,10 @@ def test_skill_does_not_invent_allocation_or_sell_triggers() -> None:
     assert "require the exact Core rule result and reason code" in skill
     assert "Never claim a scheduled report will run or fail" in skill
     assert "prefer `portfolio_brief_get`" in skill
+    assert "return\n    `display_text` verbatim as the entire answer" in skill
     assert "AKShare, 东方财富 and 天天基金" in skill
     assert "`ROLE_UNASSIGNED`" in skill
+    assert "Use\n`instrument_role_update` only after the user explicitly states" in skill
     assert "observations, not allocation or\nsell rules" in policy
 
 

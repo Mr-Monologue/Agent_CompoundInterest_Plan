@@ -122,6 +122,10 @@ stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止
 `NOT_AVAILABLE` 及原因码，Agent 不得自行判断“失衡”、触发卖出或建议定投。净值证据同时记录
 上游发布方血缘；AKShare、东方财富和天天基金统一属于 `EASTMONEY`，不能互相充当独立验证源。
 
+0.8.0 起，组合概览包含 Core 生成的 `display_text`，Hermes 必须原样返回，不能追加配置评价、
+收益形容词、优先级或建议。`instrument_role_update` 支持用户明确指定后的角色修正，并以
+`expected_current_role` 防止旧会话覆盖新值；每次实际变更写入审计事件。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
