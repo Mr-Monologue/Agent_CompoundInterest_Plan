@@ -260,6 +260,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source_type=request.source_type,
             source_name=request.source_name,
             source_ref=request.source_ref,
+            source_lineage=request.source_lineage,
             verification_status=request.verification_status,
             observed_at_value=request.observed_at.isoformat(),
             actor_ref=request.actor_ref,
@@ -293,6 +294,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result,
             warnings=result["warnings"],
             data_quality=result["data_quality"],
+        )
+
+    @app.get("/v1/portfolio-brief")
+    def portfolio_brief_get(
+        portfolio_id: str,
+        account_id: str,
+        as_of_date: str | None = None,
+    ) -> dict[str, Any]:
+        result = market_data.portfolio_brief(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            as_of_date_value=as_of_date,
+        )
+        return success(
+            result,
+            warnings=result["valuation"]["warnings"],
+            data_quality=result["valuation"]["data_quality"],
         )
 
     @app.post("/v1/market-data/canary")
@@ -338,6 +356,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source_type=request.source_type,
             source_name=request.source_name,
             source_ref=request.source_ref,
+            source_lineage=request.source_lineage,
             observed_at_value=request.observed_at.isoformat(),
             actor_ref=request.actor_ref,
         )

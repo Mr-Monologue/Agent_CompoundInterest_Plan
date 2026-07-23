@@ -87,6 +87,9 @@ def test_skill_does_not_invent_allocation_or_sell_triggers() -> None:
     assert "Never describe an allocation as too high, too low" in skill
     assert "require the exact Core rule result and reason code" in skill
     assert "Never claim a scheduled report will run or fail" in skill
+    assert "prefer `portfolio_brief_get`" in skill
+    assert "AKShare, 东方财富 and 天天基金" in skill
+    assert "`ROLE_UNASSIGNED`" in skill
     assert "observations, not allocation or\nsell rules" in policy
 
 

@@ -50,7 +50,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("2",)
-    assert revision == ("0006_market_nav_verification",)
+    assert revision == ("0007_source_lineage",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -140,8 +140,41 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0006_market_nav_verification",
+            "0007_source_lineage",
         )
+
+
+def test_source_lineage_migration_backfills_eastmoney_aliases(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0006_market_nav_verification")
+    service = LedgerService(Settings(environment=Environment.TEST, db_path=database_path))
+    service.create_instrument(code="FUND001", name="测试基金")
+    with sqlite3.connect(database_path) as connection:
+        instrument_id = connection.execute(
+            "SELECT id FROM instruments WHERE code='FUND001'"
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO market_nav_snapshots (
+                id, instrument_id, nav_date, nav_micros, currency, source_type,
+                source_name, source_ref, verification_status, observed_at,
+                ingested_at, record_hash
+            ) VALUES (
+                'snapshot-1', ?, '2026-07-21', 1500000, 'CNY', 'AGGREGATOR',
+                '天天基金', 'https://fund.eastmoney.com/FUND001', 'UNVERIFIED',
+                '2026-07-21T22:00:00Z', '2026-07-21T22:00:00Z', 'hash-1'
+            )
+            """,
+            (instrument_id,),
+        )
+        connection.commit()
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT source_lineage FROM market_nav_snapshots WHERE id='snapshot-1'"
+        ).fetchone() == ("EASTMONEY",)
 
 
 def test_market_sync_migration_preserves_existing_holding_and_nav(tmp_path: Path) -> None:
@@ -171,14 +204,24 @@ def test_market_sync_migration_preserves_existing_holding_and_nav(tmp_path: Path
         confirmation_token=str(opening["confirmation_token"]),
         confirmed_by="test-user",
     )
-    MarketDataService(settings).record_nav_snapshot(
-        instrument_code="FUND001",
-        nav_date_value="2026-07-21",
-        nav="1.5345",
-        source_type="AGGREGATOR",
-        source_name="existing-source",
-        observed_at_value="2026-07-21T22:00:00+08:00",
-    )
+    with sqlite3.connect(database_path) as connection:
+        instrument_id = connection.execute(
+            "SELECT id FROM instruments WHERE code='FUND001'"
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO market_nav_snapshots (
+                id, instrument_id, nav_date, nav_micros, currency, source_type,
+                source_name, verification_status, observed_at, ingested_at, record_hash
+            ) VALUES (
+                'existing-snapshot', ?, '2026-07-21', 1534500, 'CNY', 'AGGREGATOR',
+                'existing-source', 'UNVERIFIED', '2026-07-21T22:00:00Z',
+                '2026-07-21T22:00:00Z', 'existing-hash'
+            )
+            """,
+            (instrument_id,),
+        )
+        connection.commit()
     holdings_before = ledger.list_holdings()
 
     migrate_database(database_path)
