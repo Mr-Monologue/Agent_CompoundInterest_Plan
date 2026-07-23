@@ -42,6 +42,13 @@ class InstrumentCreateRequest(RequestModel):
     actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
 
 
+class InstrumentRoleUpdateRequest(RequestModel):
+    role: Literal["CORE", "SATELLITE", "UNASSIGNED"]
+    expected_current_role: Literal["CORE", "SATELLITE", "UNASSIGNED"]
+    reason: str = Field(min_length=1, max_length=500)
+    actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
+
+
 class TransactionDraftCreateRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     account_id: str = Field(min_length=1, max_length=80)

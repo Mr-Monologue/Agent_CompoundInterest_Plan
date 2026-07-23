@@ -1,7 +1,7 @@
 # Phase 2 market data and valuation status
 
 Date: 2026-07-22
-Release target: 0.7.2
+Release target: 0.8.0
 
 ## Implemented in this increment
 
@@ -29,6 +29,8 @@ Release target: 0.7.2
 - Deterministic portfolio brief with facts-only narration and machine-readable capability gates.
 - Explicit `NOT_AVAILABLE` allocation, risk, sell, weekly-plan and role-update assessments.
 - Upstream publisher lineage that treats AKShare, Eastmoney and 天天基金 as one source.
+- Core-rendered exact portfolio text that prohibits Agent-authored additions.
+- Audited compare-and-swap instrument role updates after an explicit user instruction.
 
 ## Deliberately not implemented yet
 
