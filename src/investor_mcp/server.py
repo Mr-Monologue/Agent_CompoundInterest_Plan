@@ -266,6 +266,10 @@ async def market_nav_snapshot_record(
     observed_at: str,
     verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED",
     source_ref: str = "",
+    source_lineage: Literal[
+        "EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"
+    ]
+    | None = None,
     currency: str = "CNY",
 ) -> dict[str, Any]:
     """Record an immutable sourced NAV observation; this never changes holdings."""
@@ -280,6 +284,7 @@ async def market_nav_snapshot_record(
             "source_type": source_type,
             "source_name": source_name,
             "source_ref": source_ref or None,
+            "source_lineage": source_lineage,
             "verification_status": verification_status,
             "observed_at": observed_at,
             "actor_ref": "hermes",
@@ -375,6 +380,7 @@ async def market_nav_verification_record(
     source_type: Literal["OFFICIAL", "PLATFORM"],
     source_name: str,
     source_ref: str,
+    source_lineage: Literal["EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"],
     observed_at: str,
     currency: str = "CNY",
 ) -> dict[str, Any]:
@@ -390,6 +396,7 @@ async def market_nav_verification_record(
             "source_type": source_type,
             "source_name": source_name,
             "source_ref": source_ref,
+            "source_lineage": source_lineage,
             "observed_at": observed_at,
             "actor_ref": "hermes",
         },
@@ -424,6 +431,25 @@ async def portfolio_valuation_get(
     if as_of_date:
         params["as_of_date"] = as_of_date
     return await core_request("GET", "/v1/portfolio-valuation", params=params)
+
+
+@mcp.tool()
+async def portfolio_brief_get(
+    as_of_date: str = "", portfolio_id: str = "", account_id: str = ""
+) -> dict[str, Any]:
+    """Get the deterministic portfolio brief and its explicit decision boundaries."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "account_id": resolved_account_id,
+    }
+    if as_of_date:
+        params["as_of_date"] = as_of_date
+    return await core_request("GET", "/v1/portfolio-brief", params=params)
 
 
 @mcp.tool()

@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from investor_core.config import Settings
 from investor_core.ledger import LedgerError, LedgerService, utc_now
+from investor_core.source_lineage import resolve_source_lineage
 
 JsonDict = dict[str, Any]
 NAV_SCALE = 1_000_000
@@ -103,6 +104,7 @@ class MarketDataService:
             "source_type": row["source_type"],
             "source_name": row["source_name"],
             "source_ref": row["source_ref"],
+            "source_lineage": row["source_lineage"],
             "verification_status": row["verification_status"],
             "observed_at": row["observed_at"],
             "ingested_at": row["ingested_at"],
@@ -123,6 +125,7 @@ class MarketDataService:
         verification_status: str = "UNVERIFIED",
         currency: str = "CNY",
         source_ref: str | None = None,
+        source_lineage: str | None = None,
         actor_ref: str = "hermes",
     ) -> JsonDict:
         try:
@@ -147,6 +150,11 @@ class MarketDataService:
             raise LedgerError("INVALID_VERIFICATION", "unsupported verification status")
         if not normalized_source_name:
             raise LedgerError("INVALID_SOURCE", "source_name is required")
+        normalized_source_lineage = resolve_source_lineage(
+            normalized_source_name,
+            source_ref,
+            source_lineage,
+        )
         nav_micros = _scaled(nav, NAV_SCALE, "nav")
         payload = {
             "instrument_code": normalized_code,
@@ -156,6 +164,7 @@ class MarketDataService:
             "source_type": normalized_source_type,
             "source_name": normalized_source_name,
             "source_ref": source_ref.strip() if source_ref else None,
+            "source_lineage": normalized_source_lineage,
             "verification_status": normalized_verification,
             "observed_at": _iso(observed_at),
         }
@@ -183,6 +192,7 @@ class MarketDataService:
                   AND m.source_type = ?
                   AND m.source_name = ?
                   AND COALESCE(m.source_ref, '') = COALESCE(?, '')
+                  AND m.source_lineage = ?
                 ORDER BY m.observed_at DESC, m.rowid DESC
                 LIMIT 1
                 """,
@@ -193,6 +203,7 @@ class MarketDataService:
                     normalized_source_type,
                     normalized_source_name,
                     payload["source_ref"],
+                    payload["source_lineage"],
                 ),
             ).fetchone()
             if semantic_existing is not None:
@@ -220,8 +231,8 @@ class MarketDataService:
                 INSERT INTO market_nav_snapshots (
                     id, instrument_id, nav_date, nav_micros, currency, source_type,
                     source_name, source_ref, verification_status, observed_at,
-                    ingested_at, record_hash
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ingested_at, record_hash, source_lineage
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     snapshot_id,
@@ -236,6 +247,7 @@ class MarketDataService:
                     payload["observed_at"],
                     ingested_at,
                     record_hash,
+                    payload["source_lineage"],
                 ),
             )
             connection.execute(
@@ -257,6 +269,7 @@ class MarketDataService:
                             "instrument_code": normalized_code,
                             "nav_date": payload["nav_date"],
                             "source_name": normalized_source_name,
+                            "source_lineage": normalized_source_lineage,
                         },
                         ensure_ascii=False,
                         sort_keys=True,
@@ -321,6 +334,7 @@ class MarketDataService:
                 "source_type": row["primary_source_type"],
                 "source_name": row["primary_source_name"],
                 "source_ref": row["primary_source_ref"],
+                "source_lineage": row["primary_source_lineage"],
             },
             "evidence_snapshot": {
                 "id": row["evidence_snapshot_id"],
@@ -331,6 +345,7 @@ class MarketDataService:
                 "source_type": row["evidence_source_type"],
                 "source_name": row["evidence_source_name"],
                 "source_ref": row["evidence_source_ref"],
+                "source_lineage": row["evidence_source_lineage"],
             },
         }
 
@@ -346,11 +361,13 @@ class MarketDataService:
                 p.source_type AS primary_source_type,
                 p.source_name AS primary_source_name,
                 p.source_ref AS primary_source_ref,
+                p.source_lineage AS primary_source_lineage,
                 e.nav_date AS evidence_nav_date,
                 e.nav_micros AS evidence_nav_micros,
                 e.source_type AS evidence_source_type,
                 e.source_name AS evidence_source_name,
-                e.source_ref AS evidence_source_ref
+                e.source_ref AS evidence_source_ref,
+                e.source_lineage AS evidence_source_lineage
             FROM market_nav_verifications v
             JOIN market_nav_snapshots p ON p.id = v.primary_snapshot_id
             JOIN market_nav_snapshots e ON e.id = v.evidence_snapshot_id
@@ -366,6 +383,7 @@ class MarketDataService:
         source_type: str,
         source_name: str,
         source_ref: str,
+        source_lineage: str,
         observed_at_value: str,
         currency: str = "CNY",
         actor_ref: str = "hermes",
@@ -375,6 +393,11 @@ class MarketDataService:
         normalized_source_type = source_type.strip().upper()
         normalized_source_name = source_name.strip()
         normalized_source_ref = source_ref.strip()
+        normalized_source_lineage = resolve_source_lineage(
+            normalized_source_name,
+            normalized_source_ref,
+            source_lineage,
+        )
         if normalized_source_type not in {"OFFICIAL", "PLATFORM"}:
             raise LedgerError(
                 "INVALID_VERIFICATION_SOURCE",
@@ -384,6 +407,11 @@ class MarketDataService:
             raise LedgerError(
                 "VERIFICATION_EVIDENCE_REQUIRED",
                 "source_ref is required for independent market data verification",
+            )
+        if normalized_source_lineage == "UNKNOWN":
+            raise LedgerError(
+                "SOURCE_LINEAGE_UNKNOWN",
+                "verification evidence requires a registered upstream publisher",
             )
         try:
             nav_date = date.fromisoformat(nav_date_value)
@@ -410,10 +438,17 @@ class MarketDataService:
                 "no aggregator NAV exists for the requested instrument and date",
                 http_status=409,
             )
-        if str(primary["source_name"]).casefold() == normalized_source_name.casefold():
+        primary_lineage = str(primary["source_lineage"])
+        if primary_lineage == "UNKNOWN":
+            raise LedgerError(
+                "PRIMARY_SOURCE_LINEAGE_UNKNOWN",
+                "the primary NAV publisher lineage is unknown and cannot be corroborated",
+            )
+        if primary_lineage == normalized_source_lineage:
             raise LedgerError(
                 "SOURCE_NOT_INDEPENDENT",
-                "verification evidence must come from a different named source",
+                "verification evidence resolves to the same upstream publisher",
+                details={"source_lineage": primary_lineage},
             )
 
         evidence_result = self.record_nav_snapshot(
@@ -424,6 +459,7 @@ class MarketDataService:
             source_type=normalized_source_type,
             source_name=normalized_source_name,
             source_ref=normalized_source_ref,
+            source_lineage=normalized_source_lineage,
             verification_status="UNVERIFIED",
             observed_at_value=observed_at_value,
             actor_ref=actor_ref,
@@ -745,4 +781,138 @@ class MarketDataService:
             ),
             "data_quality": aggregate_quality,
             "warnings": list(dict.fromkeys(warnings)),
+        }
+
+    def portfolio_brief(
+        self,
+        *,
+        portfolio_id: str,
+        account_id: str,
+        as_of_date_value: str | None = None,
+    ) -> JsonDict:
+        """Return facts plus explicit decision boundaries for portfolio narration."""
+        valuation = self.portfolio_valuation(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            as_of_date_value=as_of_date_value,
+        )
+        portfolios = {
+            str(item["id"]): item for item in self._ledger.list_portfolios()
+        }
+        accounts = {
+            str(item["id"]): item
+            for item in self._ledger.list_accounts(portfolio_id=portfolio_id)
+        }
+        portfolio = portfolios.get(portfolio_id)
+        account = accounts.get(account_id)
+        if portfolio is None or account is None:
+            raise LedgerError(
+                "INVESTMENT_CONTEXT_NOT_FOUND",
+                "portfolio or account is not active",
+                http_status=404,
+            )
+
+        role_summary: dict[str, JsonDict] = {}
+        unassigned: list[JsonDict] = []
+        source_lineages: set[str] = set()
+        for position in valuation["positions"]:
+            holding = position["holding"]
+            role = str(holding["role"])
+            group = role_summary.setdefault(
+                role,
+                {
+                    "position_count": 0,
+                    "market_value": "0.00" if valuation["totals"] is not None else None,
+                    "market_value_pct": "0.00" if valuation["totals"] is not None else None,
+                    "assessment": "NOT_AVAILABLE",
+                    "reason_code": "ALLOCATION_TARGETS_NOT_CONFIGURED",
+                },
+            )
+            group["position_count"] = int(group["position_count"]) + 1
+            snapshot = position.get("nav_snapshot")
+            if isinstance(snapshot, dict):
+                source_lineages.add(str(snapshot["source_lineage"]))
+            if valuation["totals"] is not None:
+                market_value = Decimal(str(group["market_value"])) + Decimal(
+                    str(position["market_value"])
+                )
+                market_value_pct = Decimal(str(group["market_value_pct"])) + Decimal(
+                    str(position["weight_pct"])
+                )
+                group["market_value"] = f"{market_value:.2f}"
+                group["market_value_pct"] = f"{market_value_pct:.2f}"
+            if role == "UNASSIGNED":
+                unassigned.append(
+                    {
+                        "instrument_code": holding["instrument_code"],
+                        "instrument_name": holding["instrument_name"],
+                        "finding_code": "ROLE_UNASSIGNED",
+                        "severity": "INFO",
+                        "mutation_available": False,
+                    }
+                )
+            position["policy_assessment"] = {
+                "performance": "NOT_AVAILABLE",
+                "risk": "NOT_AVAILABLE",
+                "sell_rule": "NOT_EVALUATED",
+                "reason_code": "DETERMINISTIC_RULES_NOT_CONFIGURED",
+            }
+
+        unavailable_capabilities = {
+            "allocation_assessment": {
+                "available": False,
+                "reason_code": "ALLOCATION_TARGETS_NOT_CONFIGURED",
+            },
+            "risk_assessment": {
+                "available": False,
+                "reason_code": "RISK_RULES_NOT_CONFIGURED",
+            },
+            "sell_proposal": {
+                "available": False,
+                "reason_code": "SELL_RULES_NOT_IMPLEMENTED",
+            },
+            "weekly_plan": {
+                "available": False,
+                "reason_code": "WEEKLY_PLAN_NOT_IMPLEMENTED",
+            },
+            "instrument_role_update": {
+                "available": False,
+                "reason_code": "ROLE_UPDATE_NOT_IMPLEMENTED",
+            },
+        }
+        return {
+            "as_of_date": valuation["as_of_date"],
+            "context": {"portfolio": portfolio, "account": account},
+            "valuation": valuation,
+            "role_summary": role_summary,
+            "factual_findings": unassigned,
+            "capabilities": unavailable_capabilities,
+            "source_evidence": {
+                "upstream_lineages": sorted(source_lineages),
+                "independence_assessment": (
+                    "NO_EVIDENCE"
+                    if not source_lineages
+                    else (
+                        "SINGLE_UPSTREAM"
+                        if len(source_lineages) == 1
+                        else "MULTIPLE_UPSTREAMS"
+                    )
+                ),
+            },
+            "narrative_contract": {
+                "mode": "FACTS_ONLY",
+                "prohibited_inferences": [
+                    "ALLOCATION_IMBALANCE",
+                    "PERFORMANCE_ADJECTIVE",
+                    "RISK_TRIGGER",
+                    "SELL_TRIGGER",
+                    "DCA_RECOMMENDATION",
+                    "UNAVAILABLE_MUTATION",
+                ],
+                "instruction": (
+                    "Report values and limitations literally. Do not infer allocation quality, "
+                    "risk, sell actions, or DCA actions when the corresponding capability "
+                    "is unavailable."
+                ),
+            },
         }
