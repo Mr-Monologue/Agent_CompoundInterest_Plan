@@ -1,7 +1,7 @@
 # Phase 2 market data and valuation status
 
 Date: 2026-07-22
-Release target: 0.7.1
+Release target: 0.7.2
 
 ## Implemented in this increment
 
@@ -26,6 +26,9 @@ Release target: 0.7.1
   either source snapshot.
 - Conflict evidence that remains stored and forces `SOURCE_ERROR` with no portfolio amount totals.
 - Provider-neutral MCP verification bridge for connected Wind/professional or official tools.
+- Deterministic portfolio brief with facts-only narration and machine-readable capability gates.
+- Explicit `NOT_AVAILABLE` allocation, risk, sell, weekly-plan and role-update assessments.
+- Upstream publisher lineage that treats AKShare, Eastmoney and 天天基金 as one source.
 
 ## Deliberately not implemented yet
 
@@ -38,7 +41,7 @@ Release target: 0.7.1
 
 ## Next target-host gate
 
-1. Upgrade a backed-up 0.6.0 database to revision `0006_market_nav_verification`.
+1. Upgrade a backed-up 0.7.1 database to revision `0007_source_lineage`.
 2. Confirm six committed holdings remain unchanged after migration.
 3. Ask Hermes for the current investment situation without naming internal tools.
 4. Verify Hermes autonomously runs market sync and valuation for all six holdings.

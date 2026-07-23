@@ -1829,7 +1829,7 @@ class LedgerService:
     ) -> JsonDict | None:
         row = connection.execute(
             """
-            SELECT hs.*, i.code AS instrument_code, i.name AS instrument_name
+            SELECT hs.*, i.code AS instrument_code, i.name AS instrument_name, i.role AS role
             FROM holding_snapshots hs
             JOIN instruments i ON i.id = hs.instrument_id
             WHERE hs.portfolio_id = ? AND hs.account_id = ? AND hs.instrument_id = ?
@@ -1847,6 +1847,7 @@ class LedgerService:
             "instrument_id": row["instrument_id"],
             "instrument_code": row["instrument_code"],
             "instrument_name": row["instrument_name"],
+            "role": row["role"],
             "as_of": row["as_of"],
             "total_shares": _format_scaled(int(row["total_shares_micros"]), 1_000_000, 6),
             "cost_amount": _format_scaled(int(row["cost_amount_minor"]), 100, 2),
@@ -1868,7 +1869,7 @@ class LedgerService:
                        ) AS rank_no
                 FROM holding_snapshots hs
             )
-            SELECT ranked.*, i.code AS instrument_code, i.name AS instrument_name
+            SELECT ranked.*, i.code AS instrument_code, i.name AS instrument_name, i.role AS role
             FROM ranked
             JOIN instruments i ON i.id = ranked.instrument_id
             WHERE ranked.rank_no = 1
@@ -1892,6 +1893,7 @@ class LedgerService:
                         "instrument_id": row["instrument_id"],
                         "instrument_code": row["instrument_code"],
                         "instrument_name": row["instrument_name"],
+                        "role": row["role"],
                         "as_of": row["as_of"],
                         "total_shares": _format_scaled(
                             int(row["total_shares_micros"]), 1_000_000, 6

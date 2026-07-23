@@ -32,7 +32,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0006_market_nav_verification"
+EXPECTED_ALEMBIC_REVISION = "0007_source_lineage"
 
 
 def ensure_database_parent(settings: Settings) -> None:

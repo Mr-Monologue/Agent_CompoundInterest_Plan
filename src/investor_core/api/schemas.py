@@ -96,6 +96,9 @@ class MarketNavSnapshotCreateRequest(RequestModel):
     source_type: Literal["OFFICIAL", "PLATFORM", "AGGREGATOR", "USER"]
     source_name: str = Field(min_length=1, max_length=200)
     source_ref: str | None = Field(default=None, max_length=1000)
+    source_lineage: (
+        Literal["EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"] | None
+    ) = None
     verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED"
     observed_at: datetime
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
@@ -122,5 +125,6 @@ class MarketNavVerificationCreateRequest(RequestModel):
     source_type: Literal["OFFICIAL", "PLATFORM"]
     source_name: str = Field(min_length=1, max_length=200)
     source_ref: str = Field(min_length=1, max_length=1000)
+    source_lineage: Literal["EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"]
     observed_at: datetime
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
