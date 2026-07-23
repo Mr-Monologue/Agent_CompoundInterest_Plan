@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -162,6 +163,76 @@ def test_instrument_role_update_is_idempotent_when_target_already_matches(
 
     assert result["changed"] is False
     assert result["instrument"]["role"] == "CORE"
+
+
+def test_allocation_policy_is_versioned_audited_and_compare_and_swap_guarded(
+    tmp_path: Path,
+) -> None:
+    service, context = build_service(tmp_path)
+    portfolio = context["portfolio"]
+    assert isinstance(portfolio, dict)
+    portfolio_id = str(portfolio["id"])
+
+    initial = service.get_allocation_policy(portfolio_id=portfolio_id)
+    assert initial["version"] == 1
+    assert initial["policy"]["core_target_pct"] == "65.00"
+    assert initial["policy"]["automatic_selling_allowed"] is False
+
+    changed = service.set_allocation_policy(
+        portfolio_id=portfolio_id,
+        core_target_pct="70",
+        satellite_target_pct="30",
+        tolerance_pct="10",
+        transition_trigger_pct="15",
+        transition_exit_core_min_pct="60",
+        transition_exit_satellite_max_pct="40",
+        expected_version=1,
+        reason="用户批准调整目标",
+        actor_ref="test-user",
+    )
+    assert changed["changed"] is True
+    assert changed["version"] == 2
+    assert changed["policy"]["core_target_pct"] == "70.00"
+    with sqlite3.connect(service.settings.db_path) as connection:
+        assert connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM audit_events
+            WHERE action = 'ALLOCATION_POLICY_UPDATED'
+              AND entity_id = ?
+            """,
+            (f"allocation_policy:{portfolio_id}",),
+        ).fetchone() == (1,)
+
+    replay = service.set_allocation_policy(
+        portfolio_id=portfolio_id,
+        core_target_pct="70",
+        satellite_target_pct="30",
+        tolerance_pct="10",
+        transition_trigger_pct="15",
+        transition_exit_core_min_pct="60",
+        transition_exit_satellite_max_pct="40",
+        expected_version=1,
+        reason="重试同一已批准变更",
+        actor_ref="test-user",
+    )
+    assert replay["changed"] is False
+    assert replay["version"] == 2
+
+    with pytest.raises(LedgerError) as captured:
+        service.set_allocation_policy(
+            portfolio_id=portfolio_id,
+            core_target_pct="65",
+            satellite_target_pct="35",
+            tolerance_pct="10",
+            transition_trigger_pct="15",
+            transition_exit_core_min_pct="55",
+            transition_exit_satellite_max_pct="45",
+            expected_version=1,
+            reason="旧会话覆盖",
+        )
+    assert captured.value.code == "ALLOCATION_POLICY_CONFLICT"
+    assert service.get_allocation_policy(portfolio_id=portfolio_id)["version"] == 2
 
 
 def test_opening_position_requires_exact_commit_and_is_not_a_trade(tmp_path: Path) -> None:

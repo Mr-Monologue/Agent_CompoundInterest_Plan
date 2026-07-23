@@ -50,7 +50,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("2",)
-    assert revision == ("0007_source_lineage",)
+    assert revision == ("0008_allocation_policy",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -140,7 +140,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0007_source_lineage",
+            "0008_allocation_policy",
         )
 
 
@@ -175,6 +175,49 @@ def test_source_lineage_migration_backfills_eastmoney_aliases(tmp_path: Path) ->
         assert connection.execute(
             "SELECT source_lineage FROM market_nav_snapshots WHERE id='snapshot-1'"
         ).fetchone() == ("EASTMONEY",)
+
+
+def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0007_source_lineage")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO portfolios (id, name, base_currency, status, created_at)
+            VALUES (
+                'portfolio-existing', '个人投资组合', 'CNY', 'ACTIVE',
+                '2026-07-20T00:00:00Z'
+            )
+            """
+        )
+        connection.commit()
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        policy = connection.execute(
+            """
+            SELECT version, value_json, approved_by
+            FROM settings
+            WHERE key = 'allocation_policy:portfolio-existing'
+              AND status = 'ACTIVE'
+            """
+        ).fetchone()
+        audit = connection.execute(
+            """
+            SELECT action
+            FROM audit_events
+            WHERE entity_id = 'allocation_policy:portfolio-existing'
+            """
+        ).fetchone()
+
+    assert policy is not None
+    assert policy[0] == 1
+    assert '"core_target_pct": "65.00"' in policy[1]
+    assert policy[2] == "system:approved-strategy-v1.6"
+    assert audit == ("ALLOCATION_POLICY_INITIALIZED",)
 
 
 def test_market_sync_migration_preserves_existing_holding_and_nav(tmp_path: Path) -> None:

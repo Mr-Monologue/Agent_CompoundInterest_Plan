@@ -91,6 +91,53 @@ def test_instrument_role_update_api_requires_current_role_match(tmp_path: Path) 
     assert conflict.json()["error"]["code"] == "ROLE_CONFLICT"
 
 
+def test_allocation_policy_api_versions_explicit_changes(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    client = TestClient(
+        create_app(Settings(environment=Environment.TEST, db_path=database_path))
+    )
+    portfolio = client.post("/v1/portfolios", json={"name": "测试组合"}).json()["data"]
+
+    initial = client.get(
+        "/v1/allocation-policy",
+        params={"portfolio_id": portfolio["id"]},
+    )
+    changed = client.put(
+        f"/v1/allocation-policy/{portfolio['id']}",
+        json={
+            "core_target_pct": "70",
+            "satellite_target_pct": "30",
+            "tolerance_pct": "10",
+            "transition_trigger_pct": "15",
+            "transition_exit_core_min_pct": "60",
+            "transition_exit_satellite_max_pct": "40",
+            "expected_version": 1,
+            "reason": "用户批准调整目标",
+        },
+    )
+    stale = client.put(
+        f"/v1/allocation-policy/{portfolio['id']}",
+        json={
+            "core_target_pct": "65",
+            "satellite_target_pct": "35",
+            "tolerance_pct": "10",
+            "transition_trigger_pct": "15",
+            "transition_exit_core_min_pct": "55",
+            "transition_exit_satellite_max_pct": "45",
+            "expected_version": 1,
+            "reason": "陈旧请求",
+        },
+    )
+
+    assert initial.status_code == 200
+    assert initial.json()["data"]["policy"]["policy_id"] == "value-dca-v1.6"
+    assert changed.status_code == 200
+    assert changed.json()["data"]["version"] == 2
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "ALLOCATION_POLICY_CONFLICT"
+
+
 def test_transaction_draft_api_requires_commit_before_holding_changes(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
