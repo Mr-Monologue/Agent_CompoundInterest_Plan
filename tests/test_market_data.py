@@ -354,13 +354,34 @@ def test_portfolio_brief_exposes_unavailable_decision_capabilities(tmp_path: Pat
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["narrative_contract"]["mode"] == "FACTS_ONLY"
+    assert data["narrative_contract"] == {
+        "mode": "EXACT_TEXT",
+        "response_field": "display_text",
+        "additions_allowed": False,
+        "prohibited_inferences": [
+            "ALLOCATION_IMBALANCE",
+            "PERFORMANCE_ADJECTIVE",
+            "RISK_TRIGGER",
+            "SELL_TRIGGER",
+            "DCA_RECOMMENDATION",
+            "UNAVAILABLE_MUTATION",
+        ],
+        "instruction": (
+            "Return display_text exactly. Do not add headings, summaries, interpretations, "
+            "priorities, recommendations, questions, or next actions."
+        ),
+    }
     assert data["capabilities"]["allocation_assessment"] == {
         "available": False,
         "reason_code": "ALLOCATION_TARGETS_NOT_CONFIGURED",
     }
-    assert data["capabilities"]["instrument_role_update"]["available"] is False
+    assert data["capabilities"]["instrument_role_update"] == {
+        "available": True,
+        "reason_code": "AVAILABLE_WITH_EXPECTED_CURRENT_ROLE",
+    }
     assert data["role_summary"]["UNASSIGNED"]["assessment"] == "NOT_AVAILABLE"
+    assert data["factual_findings"][0]["mutation_available"] is True
+    assert data["factual_findings"][0]["mutation_tool"] == "instrument_role_update"
     assert data["source_evidence"] == {
         "upstream_lineages": ["EASTMONEY"],
         "independence_assessment": "SINGLE_UPSTREAM",
@@ -369,3 +390,7 @@ def test_portfolio_brief_exposes_unavailable_decision_capabilities(tmp_path: Pat
     serialized = str(data).casefold()
     assert "too high" not in serialized
     assert "too low" not in serialized
+    assert "严重失衡" not in data["display_text"]
+    assert "浮亏较深" not in data["display_text"]
+    assert "建议" not in data["display_text"]
+    assert data["display_text"].startswith("投资状况概览\n数据日期: 2026-07-21")

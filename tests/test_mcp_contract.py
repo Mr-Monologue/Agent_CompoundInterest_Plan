@@ -20,6 +20,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "investment_context_set",
         "instrument_create",
         "instrument_list",
+        "instrument_role_update",
         "market_nav_snapshot_record",
         "market_nav_snapshot_list",
         "market_data_canary_run",
@@ -160,6 +161,14 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
     asyncio.run(server.account_create("portfolio-1", "测试账户", "测试平台"))
     asyncio.run(server.instrument_create("INDEX001", "测试指数", "INDEX", role="CORE"))
     asyncio.run(server.instrument_create("FUND007", "测试基金G", "FUND", role="CORE"))
+    asyncio.run(
+        server.instrument_role_update(
+            "FUND007",
+            "SATELLITE",
+            "CORE",
+            "用户明确将该标的归入卫星角色",
+        )
+    )
 
     assert calls == [
         (
@@ -199,6 +208,16 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
                 "asset_type": "FUND",
                 "currency": "CNY",
                 "role": "CORE",
+                "actor_ref": "hermes",
+            },
+        ),
+        (
+            "PATCH",
+            "/v1/instruments/FUND007/role",
+            {
+                "role": "SATELLITE",
+                "expected_current_role": "CORE",
+                "reason": "用户明确将该标的归入卫星角色",
                 "actor_ref": "hermes",
             },
         ),

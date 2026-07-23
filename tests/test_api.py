@@ -57,6 +57,40 @@ def test_ready_fails_when_business_timezone_is_unavailable(tmp_path: Path) -> No
     assert checks["business-timezone"]["status"] == "FAIL"
 
 
+def test_instrument_role_update_api_requires_current_role_match(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    client = TestClient(
+        create_app(Settings(environment=Environment.TEST, db_path=database_path))
+    )
+    client.post(
+        "/v1/instruments",
+        json={"code": "005827", "name": "易方达蓝筹精选混合", "role": "UNASSIGNED"},
+    )
+
+    changed = client.patch(
+        "/v1/instruments/005827/role",
+        json={
+            "role": "SATELLITE",
+            "expected_current_role": "UNASSIGNED",
+            "reason": "用户明确归入卫星角色",
+        },
+    )
+    conflict = client.patch(
+        "/v1/instruments/005827/role",
+        json={
+            "role": "CORE",
+            "expected_current_role": "UNASSIGNED",
+            "reason": "陈旧请求",
+        },
+    )
+
+    assert changed.status_code == 200
+    assert changed.json()["data"]["instrument"]["role"] == "SATELLITE"
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "ROLE_CONFLICT"
+
+
 def test_transaction_draft_api_requires_commit_before_holding_changes(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)

@@ -117,6 +117,53 @@ def test_ambiguous_portfolios_require_an_explicit_default_context(tmp_path: Path
     assert len(captured.value.details["portfolio_candidates"]) == 2
 
 
+def test_instrument_role_update_is_audited_and_compare_and_swap_guarded(
+    tmp_path: Path,
+) -> None:
+    service, _context = build_service(tmp_path)
+
+    changed = service.update_instrument_role(
+        code="DEMO001",
+        role="SATELLITE",
+        expected_current_role="CORE",
+        reason="用户明确指定卫星角色",
+        actor_ref="test-user",
+    )
+
+    assert changed["changed"] is True
+    assert changed["previous_role"] == "CORE"
+    assert changed["instrument"]["role"] == "SATELLITE"
+    assert service.list_instruments()[0]["role"] == "SATELLITE"
+
+    with pytest.raises(LedgerError) as captured:
+        service.update_instrument_role(
+            code="DEMO001",
+            role="UNASSIGNED",
+            expected_current_role="CORE",
+            reason="旧会话尝试覆盖",
+        )
+
+    assert captured.value.code == "ROLE_CONFLICT"
+    assert captured.value.details["actual_current_role"] == "SATELLITE"
+    assert service.list_instruments()[0]["role"] == "SATELLITE"
+
+
+def test_instrument_role_update_is_idempotent_when_target_already_matches(
+    tmp_path: Path,
+) -> None:
+    service, _context = build_service(tmp_path)
+
+    result = service.update_instrument_role(
+        code="DEMO001",
+        role="CORE",
+        expected_current_role="CORE",
+        reason="确认现有角色",
+    )
+
+    assert result["changed"] is False
+    assert result["instrument"]["role"] == "CORE"
+
+
 def test_opening_position_requires_exact_commit_and_is_not_a_trade(tmp_path: Path) -> None:
     service, context = build_service(tmp_path)
     created = opening_draft(service, context)

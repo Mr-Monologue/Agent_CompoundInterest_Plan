@@ -670,6 +670,95 @@ class LedgerService:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def update_instrument_role(
+        self,
+        *,
+        code: str,
+        role: str,
+        expected_current_role: str,
+        reason: str,
+        actor_ref: str = "local-user",
+    ) -> JsonDict:
+        """Change one instrument role with compare-and-swap and an audit event."""
+        normalized_code = code.strip().upper()
+        normalized_role = role.strip().upper()
+        normalized_expected = expected_current_role.strip().upper()
+        normalized_reason = reason.strip()
+        allowed_roles = {"CORE", "SATELLITE", "UNASSIGNED"}
+        if not normalized_code:
+            raise LedgerError("INVALID_INSTRUMENT", "instrument code is required")
+        if normalized_role not in allowed_roles or normalized_expected not in allowed_roles:
+            raise LedgerError("INVALID_ROLE", "unsupported portfolio role")
+        if not normalized_reason:
+            raise LedgerError("INVALID_REASON", "role change reason is required")
+
+        connection = self._connect()
+        try:
+            self._begin(connection)
+            instrument = self._instrument_by_code(connection, normalized_code)
+            current_role = str(instrument["role"])
+            if current_role != normalized_expected:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "ROLE_CONFLICT",
+                        "instrument role changed since it was last read",
+                        http_status=409,
+                        details={
+                            "instrument_code": normalized_code,
+                            "expected_current_role": normalized_expected,
+                            "actual_current_role": current_role,
+                        },
+                    ),
+                )
+            if current_role == normalized_role:
+                connection.commit()
+                return {
+                    "instrument": dict(instrument),
+                    "previous_role": current_role,
+                    "changed": False,
+                    "reason": normalized_reason,
+                }
+
+            before = dict(instrument)
+            connection.execute(
+                "UPDATE instruments SET role = ? WHERE id = ?",
+                (normalized_role, instrument["id"]),
+            )
+            updated = self._require_row(
+                connection.execute(
+                    "SELECT * FROM instruments WHERE id = ?", (instrument["id"],)
+                ).fetchone(),
+                "INSTRUMENT_NOT_FOUND",
+                "active instrument was not found",
+            )
+            after = dict(updated)
+            self._audit(
+                connection,
+                actor_type="AGENT",
+                actor_ref=actor_ref,
+                action="INSTRUMENT_ROLE_UPDATED",
+                entity_type="instrument",
+                entity_id=str(instrument["id"]),
+                details={
+                    "instrument_code": normalized_code,
+                    "previous_role": current_role,
+                    "new_role": normalized_role,
+                    "reason": normalized_reason,
+                },
+                before_hash=_canonical_hash(before),
+                after_hash=_canonical_hash(after),
+            )
+            connection.commit()
+            return {
+                "instrument": after,
+                "previous_role": current_role,
+                "changed": True,
+                "reason": normalized_reason,
+            }
+        finally:
+            connection.close()
+
     def _instrument_by_code(self, connection: sqlite3.Connection, code: str) -> sqlite3.Row:
         return self._require_row(
             connection.execute(
