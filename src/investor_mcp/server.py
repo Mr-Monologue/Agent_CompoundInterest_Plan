@@ -33,7 +33,7 @@ def dependency_error() -> dict[str, Any]:
 
 
 async def core_request(
-    method: Literal["GET", "POST", "PATCH"],
+    method: Literal["GET", "POST", "PUT", "PATCH"],
     path: str,
     *,
     params: dict[str, Any] | None = None,
@@ -222,6 +222,57 @@ async def investment_context_set(portfolio_id: str, account_id: str) -> dict[str
         payload={
             "portfolio_id": portfolio_id,
             "account_id": account_id,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def allocation_policy_get(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
+    """Get the active versioned CORE/SATELLITE allocation policy."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "GET",
+        "/v1/allocation-policy",
+        params={"portfolio_id": resolved_portfolio_id},
+    )
+
+
+@mcp.tool()
+async def allocation_policy_set(
+    core_target_pct: str,
+    satellite_target_pct: str,
+    tolerance_pct: str,
+    transition_trigger_pct: str,
+    transition_exit_core_min_pct: str,
+    transition_exit_satellite_max_pct: str,
+    expected_version: int,
+    reason: str,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Version an explicitly approved allocation policy; this never trades or changes holdings."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "PUT",
+        f"/v1/allocation-policy/{resolved_portfolio_id}",
+        payload={
+            "core_target_pct": core_target_pct,
+            "satellite_target_pct": satellite_target_pct,
+            "tolerance_pct": tolerance_pct,
+            "transition_trigger_pct": transition_trigger_pct,
+            "transition_exit_core_min_pct": transition_exit_core_min_pct,
+            "transition_exit_satellite_max_pct": transition_exit_satellite_max_pct,
+            "expected_version": expected_version,
+            "reason": reason,
             "actor_ref": "hermes",
         },
     )

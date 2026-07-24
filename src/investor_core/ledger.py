@@ -19,6 +19,18 @@ from investor_core.config import Settings
 
 JsonDict = dict[str, Any]
 INVESTMENT_CONTEXT_KEY = "investment_context"
+ALLOCATION_POLICY_KEY_PREFIX = "allocation_policy:"
+DEFAULT_ALLOCATION_POLICY: JsonDict = {
+    "policy_id": "value-dca-v1.6",
+    "core_target_pct": "65.00",
+    "satellite_target_pct": "35.00",
+    "tolerance_pct": "10.00",
+    "transition_trigger_pct": "15.00",
+    "transition_exit_core_min_pct": "55.00",
+    "transition_exit_satellite_max_pct": "45.00",
+    "transition_principle": "INCREMENTAL_FUNDS_FIRST",
+    "automatic_selling_allowed": False,
+}
 
 
 class LedgerError(Exception):
@@ -86,6 +98,10 @@ def _round_div(numerator: int, denominator: int) -> int:
     if denominator <= 0:
         return 0
     return (numerator + denominator // 2) // denominator
+
+
+def _allocation_policy_key(portfolio_id: str) -> str:
+    return f"{ALLOCATION_POLICY_KEY_PREFIX}{portfolio_id}"
 
 
 class LedgerService:
@@ -250,6 +266,255 @@ class LedgerService:
             },
             after_hash=_canonical_hash(payload),
         )
+
+    def _save_allocation_policy(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        portfolio_id: str,
+        payload: JsonDict,
+        approved_by: str,
+        actor_type: str,
+        expected_version: int | None,
+        action: str,
+        reason: str,
+    ) -> JsonDict:
+        key = _allocation_policy_key(portfolio_id)
+        current = connection.execute(
+            """
+            SELECT version, value_json, value_hash
+            FROM settings
+            WHERE key = ? AND status = 'ACTIVE'
+            ORDER BY version DESC
+            LIMIT 1
+            """,
+            (key,),
+        ).fetchone()
+        current_version = int(current["version"]) if current is not None else 0
+        value_hash = _canonical_hash(payload)
+        if current is not None and str(current["value_hash"]) == value_hash:
+            saved = json.loads(str(current["value_json"]))
+            return {
+                "portfolio_id": portfolio_id,
+                "version": current_version,
+                "policy": saved,
+                "changed": False,
+            }
+        if expected_version is not None and expected_version != current_version:
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "ALLOCATION_POLICY_CONFLICT",
+                    "allocation policy changed after it was last read",
+                    http_status=409,
+                    details={
+                        "expected_version": expected_version,
+                        "current_version": current_version,
+                    },
+                ),
+            )
+
+        next_version = current_version + 1
+        timestamp = _iso(self._now())
+        connection.execute(
+            "UPDATE settings SET status = 'RETIRED' WHERE key = ? AND status = 'ACTIVE'",
+            (key,),
+        )
+        connection.execute(
+            """
+            INSERT INTO settings (
+                key, version, value_json, value_hash, status, approved_by,
+                approved_at, created_at
+            ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+            """,
+            (
+                key,
+                next_version,
+                json.dumps(payload, ensure_ascii=False, sort_keys=True),
+                value_hash,
+                approved_by,
+                timestamp,
+                timestamp,
+            ),
+        )
+        self._audit(
+            connection,
+            actor_type=actor_type,
+            actor_ref=approved_by,
+            action=action,
+            entity_type="setting",
+            entity_id=key,
+            details={
+                "portfolio_id": portfolio_id,
+                "version": next_version,
+                "policy_id": payload["policy_id"],
+                "reason": reason,
+            },
+            before_hash=(str(current["value_hash"]) if current is not None else None),
+            after_hash=value_hash,
+        )
+        return {
+            "portfolio_id": portfolio_id,
+            "version": next_version,
+            "policy": payload,
+            "changed": True,
+        }
+
+    def _seed_default_allocation_policy(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        portfolio_id: str,
+    ) -> JsonDict:
+        return self._save_allocation_policy(
+            connection,
+            portfolio_id=portfolio_id,
+            payload=dict(DEFAULT_ALLOCATION_POLICY),
+            approved_by="system:approved-strategy-v1.6",
+            actor_type="SYSTEM",
+            expected_version=None,
+            action="ALLOCATION_POLICY_INITIALIZED",
+            reason="Approved Value-DCA architecture v1.6",
+        )
+
+    def get_allocation_policy(self, *, portfolio_id: str) -> JsonDict:
+        """Return the active versioned allocation policy for one portfolio."""
+        with self._connect() as connection:
+            self._require_row(
+                connection.execute(
+                    "SELECT id FROM portfolios WHERE id = ? AND status = 'ACTIVE'",
+                    (portfolio_id,),
+                ).fetchone(),
+                "PORTFOLIO_NOT_FOUND",
+                "active portfolio was not found",
+            )
+            row = connection.execute(
+                """
+                SELECT version, value_json, value_hash, approved_by, approved_at
+                FROM settings
+                WHERE key = ? AND status = 'ACTIVE'
+                ORDER BY version DESC
+                LIMIT 1
+                """,
+                (_allocation_policy_key(portfolio_id),),
+            ).fetchone()
+            if row is None:
+                raise LedgerError(
+                    "ALLOCATION_POLICY_NOT_CONFIGURED",
+                    "allocation policy is not configured",
+                    http_status=409,
+                    details={"portfolio_id": portfolio_id},
+                )
+            try:
+                policy = json.loads(str(row["value_json"]))
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise LedgerError(
+                    "INVALID_ALLOCATION_POLICY",
+                    "saved allocation policy is invalid",
+                    http_status=409,
+                ) from exc
+            return {
+                "portfolio_id": portfolio_id,
+                "version": int(row["version"]),
+                "policy": policy,
+                "value_hash": str(row["value_hash"]),
+                "approved_by": str(row["approved_by"]),
+                "approved_at": str(row["approved_at"]),
+            }
+
+    def set_allocation_policy(
+        self,
+        *,
+        portfolio_id: str,
+        core_target_pct: str,
+        satellite_target_pct: str,
+        tolerance_pct: str,
+        transition_trigger_pct: str,
+        transition_exit_core_min_pct: str,
+        transition_exit_satellite_max_pct: str,
+        expected_version: int,
+        reason: str,
+        actor_ref: str = "local-user",
+    ) -> JsonDict:
+        """Version and audit an explicitly approved allocation-policy change."""
+
+        def percentage(value: str, field: str) -> Decimal:
+            try:
+                parsed = Decimal(value)
+            except InvalidOperation as exc:
+                raise LedgerError("INVALID_PERCENTAGE", f"{field} must be a decimal") from exc
+            if not parsed.is_finite() or parsed < 0 or parsed > 100:
+                raise LedgerError(
+                    "INVALID_PERCENTAGE",
+                    f"{field} must be between 0 and 100",
+                )
+            return parsed.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        core_target = percentage(core_target_pct, "core_target_pct")
+        satellite_target = percentage(satellite_target_pct, "satellite_target_pct")
+        tolerance = percentage(tolerance_pct, "tolerance_pct")
+        trigger = percentage(transition_trigger_pct, "transition_trigger_pct")
+        exit_core = percentage(
+            transition_exit_core_min_pct, "transition_exit_core_min_pct"
+        )
+        exit_satellite = percentage(
+            transition_exit_satellite_max_pct,
+            "transition_exit_satellite_max_pct",
+        )
+        if core_target + satellite_target != Decimal("100.00"):
+            raise LedgerError(
+                "INVALID_ALLOCATION_POLICY",
+                "CORE and SATELLITE targets must total 100 percent",
+            )
+        if tolerance >= trigger:
+            raise LedgerError(
+                "INVALID_ALLOCATION_POLICY",
+                "tolerance must be smaller than the transition trigger",
+            )
+        if exit_core != core_target - tolerance or exit_satellite != satellite_target + tolerance:
+            raise LedgerError(
+                "INVALID_ALLOCATION_POLICY",
+                "transition exit bounds must match the configured tolerance",
+            )
+        normalized_reason = reason.strip()
+        if not normalized_reason:
+            raise LedgerError("INVALID_REASON", "policy change reason is required")
+        payload: JsonDict = {
+            "policy_id": "value-dca-custom",
+            "core_target_pct": f"{core_target:.2f}",
+            "satellite_target_pct": f"{satellite_target:.2f}",
+            "tolerance_pct": f"{tolerance:.2f}",
+            "transition_trigger_pct": f"{trigger:.2f}",
+            "transition_exit_core_min_pct": f"{exit_core:.2f}",
+            "transition_exit_satellite_max_pct": f"{exit_satellite:.2f}",
+            "transition_principle": "INCREMENTAL_FUNDS_FIRST",
+            "automatic_selling_allowed": False,
+        }
+        connection = self._connect()
+        try:
+            self._begin(connection)
+            self._require_row(
+                connection.execute(
+                    "SELECT id FROM portfolios WHERE id = ? AND status = 'ACTIVE'",
+                    (portfolio_id,),
+                ).fetchone(),
+                "PORTFOLIO_NOT_FOUND",
+                "active portfolio was not found",
+            )
+            result = self._save_allocation_policy(
+                connection,
+                portfolio_id=portfolio_id,
+                payload=payload,
+                approved_by=actor_ref,
+                actor_type="AGENT" if actor_ref == "hermes" else "USER",
+                expected_version=expected_version,
+                action="ALLOCATION_POLICY_UPDATED",
+                reason=normalized_reason,
+            )
+            connection.commit()
+            return result
+        finally:
+            connection.close()
 
     def get_investment_context(self) -> JsonDict:
         """Return a saved context or persist an unambiguous single active context."""
@@ -451,6 +716,10 @@ class LedgerService:
                 entity_type="portfolio",
                 entity_id=portfolio_id,
                 details={"name": normalized_name, "base_currency": currency},
+            )
+            self._seed_default_allocation_policy(
+                connection,
+                portfolio_id=portfolio_id,
             )
             connection.commit()
             return {

@@ -48,6 +48,33 @@ def _money(value_minor: int) -> str:
     return f"{Decimal(value_minor) / MONEY_SCALE:.2f}"
 
 
+def _display_money(value: str) -> str:
+    amount = Decimal(value)
+    if amount < 0:
+        return f"-¥{abs(amount):.2f}"
+    return f"¥{amount:.2f}"
+
+
+def _display_warning(warning: str) -> str:
+    translations = {
+        "NAV is single-source or unverified; use the deterministic result conservatively": (
+            "净值为单一来源或未经独立验证，请保守使用确定性估值结果。"  # noqa: RUF001
+        ),
+        "No committed holdings were found": "未找到已提交的持仓记录。",
+    }
+    if warning in translations:
+        return translations[warning]
+    if warning.startswith("Missing NAV for "):
+        return f"{warning.removeprefix('Missing NAV for ')} 缺少净值。"
+    if warning.startswith("Conflicting NAV observations for "):
+        return f"{warning.removeprefix('Conflicting NAV observations for ')} 存在冲突净值。"
+    if warning.startswith("Stale NAV for "):
+        return warning.replace("Stale NAV for ", "净值已过期: ").replace(
+            " days old", " 天。"
+        )
+    return warning
+
+
 def _nav(value_micros: int) -> str:
     return f"{Decimal(value_micros) / NAV_SCALE:.6f}"
 
@@ -55,6 +82,91 @@ def _nav(value_micros: int) -> str:
 def _canonical_hash(payload: JsonDict) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _allocation_assessment(
+    *,
+    policy_record: JsonDict,
+    role_summary: dict[str, JsonDict],
+    valuation_complete: bool,
+) -> JsonDict:
+    policy = policy_record["policy"]
+    if not valuation_complete:
+        return {
+            "available": False,
+            "state": "NOT_EVALUATED",
+            "reason_code": "VALUATION_UNAVAILABLE",
+            "policy": policy_record,
+        }
+
+    core_actual = Decimal(str(role_summary["CORE"]["market_value_pct"]))
+    satellite_actual = Decimal(str(role_summary["SATELLITE"]["market_value_pct"]))
+    core_target = Decimal(str(policy["core_target_pct"]))
+    satellite_target = Decimal(str(policy["satellite_target_pct"]))
+    tolerance = Decimal(str(policy["tolerance_pct"]))
+    trigger = Decimal(str(policy["transition_trigger_pct"]))
+    core_delta = core_actual - core_target
+    satellite_delta = satellite_actual - satellite_target
+    max_deviation = max(abs(core_delta), abs(satellite_delta))
+    unassigned_count = int(role_summary.get("UNASSIGNED", {}).get("position_count", 0))
+
+    if unassigned_count:
+        state = "BLOCKED_UNASSIGNED"
+        reason_code = "ROLE_UNASSIGNED"
+    elif max_deviation > trigger:
+        state = "TRANSITION_REQUIRED"
+        reason_code = "DEVIATION_EXCEEDS_TRANSITION_TRIGGER"
+    elif max_deviation > tolerance:
+        state = "OUTSIDE_TOLERANCE"
+        reason_code = "DEVIATION_EXCEEDS_TOLERANCE"
+    else:
+        state = "ON_TARGET"
+        reason_code = "WITHIN_TOLERANCE"
+
+    for role, actual, target, delta in (
+        ("CORE", core_actual, core_target, core_delta),
+        ("SATELLITE", satellite_actual, satellite_target, satellite_delta),
+    ):
+        if abs(delta) <= tolerance:
+            assessment = "ON_TARGET"
+        elif delta < 0:
+            assessment = "UNDER_TARGET"
+        else:
+            assessment = "OVER_TARGET"
+        role_summary[role].update(
+            {
+                "target_pct": f"{target:.2f}",
+                "deviation_pct_points": f"{delta:+.2f}",
+                "assessment": assessment,
+                "reason_code": reason_code,
+                "actual_pct": f"{actual:.2f}",
+            }
+        )
+
+    return {
+        "available": True,
+        "state": state,
+        "reason_code": reason_code,
+        "policy": policy_record,
+        "actual": {
+            "CORE": f"{core_actual:.2f}",
+            "SATELLITE": f"{satellite_actual:.2f}",
+        },
+        "deviation_pct_points": {
+            "CORE": f"{core_delta:+.2f}",
+            "SATELLITE": f"{satellite_delta:+.2f}",
+            "maximum_absolute": f"{max_deviation:.2f}",
+        },
+        "transition_required": state == "TRANSITION_REQUIRED",
+        "transition_exit_condition_met": (
+            unassigned_count == 0
+            and core_actual >= Decimal(str(policy["transition_exit_core_min_pct"]))
+            and satellite_actual
+            <= Decimal(str(policy["transition_exit_satellite_max_pct"]))
+        ),
+        "transition_principle": policy["transition_principle"],
+        "automatic_selling_allowed": policy["automatic_selling_allowed"],
+    }
 
 
 class MarketDataService:
@@ -825,7 +937,7 @@ class MarketDataService:
                     "market_value": "0.00" if valuation["totals"] is not None else None,
                     "market_value_pct": "0.00" if valuation["totals"] is not None else None,
                     "assessment": "NOT_AVAILABLE",
-                    "reason_code": "ALLOCATION_TARGETS_NOT_CONFIGURED",
+                    "reason_code": "ALLOCATION_POLICY_NOT_APPLICABLE",
                 },
             )
             group["position_count"] = int(group["position_count"]) + 1
@@ -859,10 +971,28 @@ class MarketDataService:
                 "reason_code": "DETERMINISTIC_RULES_NOT_CONFIGURED",
             }
 
-        unavailable_capabilities = {
+        for role in ("CORE", "SATELLITE"):
+            role_summary.setdefault(
+                role,
+                {
+                    "position_count": 0,
+                    "market_value": "0.00" if valuation["totals"] is not None else None,
+                    "market_value_pct": "0.00" if valuation["totals"] is not None else None,
+                    "assessment": "NOT_AVAILABLE",
+                    "reason_code": "ALLOCATION_POLICY_NOT_EVALUATED",
+                },
+            )
+        policy_record = self._ledger.get_allocation_policy(portfolio_id=portfolio_id)
+        allocation = _allocation_assessment(
+            policy_record=policy_record,
+            role_summary=role_summary,
+            valuation_complete=valuation["totals"] is not None,
+        )
+
+        capabilities = {
             "allocation_assessment": {
-                "available": False,
-                "reason_code": "ALLOCATION_TARGETS_NOT_CONFIGURED",
+                "available": True,
+                "reason_code": "VERSIONED_POLICY_CONFIGURED",
             },
             "risk_assessment": {
                 "available": False,
@@ -893,12 +1023,12 @@ class MarketDataService:
             line = (
                 f"- {holding['instrument_code']} {holding['instrument_name']} | "
                 f"角色 {holding['role']} | 份额 {holding['total_shares']} | "
-                f"成本 ¥{holding['cost_amount']}"
+                f"成本 {_display_money(str(holding['cost_amount']))}"
             )
             if position["market_value"] is not None:
                 line += (
-                    f" | 市值 ¥{position['market_value']} | "
-                    f"未实现盈亏 ¥{position['unrealized_pnl']} | "
+                    f" | 市值 {_display_money(str(position['market_value']))} | "
+                    f"未实现盈亏 {_display_money(str(position['unrealized_pnl']))} | "
                     f"收益率 {position['return_pct']}% | 权重 {position['weight_pct']}%"
                 )
             else:
@@ -910,19 +1040,48 @@ class MarketDataService:
                 [
                     "",
                     (
-                        f"合计: 市值 ¥{totals['market_value']} | 成本 ¥{totals['cost_amount']} | "
-                        f"未实现盈亏 ¥{totals['unrealized_pnl']}"
+                        f"合计: 市值 {_display_money(str(totals['market_value']))} | "
+                        f"成本 {_display_money(str(totals['cost_amount']))} | "
+                        f"未实现盈亏 {_display_money(str(totals['unrealized_pnl']))}"
                     ),
                 ]
             )
         if valuation["warnings"]:
             display_lines.extend(["", "数据限制:"])
-            display_lines.extend(f"- {warning}" for warning in valuation["warnings"])
+            display_lines.extend(
+                f"- {_display_warning(warning)}" for warning in valuation["warnings"]
+            )
+        if allocation["available"]:
+            policy = policy_record["policy"]
+            display_lines.extend(
+                [
+                    "",
+                    "配置评估:",
+                    (
+                        f"- 目标: CORE {policy['core_target_pct']}% | "
+                        f"SATELLITE {policy['satellite_target_pct']}%"
+                    ),
+                    (
+                        f"- 实际: CORE {allocation['actual']['CORE']}% | "
+                        f"SATELLITE {allocation['actual']['SATELLITE']}%"
+                    ),
+                    (
+                        "- 偏离: "
+                        f"CORE {allocation['deviation_pct_points']['CORE']} 个百分点 | "
+                        "SATELLITE "
+                        f"{allocation['deviation_pct_points']['SATELLITE']} 个百分点"
+                    ),
+                    (
+                        f"- 状态: {allocation['state']} "
+                        f"({allocation['reason_code']})"
+                    ),
+                    "- 过渡原则: 优先使用新增资金，不自动卖出。",  # noqa: RUF001
+                ]
+            )
         display_lines.extend(
             [
                 "",
                 "当前能力边界:",
-                "- 未配置分配目标, 不能判断角色占比是否合理.",
                 "- 未配置确定性风险规则, 不能判断风险规则是否触发.",
                 "- 未实现卖出规则与周度计划, 不能生成卖出或定投结论.",
                 "- 角色变更工具可用; 仅在用户明确指定新角色时调用.",
@@ -933,8 +1092,9 @@ class MarketDataService:
             "context": {"portfolio": portfolio, "account": account},
             "valuation": valuation,
             "role_summary": role_summary,
+            "allocation_assessment": allocation,
             "factual_findings": unassigned,
-            "capabilities": unavailable_capabilities,
+            "capabilities": capabilities,
             "source_evidence": {
                 "upstream_lineages": sorted(source_lineages),
                 "independence_assessment": (

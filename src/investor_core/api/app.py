@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from investor_core.api.schemas import (
     AccountCreateRequest,
+    AllocationPolicySetRequest,
     InstrumentCreateRequest,
     InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
@@ -125,6 +126,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ledger.set_investment_context(
                 portfolio_id=request.portfolio_id,
                 account_id=request.account_id,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.get("/v1/allocation-policy")
+    def allocation_policy_get(portfolio_id: str) -> dict[str, Any]:
+        return success(ledger.get_allocation_policy(portfolio_id=portfolio_id))
+
+    @app.put("/v1/allocation-policy/{portfolio_id}")
+    def allocation_policy_set(
+        portfolio_id: str,
+        request: AllocationPolicySetRequest,
+    ) -> dict[str, Any]:
+        return success(
+            ledger.set_allocation_policy(
+                portfolio_id=portfolio_id,
+                core_target_pct=str(request.core_target_pct),
+                satellite_target_pct=str(request.satellite_target_pct),
+                tolerance_pct=str(request.tolerance_pct),
+                transition_trigger_pct=str(request.transition_trigger_pct),
+                transition_exit_core_min_pct=str(
+                    request.transition_exit_core_min_pct
+                ),
+                transition_exit_satellite_max_pct=str(
+                    request.transition_exit_satellite_max_pct
+                ),
+                expected_version=request.expected_version,
+                reason=request.reason,
                 actor_ref=request.actor_ref,
             )
         )
