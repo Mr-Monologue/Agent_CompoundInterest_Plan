@@ -41,7 +41,7 @@ def test_configure_investor_mcp_preserves_profile_and_other_servers(tmp_path: Pa
     assert "url" not in investor
     assert investor["command"] == "uv"
     assert investor["args"][-4:] == ["run", "python", "-m", "investor_mcp.server"]
-    assert investor["tools"] == {"include": ["system_health_get"]}
+    assert "tools" not in investor
     assert investor["env"] == {
         "PRESERVE_ME": "yes",
         "INVESTOR_CORE_BASE_URL": "http://127.0.0.1:8710",
