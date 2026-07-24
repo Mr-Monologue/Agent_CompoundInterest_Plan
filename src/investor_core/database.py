@@ -39,7 +39,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0009_strategy_instance_plan"
+EXPECTED_ALEMBIC_REVISION = "0010_strategy_governance_risk"
 
 
 def ensure_database_parent(settings: Settings) -> None:

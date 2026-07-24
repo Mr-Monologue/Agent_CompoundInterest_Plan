@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import secrets
 import sqlite3
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -34,6 +36,14 @@ def _canonical_hash(value: object) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _parse_iso(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 class StrategyService:
@@ -229,6 +239,17 @@ class StrategyService:
                         else None
                     ),
                     "thesis_status": str(config["thesis_status"]),
+                    "proxy_suitability": str(config["proxy_suitability"]),
+                    "hard_stop_return_bps": (
+                        int(config["hard_stop_return_bps"])
+                        if config["hard_stop_return_bps"] is not None
+                        else None
+                    ),
+                    "maximum_position_weight_bps": (
+                        int(config["maximum_position_weight_bps"])
+                        if config["maximum_position_weight_bps"] is not None
+                        else None
+                    ),
                     "approved_by": str(config["approved_by"]),
                     "approved_at": str(config["approved_at"]),
                 }
@@ -343,11 +364,7 @@ class StrategyService:
                     "strategy_version": strategy_version,
                     "reason": normalized_reason,
                 },
-                before_hash=(
-                    str(current["instance_config_hash"])
-                    if current is not None
-                    else None
-                ),
+                before_hash=(str(current["instance_config_hash"]) if current is not None else None),
                 after_hash=config_hash,
             )
             connection.commit()
@@ -373,14 +390,37 @@ class StrategyService:
         thesis_status: str,
         approved_by: str,
         reason: str,
+        proxy_suitability: str = "NOT_APPLICABLE",
+        hard_stop_return_bps: int | None = None,
+        maximum_position_weight_bps: int | None = None,
     ) -> JsonDict:
         """Protected operation: approve one instrument for a strategy instance."""
         normalized_role = role.strip().upper()
         normalized_thesis = thesis_status.strip().upper()
+        normalized_suitability = proxy_suitability.strip().upper()
         if normalized_role not in {"CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"}:
             raise LedgerError("INVALID_ROLE", "unsupported strategy instrument role")
         if normalized_thesis not in {"ACTIVE", "REVIEW_REQUIRED", "INVALID"}:
             raise LedgerError("INVALID_THESIS_STATUS", "unsupported thesis status")
+        if normalized_suitability not in {"STRONG", "WEAK", "NOT_APPLICABLE"}:
+            raise LedgerError("INVALID_PROXY_SUITABILITY", "unsupported proxy suitability")
+        if normalized_suitability == "NOT_APPLICABLE" and benchmark_code:
+            raise LedgerError(
+                "INVALID_BENCHMARK_MAPPING",
+                "NOT_APPLICABLE instruments cannot have a valuation benchmark",
+            )
+        if normalized_suitability != "NOT_APPLICABLE" and not benchmark_code:
+            raise LedgerError(
+                "BENCHMARK_REQUIRED",
+                "STRONG or WEAK proxy suitability requires a benchmark index",
+            )
+        if hard_stop_return_bps is not None and not -10000 <= hard_stop_return_bps < 0:
+            raise LedgerError("INVALID_HARD_STOP", "hard stop must be -10000..<0 bps")
+        if maximum_position_weight_bps is not None and not 0 < maximum_position_weight_bps <= 10000:
+            raise LedgerError(
+                "INVALID_POSITION_CAP",
+                "maximum position weight must be 1..10000 bps",
+            )
         if target_weight_bps is not None and not 0 <= target_weight_bps <= 10000:
             raise LedgerError("INVALID_TARGET_WEIGHT", "target weight must be 0..10000 bps")
         if priority < 0 or minimum_amount_minor < 0:
@@ -463,6 +503,9 @@ class StrategyService:
                 "maximum_amount_minor": maximum_amount_minor,
                 "benchmark_instrument_id": benchmark_id,
                 "thesis_status": normalized_thesis,
+                "proxy_suitability": normalized_suitability,
+                "hard_stop_return_bps": hard_stop_return_bps,
+                "maximum_position_weight_bps": maximum_position_weight_bps,
             }
             before_hash = _canonical_hash(dict(current)) if current is not None else None
             config_id = str(current["id"]) if current is not None else str(uuid4())
@@ -474,8 +517,9 @@ class StrategyService:
                         contribution_eligible, target_weight_bps, priority,
                         minimum_amount_minor, maximum_amount_minor, status,
                         benchmark_instrument_id, thesis_status, approved_by,
-                        approved_at, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?)
+                        approved_at, created_at, updated_at, proxy_suitability,
+                        hard_stop_return_bps, maximum_position_weight_bps
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         config_id,
@@ -493,6 +537,9 @@ class StrategyService:
                         timestamp,
                         timestamp,
                         timestamp,
+                        normalized_suitability,
+                        hard_stop_return_bps,
+                        maximum_position_weight_bps,
                     ),
                 )
             else:
@@ -503,7 +550,9 @@ class StrategyService:
                         priority = ?, minimum_amount_minor = ?,
                         maximum_amount_minor = ?, status = 'ACTIVE',
                         benchmark_instrument_id = ?, thesis_status = ?,
-                        approved_by = ?, approved_at = ?, updated_at = ?
+                        approved_by = ?, approved_at = ?, updated_at = ?,
+                        proxy_suitability = ?, hard_stop_return_bps = ?,
+                        maximum_position_weight_bps = ?
                     WHERE id = ?
                     """,
                     (
@@ -518,6 +567,9 @@ class StrategyService:
                         approved_by.strip(),
                         timestamp,
                         timestamp,
+                        normalized_suitability,
+                        hard_stop_return_bps,
+                        maximum_position_weight_bps,
                         config_id,
                     ),
                 )
@@ -587,24 +639,21 @@ class StrategyService:
             contribution_eligible=(
                 bool(config["contribution_eligible"]) if config is not None else False
             ),
-            target_weight_bps=(
-                config["target_weight_bps"] if config is not None else None
-            ),
+            target_weight_bps=(config["target_weight_bps"] if config is not None else None),
             priority=int(config["priority"]) if config is not None else 100,
-            minimum_amount_minor=(
-                int(config["minimum_amount_minor"]) if config is not None else 1
-            ),
-            maximum_amount_minor=(
-                config["maximum_amount_minor"] if config is not None else None
-            ),
-            benchmark_code=(
-                config["benchmark_code"] if config is not None else None
-            ),
-            thesis_status=(
-                str(config["thesis_status"]) if config is not None else "ACTIVE"
-            ),
+            minimum_amount_minor=(int(config["minimum_amount_minor"]) if config is not None else 1),
+            maximum_amount_minor=(config["maximum_amount_minor"] if config is not None else None),
+            benchmark_code=(config["benchmark_code"] if config is not None else None),
+            thesis_status=(str(config["thesis_status"]) if config is not None else "ACTIVE"),
             approved_by=actor_ref,
             reason=reason,
+            proxy_suitability=(
+                str(config["proxy_suitability"]) if config is not None else "NOT_APPLICABLE"
+            ),
+            hard_stop_return_bps=(config["hard_stop_return_bps"] if config is not None else None),
+            maximum_position_weight_bps=(
+                config["maximum_position_weight_bps"] if config is not None else None
+            ),
         )
         return {
             "portfolio_id": portfolio_id,
@@ -612,4 +661,306 @@ class StrategyService:
             "previous_role": current_role,
             "changed": current_role != role.strip().upper(),
             "assignment": updated,
+        }
+
+    def create_config_draft(
+        self,
+        *,
+        portfolio_id: str,
+        instrument_code: str,
+        contribution_eligible: bool,
+        reason: str,
+        role: str | None = None,
+        target_weight_bps: int | None = None,
+        priority: int | None = None,
+        minimum_amount_minor: int | None = None,
+        maximum_amount_minor: int | None = None,
+        benchmark_code: str | None = None,
+        proxy_suitability: str | None = None,
+        thesis_status: str | None = None,
+        hard_stop_return_bps: int | None = None,
+        maximum_position_weight_bps: int | None = None,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Create an expiring preview; NAV never determines contribution eligibility."""
+        if not reason.strip():
+            raise LedgerError("INVALID_REASON", "configuration reason is required")
+        assignment = self.get_assignment(portfolio_id=portfolio_id)
+        normalized_code = instrument_code.strip().upper()
+        current = next(
+            (
+                item
+                for item in assignment["instruments"]
+                if item["instrument_code"] == normalized_code
+            ),
+            None,
+        )
+        if current is None:
+            with self._connect() as connection:
+                instrument = connection.execute(
+                    "SELECT id, code, name, asset_type FROM instruments "
+                    "WHERE code = ? AND status = 'ACTIVE'",
+                    (normalized_code,),
+                ).fetchone()
+            if instrument is None:
+                raise LedgerError(
+                    "INSTRUMENT_NOT_FOUND",
+                    "active instrument was not found",
+                    http_status=404,
+                )
+            current = {
+                "instrument_id": str(instrument["id"]),
+                "instrument_code": str(instrument["code"]),
+                "instrument_name": str(instrument["name"]),
+                "asset_type": str(instrument["asset_type"]),
+                "role": "UNASSIGNED",
+                "contribution_eligible": False,
+                "target_weight_bps": None,
+                "priority": 100,
+                "minimum_amount_minor": 1,
+                "maximum_amount_minor": None,
+                "benchmark_code": None,
+                "thesis_status": "ACTIVE",
+                "proxy_suitability": "NOT_APPLICABLE",
+                "hard_stop_return_bps": None,
+                "maximum_position_weight_bps": None,
+            }
+        request = {
+            "portfolio_id": portfolio_id,
+            "instrument_code": normalized_code,
+            "role": (role or str(current["role"])).strip().upper(),
+            "contribution_eligible": contribution_eligible,
+            "target_weight_bps": (
+                target_weight_bps if target_weight_bps is not None else current["target_weight_bps"]
+            ),
+            "priority": priority if priority is not None else int(current["priority"]),
+            "minimum_amount_minor": (
+                minimum_amount_minor
+                if minimum_amount_minor is not None
+                else int(current["minimum_amount_minor"])
+            ),
+            "maximum_amount_minor": (
+                maximum_amount_minor
+                if maximum_amount_minor is not None
+                else current["maximum_amount_minor"]
+            ),
+            "benchmark_code": (
+                benchmark_code if benchmark_code is not None else current["benchmark_code"]
+            ),
+            "proxy_suitability": (
+                proxy_suitability if proxy_suitability is not None else current["proxy_suitability"]
+            ),
+            "thesis_status": (
+                thesis_status if thesis_status is not None else current["thesis_status"]
+            ),
+            "hard_stop_return_bps": (
+                hard_stop_return_bps
+                if hard_stop_return_bps is not None
+                else current["hard_stop_return_bps"]
+            ),
+            "maximum_position_weight_bps": (
+                maximum_position_weight_bps
+                if maximum_position_weight_bps is not None
+                else current["maximum_position_weight_bps"]
+            ),
+            "reason": reason.strip(),
+        }
+        # Reuse the protected validator without mutating by checking the key invariants here.
+        if request["contribution_eligible"] and current["asset_type"] == "INDEX":
+            raise LedgerError(
+                "INDEX_NOT_TRADABLE",
+                "an index can be a benchmark but cannot receive contributions",
+                http_status=409,
+            )
+        now = self._now()
+        expires_at = now + timedelta(minutes=self.settings.confirmation_ttl_minutes)
+        token = secrets.token_urlsafe(24)
+        draft_id = str(uuid4())
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO strategy_config_drafts (
+                    id, portfolio_id, strategy_assignment_id, instrument_id,
+                    request_json, request_hash, before_json, confirmation_digest,
+                    status, created_by, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
+                """,
+                (
+                    draft_id,
+                    portfolio_id,
+                    assignment["id"],
+                    current["instrument_id"],
+                    _canonical_json(request),
+                    _canonical_hash(request),
+                    _canonical_json(current),
+                    _token_digest(token),
+                    actor_ref,
+                    _iso(now),
+                    _iso(expires_at),
+                ),
+            )
+        return {
+            "draft": {
+                "id": draft_id,
+                "status": "PENDING",
+                "instrument_code": normalized_code,
+                "before": current,
+                "proposed": request,
+                "expires_at": _iso(expires_at),
+                "execution_status": "NOT_APPLIED",
+            },
+            "confirmation_token": token,
+            "warnings": [
+                "Contribution eligibility is an explicit long-term strategy decision; "
+                "it was not inferred from NAV, valuation, holdings, or model opinion"
+            ],
+        }
+
+    def get_config_draft(self, *, draft_id: str) -> JsonDict:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM strategy_config_drafts WHERE id = ?",
+                (draft_id,),
+            ).fetchone()
+            if row is None:
+                raise LedgerError(
+                    "STRATEGY_CONFIG_DRAFT_NOT_FOUND",
+                    "strategy configuration draft was not found",
+                    http_status=404,
+                )
+            status = str(row["status"])
+            if status == "PENDING" and _parse_iso(str(row["expires_at"])) <= self._now():
+                connection.execute(
+                    "UPDATE strategy_config_drafts SET status = 'EXPIRED' WHERE id = ?",
+                    (draft_id,),
+                )
+                status = "EXPIRED"
+            return {
+                "id": str(row["id"]),
+                "status": status,
+                "portfolio_id": str(row["portfolio_id"]),
+                "before": self._decode_json(
+                    row["before_json"],
+                    code="INVALID_STRATEGY_CONFIG_DRAFT",
+                    message="saved strategy configuration draft is invalid",
+                ),
+                "proposed": self._decode_json(
+                    row["request_json"],
+                    code="INVALID_STRATEGY_CONFIG_DRAFT",
+                    message="saved strategy configuration draft is invalid",
+                ),
+                "created_at": str(row["created_at"]),
+                "expires_at": str(row["expires_at"]),
+                "committed_at": row["committed_at"],
+                "committed_by": row["committed_by"],
+            }
+
+    def commit_config_draft(
+        self,
+        *,
+        draft_id: str,
+        confirmation_token: str,
+        confirmed_by: str,
+    ) -> JsonDict:
+        """Apply one exact strategy config after explicit confirmation."""
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM strategy_config_drafts WHERE id = ?",
+                (draft_id,),
+            ).fetchone()
+            if row is None:
+                raise LedgerError(
+                    "STRATEGY_CONFIG_DRAFT_NOT_FOUND",
+                    "strategy configuration draft was not found",
+                    http_status=404,
+                )
+            if str(row["status"]) == "COMMITTED":
+                connection.commit()
+                return {
+                    "draft": self.get_config_draft(draft_id=draft_id),
+                    "idempotent_replay": True,
+                }
+            if str(row["status"]) != "PENDING":
+                raise LedgerError(
+                    "INVALID_STRATEGY_CONFIG_DRAFT_STATUS",
+                    "strategy configuration draft is not pending",
+                    http_status=409,
+                )
+            if _parse_iso(str(row["expires_at"])) <= self._now():
+                connection.execute(
+                    "UPDATE strategy_config_drafts SET status = 'EXPIRED' WHERE id = ?",
+                    (draft_id,),
+                )
+                raise LedgerError(
+                    "CONFIRMATION_EXPIRED",
+                    "strategy configuration confirmation has expired",
+                    http_status=409,
+                )
+            if not hmac.compare_digest(
+                str(row["confirmation_digest"]),
+                _token_digest(confirmation_token),
+            ):
+                raise LedgerError(
+                    "CONFIRMATION_MISMATCH",
+                    "confirmation token does not match this draft",
+                    http_status=409,
+                )
+            request = self._decode_json(
+                row["request_json"],
+                code="INVALID_STRATEGY_CONFIG_DRAFT",
+                message="saved strategy configuration draft is invalid",
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        assignment = self.configure_instrument(
+            portfolio_id=str(request["portfolio_id"]),
+            instrument_code=str(request["instrument_code"]),
+            role=str(request["role"]),
+            contribution_eligible=bool(request["contribution_eligible"]),
+            target_weight_bps=request["target_weight_bps"],
+            priority=int(request["priority"]),
+            minimum_amount_minor=int(request["minimum_amount_minor"]),
+            maximum_amount_minor=request["maximum_amount_minor"],
+            benchmark_code=request["benchmark_code"],
+            thesis_status=str(request["thesis_status"]),
+            approved_by=confirmed_by,
+            reason=str(request["reason"]),
+            proxy_suitability=str(request["proxy_suitability"]),
+            hard_stop_return_bps=request["hard_stop_return_bps"],
+            maximum_position_weight_bps=request["maximum_position_weight_bps"],
+        )
+        with self._connect() as update:
+            timestamp = _iso(self._now())
+            update.execute(
+                """
+                UPDATE strategy_config_drafts
+                SET status = 'COMMITTED', committed_at = ?, committed_by = ?
+                WHERE id = ? AND status = 'PENDING'
+                """,
+                (timestamp, confirmed_by.strip(), draft_id),
+            )
+            self._audit(
+                update,
+                actor_type="USER",
+                actor_ref=confirmed_by.strip(),
+                action="STRATEGY_CONFIG_DRAFT_COMMITTED",
+                entity_type="strategy_config_draft",
+                entity_id=draft_id,
+                details={"request_hash": str(row["request_hash"])},
+                before_hash=_canonical_hash(
+                    self._decode_json(
+                        row["before_json"],
+                        code="INVALID_STRATEGY_CONFIG_DRAFT",
+                        message="saved strategy configuration draft is invalid",
+                    )
+                ),
+                after_hash=str(row["request_hash"]),
+            )
+        return {
+            "draft": self.get_config_draft(draft_id=draft_id),
+            "assignment": assignment,
+            "idempotent_replay": False,
         }

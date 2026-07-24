@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.11.0",
+  "version": "0.12.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0009_strategy_instance_plan",
+  "database_revision": "0010_strategy_governance_risk",
   "minimum_current_version": "0.5.3",
-  "notes": "Separate reusable strategy versions from local portfolio instances and add audited instrument-level weekly-plan lifecycle without embedding user-specific funds."
+  "notes": "Close executable weekly-plan projection and add confirmed local strategy governance, sourced valuation percentiles, deterministic risk scans, and non-executing sell proposals without embedding user-specific funds."
 }
