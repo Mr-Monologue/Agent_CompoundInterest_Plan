@@ -20,6 +20,47 @@ function Write-FinalizerLog([string]$Message) {
     Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) finalizer: $Message"
 }
 
+function Refresh-HermesGateway([string]$Profile) {
+    $HermesCommand = Get-Command hermes -ErrorAction SilentlyContinue
+    if ($null -eq $HermesCommand) {
+        Write-FinalizerLog "Hermes CLI is unavailable; gateway refresh skipped."
+        return
+    }
+
+    $null = & $HermesCommand.Source -p $Profile gateway status --deep 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-FinalizerLog (
+            "Hermes gateway for profile '$Profile' is not running; refresh is unnecessary."
+        )
+        return
+    }
+
+    $RestartOutput = @(
+        & $HermesCommand.Source -p $Profile gateway restart 2>&1
+    )
+    if ($LASTEXITCODE -ne 0) {
+        Write-FinalizerLog (
+            "Hermes gateway refresh failed: " + ($RestartOutput -join " ")
+        )
+        return
+    }
+
+    for ($Attempt = 0; $Attempt -lt 20; $Attempt++) {
+        Start-Sleep -Milliseconds 500
+        $null = & $HermesCommand.Source -p $Profile gateway status --deep 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-FinalizerLog (
+                "Refreshed Hermes gateway for profile '$Profile'; " +
+                "new MCP tools will be available to new sessions."
+            )
+            return
+        }
+    }
+    Write-FinalizerLog (
+        "Hermes gateway restart was requested but did not become ready within 10 seconds."
+    )
+}
+
 try {
     for ($Attempt = 0; $Attempt -lt 120; $Attempt++) {
         $CurrentTask = Get-ScheduledTask -TaskName $UpdateTaskName `
@@ -75,6 +116,7 @@ try {
     Register-ScheduledTask -TaskName $UpdateTaskName `
         -InputObject $UpdateDefinition -Force | Out-Null
     Write-FinalizerLog "Installed console-free updater task definition."
+    Refresh-HermesGateway -Profile $HermesProfile
 }
 catch {
     Write-FinalizerLog "FAILED: $($_.Exception.Message)"
