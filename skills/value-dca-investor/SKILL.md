@@ -83,6 +83,9 @@ pass the last Core-returned version and never silently replace a concurrently ch
 Use `weekly_plan_preview` only after the user explicitly supplies the contribution amount. Return
 its `data.display_text` exactly. The preview allocates only between CORE and SATELLITE; it never
 selects a fund, creates a transaction draft, or claims that a purchase occurred.
+If Core advertises `weekly_plan_preview` but that tool is absent from the current session, report
+the tool mismatch and stop. Do not infer a role allocation, calculate a per-fund split, or offer
+to create transaction drafts from a model-derived substitute.
 
 ## Enforce safety
 
