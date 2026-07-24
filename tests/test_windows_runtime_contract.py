@@ -107,7 +107,7 @@ def test_windows_updater_is_release_only_backup_first_and_rollback_capable() -> 
     assert "update-state.json" in updater
 
 
-def test_windows_update_task_finalizer_waits_then_installs_gui_host() -> None:
+def test_windows_update_task_finalizer_waits_installs_gui_host_and_refreshes_hermes() -> None:
     finalizer = (PROJECT_ROOT / "runtime/windows/finalize-update-task.ps1").read_text(
         encoding="utf-8-sig"
     )
@@ -116,6 +116,10 @@ def test_windows_update_task_finalizer_waits_then_installs_gui_host() -> None:
     assert "Register-ScheduledTask" in finalizer
     assert "wscript.exe" in finalizer
     assert "run-powershell-hidden.vbs" in finalizer
+    assert "Refresh-HermesGateway" in finalizer
+    assert "gateway status --deep" in finalizer
+    assert "gateway restart" in finalizer
+    assert "new MCP tools will be available to new sessions" in finalizer
     assert "Read-Host" not in finalizer
 
 
