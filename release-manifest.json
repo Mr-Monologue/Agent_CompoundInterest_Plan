@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.10.0",
+  "version": "0.10.1",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
   "database_revision": "0008_allocation_policy",
   "minimum_current_version": "0.5.3",
-  "notes": "Add deterministic weekly contribution previews at CORE/SATELLITE role scope with strict no-trade execution boundaries."
+  "notes": "Refresh a running Hermes gateway after automatic updates so newly installed Investor MCP tools are available to new sessions."
 }
