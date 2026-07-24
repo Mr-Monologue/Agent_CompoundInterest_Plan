@@ -33,6 +33,18 @@ class InvestmentContextSetRequest(RequestModel):
     actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
 
 
+class AllocationPolicySetRequest(RequestModel):
+    core_target_pct: Decimal = Field(ge=0, le=100)
+    satellite_target_pct: Decimal = Field(ge=0, le=100)
+    tolerance_pct: Decimal = Field(ge=0, le=100)
+    transition_trigger_pct: Decimal = Field(ge=0, le=100)
+    transition_exit_core_min_pct: Decimal = Field(ge=0, le=100)
+    transition_exit_satellite_max_pct: Decimal = Field(ge=0, le=100)
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=500)
+    actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
+
+
 class InstrumentCreateRequest(RequestModel):
     code: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=200)

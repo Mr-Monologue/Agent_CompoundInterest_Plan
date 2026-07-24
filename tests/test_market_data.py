@@ -328,7 +328,7 @@ def test_same_upstream_alias_cannot_corroborate_eastmoney(tmp_path: Path) -> Non
     assert verification.json()["error"]["code"] == "SOURCE_NOT_INDEPENDENT"
 
 
-def test_portfolio_brief_exposes_unavailable_decision_capabilities(tmp_path: Path) -> None:
+def test_portfolio_brief_exposes_versioned_allocation_policy(tmp_path: Path) -> None:
     client, portfolio_id, account_id = _client_with_holding(tmp_path)
     client.post(
         "/v1/market-nav-snapshots",
@@ -372,14 +372,19 @@ def test_portfolio_brief_exposes_unavailable_decision_capabilities(tmp_path: Pat
         ),
     }
     assert data["capabilities"]["allocation_assessment"] == {
-        "available": False,
-        "reason_code": "ALLOCATION_TARGETS_NOT_CONFIGURED",
+        "available": True,
+        "reason_code": "VERSIONED_POLICY_CONFIGURED",
     }
     assert data["capabilities"]["instrument_role_update"] == {
         "available": True,
         "reason_code": "AVAILABLE_WITH_EXPECTED_CURRENT_ROLE",
     }
-    assert data["role_summary"]["UNASSIGNED"]["assessment"] == "NOT_AVAILABLE"
+    assert data["allocation_assessment"]["state"] == "BLOCKED_UNASSIGNED"
+    assert data["allocation_assessment"]["policy"]["version"] == 1
+    assert data["allocation_assessment"]["policy"]["policy"]["core_target_pct"] == "65.00"
+    assert data["role_summary"]["CORE"]["target_pct"] == "65.00"
+    assert data["role_summary"]["CORE"]["assessment"] == "UNDER_TARGET"
+    assert data["role_summary"]["SATELLITE"]["assessment"] == "UNDER_TARGET"
     assert data["factual_findings"][0]["mutation_available"] is True
     assert data["factual_findings"][0]["mutation_tool"] == "instrument_role_update"
     assert data["source_evidence"] == {
@@ -393,4 +398,84 @@ def test_portfolio_brief_exposes_unavailable_decision_capabilities(tmp_path: Pat
     assert "严重失衡" not in data["display_text"]
     assert "浮亏较深" not in data["display_text"]
     assert "建议" not in data["display_text"]
+    assert "NAV is single-source" not in data["display_text"]
+    assert "净值为单一来源或未经独立验证" in data["display_text"]
+    assert "配置评估:" in data["display_text"]
+    assert "BLOCKED_UNASSIGNED" in data["display_text"]
     assert data["display_text"].startswith("投资状况概览\n数据日期: 2026-07-21")
+
+
+def test_portfolio_brief_deterministically_flags_transition_and_formats_losses(
+    tmp_path: Path,
+) -> None:
+    client, portfolio_id, account_id = _client_with_holding(tmp_path)
+    client.patch(
+        "/v1/instruments/FUND001/role",
+        json={
+            "role": "CORE",
+            "expected_current_role": "UNASSIGNED",
+            "reason": "测试核心角色",
+        },
+    )
+    client.post(
+        "/v1/instruments",
+        json={"code": "FUND002", "name": "测试基金B", "role": "SATELLITE"},
+    )
+    opening = client.post(
+        "/v1/opening-position-drafts",
+        json={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "instrument_code": "FUND002",
+            "as_of_date": "2026-07-17",
+            "total_shares": "100.00",
+            "average_cost_nav": "1.2500",
+            "platform": "测试平台",
+            "idempotency_key": "opening-FUND002",
+        },
+    ).json()["data"]
+    client.post(
+        f"/v1/opening-position-drafts/{opening['draft']['id']}/commit",
+        json={
+            "confirmation_token": opening["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    )
+    for code, nav in (("FUND001", "0.100000"), ("FUND002", "0.900000")):
+        client.post(
+            "/v1/market-nav-snapshots",
+            json={
+                "instrument_code": code,
+                "nav_date": "2026-07-21",
+                "nav": nav,
+                "source_type": "AGGREGATOR",
+                "source_name": "Eastmoney open-fund NAV (AKShare-compatible)",
+                "source_ref": f"https://fund.eastmoney.com/{code}",
+                "observed_at": "2026-07-21T22:00:00+08:00",
+            },
+        )
+
+    data = client.get(
+        "/v1/portfolio-brief",
+        params={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "as_of_date": "2026-07-21",
+        },
+    ).json()["data"]
+
+    assert data["allocation_assessment"]["state"] == "TRANSITION_REQUIRED"
+    assert data["allocation_assessment"]["reason_code"] == (
+        "DEVIATION_EXCEEDS_TRANSITION_TRIGGER"
+    )
+    assert data["allocation_assessment"]["actual"] == {
+        "CORE": "10.00",
+        "SATELLITE": "90.00",
+    }
+    assert data["role_summary"]["CORE"]["assessment"] == "UNDER_TARGET"
+    assert data["role_summary"]["SATELLITE"]["assessment"] == "OVER_TARGET"
+    assert data["allocation_assessment"]["automatic_selling_allowed"] is False
+    assert "TRANSITION_REQUIRED" in data["display_text"]
+    assert "优先使用新增资金，不自动卖出" in data["display_text"]  # noqa: RUF001
+    assert "未实现盈亏 -¥115.00" in data["display_text"]
+    assert "未实现盈亏 ¥-" not in data["display_text"]

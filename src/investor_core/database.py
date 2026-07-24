@@ -32,7 +32,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0007_source_lineage"
+EXPECTED_ALEMBIC_REVISION = "0008_allocation_policy"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -108,7 +108,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Market NAV verification schema is current"
+            schema_message = "Allocation policy schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",
