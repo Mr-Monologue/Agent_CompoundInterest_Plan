@@ -479,3 +479,107 @@ def test_portfolio_brief_deterministically_flags_transition_and_formats_losses(
     assert "优先使用新增资金，不自动卖出" in data["display_text"]  # noqa: RUF001
     assert "未实现盈亏 -¥115.00" in data["display_text"]
     assert "未实现盈亏 ¥-" not in data["display_text"]
+
+
+def test_weekly_plan_preview_routes_incremental_funds_to_underweight_role(
+    tmp_path: Path,
+) -> None:
+    client, portfolio_id, account_id = _client_with_holding(tmp_path)
+    client.patch(
+        "/v1/instruments/FUND001/role",
+        json={
+            "role": "CORE",
+            "expected_current_role": "UNASSIGNED",
+            "reason": "测试核心角色",
+        },
+    )
+    client.post(
+        "/v1/instruments",
+        json={"code": "FUND002", "name": "测试基金B", "role": "SATELLITE"},
+    )
+    opening = client.post(
+        "/v1/opening-position-drafts",
+        json={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "instrument_code": "FUND002",
+            "as_of_date": "2026-07-17",
+            "total_shares": "100.00",
+            "average_cost_nav": "1.2500",
+            "platform": "测试平台",
+            "idempotency_key": "opening-weekly-FUND002",
+        },
+    ).json()["data"]
+    client.post(
+        f"/v1/opening-position-drafts/{opening['draft']['id']}/commit",
+        json={
+            "confirmation_token": opening["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    )
+    for code, nav in (("FUND001", "0.100000"), ("FUND002", "0.900000")):
+        client.post(
+            "/v1/market-nav-snapshots",
+            json={
+                "instrument_code": code,
+                "nav_date": "2026-07-21",
+                "nav": nav,
+                "source_type": "AGGREGATOR",
+                "source_name": "Eastmoney open-fund NAV (AKShare-compatible)",
+                "source_ref": f"https://fund.eastmoney.com/{code}",
+                "observed_at": "2026-07-21T22:00:00+08:00",
+            },
+        )
+
+    response = client.get(
+        "/v1/weekly-plan-preview",
+        params={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "contribution_amount": "100.00",
+            "as_of_date": "2026-07-21",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["available"] is True
+    assert data["state"] == "TRANSITION_CONTRIBUTION"
+    assert data["plan"]["role_allocations"] == {
+        "CORE": "100.00",
+        "SATELLITE": "0.00",
+    }
+    assert data["plan"]["projected"]["CORE"]["actual_pct"] == "55.00"
+    assert data["plan"]["projected"]["SATELLITE"]["actual_pct"] == "45.00"
+    assert data["plan"]["transition_exit_condition_met"] is True
+    assert data["execution_boundary"] == {
+        "instrument_selection": "NOT_INCLUDED",
+        "transaction_draft_created": False,
+        "trade_executed": False,
+        "automatic_selling_allowed": False,
+    }
+    assert "CORE ¥100.00 | SATELLITE ¥0.00" in data["display_text"]
+    assert "不选择具体基金" in data["display_text"]
+
+
+def test_weekly_plan_preview_blocks_amount_conclusions_without_valuation(
+    tmp_path: Path,
+) -> None:
+    client, portfolio_id, account_id = _client_with_holding(tmp_path)
+
+    response = client.get(
+        "/v1/weekly-plan-preview",
+        params={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "contribution_amount": "100.00",
+            "as_of_date": "2026-07-21",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["available"] is False
+    assert data["reason_code"] == "VALUATION_UNAVAILABLE"
+    assert "不能生成任何金额分配结论" in data["display_text"]
+    assert "role_allocations" not in data

@@ -357,6 +357,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             data_quality=result["valuation"]["data_quality"],
         )
 
+    @app.get("/v1/weekly-plan-preview")
+    def weekly_plan_preview_get(
+        portfolio_id: str,
+        account_id: str,
+        contribution_amount: str,
+        as_of_date: str | None = None,
+    ) -> dict[str, Any]:
+        result = market_data.weekly_plan_preview(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            contribution_amount=contribution_amount,
+            as_of_date_value=as_of_date,
+        )
+        return success(
+            result,
+            warnings=result["warnings"],
+            data_quality=result["data_quality"],
+        )
+
     @app.post("/v1/market-data/canary")
     def market_data_canary_run(request: MarketDataCanaryRequest) -> dict[str, Any]:
         result = market_sync.run_canary(

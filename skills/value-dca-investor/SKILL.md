@@ -80,6 +80,9 @@ is a factual configuration state, not permission to infer a target role. Use
 the last Core-returned role as `expected_current_role`; never silently overwrite a changed role.
 Use `allocation_policy_set` only after the user explicitly approves every target and threshold;
 pass the last Core-returned version and never silently replace a concurrently changed policy.
+Use `weekly_plan_preview` only after the user explicitly supplies the contribution amount. Return
+its `data.display_text` exactly. The preview allocates only between CORE and SATELLITE; it never
+selects a fund, creates a transaction draft, or claims that a purchase occurred.
 
 ## Enforce safety
 
