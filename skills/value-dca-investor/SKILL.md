@@ -29,6 +29,9 @@ description: Operate a personal long-term value-DCA investment assistant through
     holding and valuation calls. When its `narrative_contract.mode` is `EXACT_TEXT`, return
     `display_text` verbatim as the entire answer. Do not add a greeting, heading, summary,
     interpretation, adjective, priority, recommendation, question, or next action.
+13. Treat allocation targets, deviations, tolerance states, and transition states as policy facts
+    only when `portfolio_brief_get` returns its versioned `allocation_assessment`. Never turn the
+    transition principle into a calculated purchase amount or an automatic sell instruction.
 
 Portfolio, account, and instrument setup may use their exact `*_create` tools only when the user
 has supplied the identifying attributes. Treat `INDEX` instruments as non-tradable benchmarks;
@@ -75,6 +78,8 @@ is relevant to the user's request. Do not recommend, offer, or imply that action
 is a factual configuration state, not permission to infer a target role. Use
 `instrument_role_update` only after the user explicitly states the instrument and new role. Pass
 the last Core-returned role as `expected_current_role`; never silently overwrite a changed role.
+Use `allocation_policy_set` only after the user explicitly approves every target and threshold;
+pass the last Core-returned version and never silently replace a concurrently changed policy.
 
 ## Enforce safety
 

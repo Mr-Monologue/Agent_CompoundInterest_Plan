@@ -18,6 +18,8 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "account_list",
         "investment_context_get",
         "investment_context_set",
+        "allocation_policy_get",
+        "allocation_policy_set",
         "instrument_create",
         "instrument_list",
         "instrument_role_update",
