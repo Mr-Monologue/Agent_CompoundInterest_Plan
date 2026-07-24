@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from investor_core.api.app import create_app
 from investor_core.config import Environment, Settings
+from investor_core.strategy import StrategyService
 
 
 def test_health_is_process_only(tmp_path: Path) -> None:
@@ -60,25 +61,35 @@ def test_ready_fails_when_business_timezone_is_unavailable(tmp_path: Path) -> No
 def test_instrument_role_update_api_requires_current_role_match(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
-    client = TestClient(
-        create_app(Settings(environment=Environment.TEST, db_path=database_path))
+    settings = Settings(environment=Environment.TEST, db_path=database_path)
+    client = TestClient(create_app(settings))
+    portfolio = client.post("/v1/portfolios", json={"name": "测试组合"}).json()["data"]
+    StrategyService(settings).assign(
+        portfolio_id=str(portfolio["id"]),
+        strategy_key="value-dca",
+        strategy_version="1.6",
+        instance_config={},
+        approved_by="test-user",
+        reason="测试角色实例",
     )
     client.post(
         "/v1/instruments",
-        json={"code": "005827", "name": "易方达蓝筹精选混合", "role": "UNASSIGNED"},
+        json={"code": "005827", "name": "易方达蓝筹精选混合"},
     )
 
     changed = client.patch(
-        "/v1/instruments/005827/role",
+        "/v1/strategy-instruments/005827/role",
         json={
+            "portfolio_id": portfolio["id"],
             "role": "SATELLITE",
             "expected_current_role": "UNASSIGNED",
             "reason": "用户明确归入卫星角色",
         },
     )
     conflict = client.patch(
-        "/v1/instruments/005827/role",
+        "/v1/strategy-instruments/005827/role",
         json={
+            "portfolio_id": portfolio["id"],
             "role": "CORE",
             "expected_current_role": "UNASSIGNED",
             "reason": "陈旧请求",
@@ -86,12 +97,16 @@ def test_instrument_role_update_api_requires_current_role_match(tmp_path: Path) 
     )
 
     assert changed.status_code == 200
-    assert changed.json()["data"]["instrument"]["role"] == "SATELLITE"
+    config = changed.json()["data"]["assignment"]["instruments"][0]
+    assert config["role"] == "SATELLITE"
+    assert config["contribution_eligible"] is False
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "ROLE_CONFLICT"
 
 
-def test_allocation_policy_api_versions_explicit_changes(tmp_path: Path) -> None:
+def test_strategy_api_is_read_only_and_requires_explicit_cli_assignment(
+    tmp_path: Path,
+) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
     client = TestClient(
@@ -99,11 +114,12 @@ def test_allocation_policy_api_versions_explicit_changes(tmp_path: Path) -> None
     )
     portfolio = client.post("/v1/portfolios", json={"name": "测试组合"}).json()["data"]
 
-    initial = client.get(
-        "/v1/allocation-policy",
+    definitions = client.get("/v1/strategies")
+    current = client.get(
+        "/v1/strategy-assignment",
         params={"portfolio_id": portfolio["id"]},
     )
-    changed = client.put(
+    protected = client.put(
         f"/v1/allocation-policy/{portfolio['id']}",
         json={
             "core_target_pct": "70",
@@ -116,26 +132,11 @@ def test_allocation_policy_api_versions_explicit_changes(tmp_path: Path) -> None
             "reason": "用户批准调整目标",
         },
     )
-    stale = client.put(
-        f"/v1/allocation-policy/{portfolio['id']}",
-        json={
-            "core_target_pct": "65",
-            "satellite_target_pct": "35",
-            "tolerance_pct": "10",
-            "transition_trigger_pct": "15",
-            "transition_exit_core_min_pct": "55",
-            "transition_exit_satellite_max_pct": "45",
-            "expected_version": 1,
-            "reason": "陈旧请求",
-        },
-    )
-
-    assert initial.status_code == 200
-    assert initial.json()["data"]["policy"]["policy_id"] == "value-dca-v1.6"
-    assert changed.status_code == 200
-    assert changed.json()["data"]["version"] == 2
-    assert stale.status_code == 409
-    assert stale.json()["error"]["code"] == "ALLOCATION_POLICY_CONFLICT"
+    assert definitions.status_code == 200
+    assert definitions.json()["data"]["items"][0]["strategy_key"] == "value-dca"
+    assert current.status_code == 409
+    assert current.json()["error"]["code"] == "STRATEGY_NOT_ASSIGNED"
+    assert protected.status_code == 404
 
 
 def test_transaction_draft_api_requires_commit_before_holding_changes(tmp_path: Path) -> None:
@@ -157,7 +158,7 @@ def test_transaction_draft_api_requires_commit_before_holding_changes(tmp_path: 
     ).json()["data"]
     instrument = client.post(
         "/v1/instruments",
-        json={"code": "DEMO001", "name": "模拟基金", "role": "CORE"},
+        json={"code": "DEMO001", "name": "模拟基金"},
     )
     assert instrument.status_code == 200
 
@@ -242,7 +243,6 @@ def test_opening_position_api_uses_a_dedicated_confirmed_import_path(tmp_path: P
             "code": "022463",
             "name": "富国中证A500ETF发起式联接A",
             "asset_type": "FUND",
-            "role": "CORE",
         },
     )
 

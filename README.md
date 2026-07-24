@@ -1,8 +1,8 @@
 # Value DCA Agent
 
-个人价值定投 Agent 系统的 V1 工程实现。当前仓库处于 Phase 2：在受控账本基础上
-增加 canary 准入的基金净值同步、可审计净值快照、数据质量分级和确定性持仓估值，
-同时保留交易草稿、显式确认、幂等提交、冲正、持仓重建和受控 MCP 工具。
+面向不同用户复用的价值定投 Agent。公共仓库只发布通用策略规则、确定性计算能力和
+安全工作流；基金代码、账户、持仓、角色、基准映射及可定投白名单均属于用户本地的
+策略实例，不写入公共策略，也不进入 Git 仓库。
 
 系统只做研究、计划、记录和复盘，不连接交易接口，也不自动确认金融操作。
 
@@ -66,8 +66,8 @@ uv run mypy src
 Hermes 0.3.0 起可通过 `portfolio_create`、`account_create`、`instrument_create` 完成首次
 配置；这些工具是幂等配置写入，不移动资金，也不改变持仓。`INDEX` 类型只用于基准与估值，
 不能创建交易草稿。实际成交记录必须使用支付宝或其他平台展示的具体基金产品代码。
-例如，中证A500的指数代码 `000510` 应登记为 `INDEX`，而富国中证A500ETF发起式
-联接A `022463` 应登记为 `FUND`。
+指数和跟踪该指数的基金是两个独立标的：前者登记为 `INDEX`，后者登记为 `FUND`。
+仓库不会为任何真实基金预设角色或定投资格。
 
 Hermes 0.4.0 起，旧持仓使用 `opening_position_draft_create` 创建期初导入草稿。Core 只接收
 平台显示的截止日期、总份额与持仓成本，并确定性推导平均成本；草稿不会改变持仓，也不是
@@ -144,22 +144,40 @@ stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止
 白名单，避免新 MCP 工具在升级后被历史配置过滤。工具缺失时，Skill 只报告能力不一致，
 不再允许模型替代 Core 推导资金方向、基金拆分或交易草稿。
 
+0.11.0 起，公共策略定义与用户策略实例彻底分离。策略版本只保存通用参数；组合必须显式
+绑定策略版本，标的角色、基准映射、投资论点和定投资格保存在该组合自己的实例中。迁移会
+保留旧组合的已批准分配参数与角色，但历史持仓默认不获得定投资格，避免公共 Agent 或升级
+过程擅自选择具体基金。
+
+周度计划由 Core 确定性拆分到已批准实例白名单中的具体标的。没有合格标的时资金进入保留项，
+不会回退到历史持仓、注册标的或模型推荐。计划与交易账本完全分离，状态依次为
+`DRAFT`、`FROZEN`、`EXECUTED`，也可进入 `EXPIRED` 或 `SKIPPED`；冻结不代表成交，
+只有用户在外部平台真实成交并提供已提交交易记录后，计划才能标记为已执行。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
 uv run investor setup init --portfolio-name "个人投资组合" --account-name "默认账户" --platform "支付宝"
-uv run investor instrument add FUND001 --name "示例基金" --asset-type FUND --role CORE
+uv run investor instrument add FUND001 --name "示例基金" --asset-type FUND
+uv run investor strategy assign --portfolio-id <PORTFOLIO_ID> --strategy-key value-dca --strategy-version 1.6 --approved-by <OPERATOR> --reason "显式采用该策略"
+uv run investor strategy instrument-configure --portfolio-id <PORTFOLIO_ID> --instrument-code FUND001 --role CORE --contribution-eligible --approved-by <OPERATOR> --reason "批准为本组合定投候选"
 ```
 
-之后可通过 Hermes 使用 `transaction_draft_create` 生成真实外部成交的限时记录草稿。只有用户明确提供
-该草稿的一次性确认令牌后，`transaction_draft_commit` 才会写入本地账本并重建持仓。
+策略发布、组合绑定、目标比例、基准映射和定投资格属于受保护的本地配置，只能通过受控
+CLI/运维流程修改；普通 Agent MCP 只能读取当前实例，并在用户明确指定时修改组合内角色。
+
+之后可通过 Hermes 使用 `weekly_plan_preview` 预览、使用 `weekly_plan_draft_create` 保存
+计划；也可使用 `transaction_draft_create` 记录真实外部成交。计划确认和交易确认是两套
+独立边界，任何计划状态都不会自动写入交易账本。
 
 ## 当前边界
 
-- `/health` 只验证进程存活；`/ready` 同时验证 SQLite、WAL 和 Phase 2 同步迁移版本。
+- `/health` 只验证进程存活；`/ready` 同时验证 SQLite、WAL 和当前迁移版本。
 - `investor db migrate` 与 `alembic upgrade head` 使用同一迁移链。
 - MCP 按只读、草稿写入和确认写入分级；`OPENING` 是旧持仓基线，`TRADE` 才代表用户在
   外部平台完成的真实交易。
+- 公共策略不包含用户标的；注册过、持有过或被标记角色的基金均不会因此自动成为定投标的。
+- 周计划只能使用当前组合策略实例中显式批准且 `contribution_eligible=true` 的标的。
 - Windows 计划任务只管理 Core 进程，不调用任何投决或交易写入工具。
 - Hermes Cron 不是 Core 的唯一 supervisor；`core-health-watch` 模板仅用于后续异常通知。
 - `skills/value-dca-investor` 是 Hermes Profile 的项目源文件，不是独立交易系统。
@@ -167,6 +185,6 @@ uv run investor instrument add FUND001 --name "示例基金" --asset-type FUND -
 
 ## 后续开发顺序
 
-1. Phase 2 后续：第二校验源或官方回填、连续交易日 canary 和同步 Cron。
-2. Phase 3：风险、指数估值和周计划。
-3. Phase 4 以后：观察池、重检、卖出建议、组合过渡、绩效和复盘。
+1. 大阶段二：估值区间、PE 分位、确定性风险规则与卖出建议书。
+2. 大阶段三：自动化研究、数据交叉验证、Cron 报告和异常通知。
+3. 大阶段四：绩效归因、复盘、观察池和多用户产品化。

@@ -22,6 +22,16 @@
 3. State that holdings change only after the exact opening-position commit tool succeeds.
 4. Show the draft ID and expiry, disclose any source warning, and request explicit confirmation.
 
+## Weekly-plan confirmation preview
+
+1. State the exact plan ID, revision, plan date, strategy version, and data quality.
+2. Show every Core-returned instrument item, candidate amount, reserved amount, action, and reason
+   code. Never add or substitute an instrument.
+3. State `DRAFT（未冻结、未成交）`, show the confirmation expiry, and explain that freezing creates
+   no transaction.
+4. Request explicit confirmation of that exact revision. After freezing, keep the label
+   `FROZEN（计划已确认、交易未执行）` until separately committed BUY records are linked.
+
 ## Sell proposal
 
 1. Trigger and evidence.
