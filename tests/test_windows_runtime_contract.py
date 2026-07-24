@@ -66,7 +66,7 @@ def test_release_manifest_matches_project_version() -> None:
     assert manifest["schema_version"] == 1
     assert manifest["channel"] == "stable"
     assert manifest["version"] == project["project"]["version"]
-    assert manifest["database_revision"] == "0008_allocation_policy"
+    assert manifest["database_revision"] == "0009_strategy_instance_plan"
 
 
 def test_release_workflow_publishes_only_from_the_long_lived_release_branch() -> None:

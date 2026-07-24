@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 
 from investor_core.api.schemas import (
     AccountCreateRequest,
-    AllocationPolicySetRequest,
     InstrumentCreateRequest,
     InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
@@ -22,6 +21,10 @@ from investor_core.api.schemas import (
     TransactionDraftCommitRequest,
     TransactionDraftCreateRequest,
     TransactionReversalDraftCreateRequest,
+    WeeklyPlanConfirmRequest,
+    WeeklyPlanDraftCreateRequest,
+    WeeklyPlanExecutedRequest,
+    WeeklyPlanSkipRequest,
 )
 from investor_core.config import Settings, get_settings
 from investor_core.health import build_doctor_report
@@ -29,6 +32,8 @@ from investor_core.ledger import LedgerError, LedgerService
 from investor_core.logging_config import build_uvicorn_log_config
 from investor_core.market_data import MarketDataService
 from investor_core.market_sync import MarketSyncService
+from investor_core.planning import PlanningService
+from investor_core.strategy import StrategyService
 from investor_core.version import __version__
 
 
@@ -51,6 +56,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ledger = LedgerService(runtime_settings)
     market_data = MarketDataService(runtime_settings)
     market_sync = MarketSyncService(runtime_settings)
+    strategies = StrategyService(runtime_settings)
+    planning = PlanningService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -134,29 +141,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def allocation_policy_get(portfolio_id: str) -> dict[str, Any]:
         return success(ledger.get_allocation_policy(portfolio_id=portfolio_id))
 
-    @app.put("/v1/allocation-policy/{portfolio_id}")
-    def allocation_policy_set(
-        portfolio_id: str,
-        request: AllocationPolicySetRequest,
-    ) -> dict[str, Any]:
-        return success(
-            ledger.set_allocation_policy(
-                portfolio_id=portfolio_id,
-                core_target_pct=str(request.core_target_pct),
-                satellite_target_pct=str(request.satellite_target_pct),
-                tolerance_pct=str(request.tolerance_pct),
-                transition_trigger_pct=str(request.transition_trigger_pct),
-                transition_exit_core_min_pct=str(
-                    request.transition_exit_core_min_pct
-                ),
-                transition_exit_satellite_max_pct=str(
-                    request.transition_exit_satellite_max_pct
-                ),
-                expected_version=request.expected_version,
-                reason=request.reason,
-                actor_ref=request.actor_ref,
-            )
-        )
+    @app.get("/v1/strategies")
+    def strategy_definition_list() -> dict[str, Any]:
+        return success({"items": strategies.list_definitions()})
+
+    @app.get("/v1/strategy-assignment")
+    def strategy_assignment_get(portfolio_id: str) -> dict[str, Any]:
+        return success(strategies.get_assignment(portfolio_id=portfolio_id))
 
     @app.post("/v1/instruments")
     def instrument_create(request: InstrumentCreateRequest) -> dict[str, Any]:
@@ -166,7 +157,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 name=request.name,
                 asset_type=request.asset_type,
                 currency=request.currency,
-                role=request.role,
                 actor_ref=request.actor_ref,
             )
         )
@@ -175,13 +165,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def instrument_list() -> dict[str, Any]:
         return success({"items": ledger.list_instruments()})
 
-    @app.patch("/v1/instruments/{instrument_code}/role")
+    @app.patch("/v1/strategy-instruments/{instrument_code}/role")
     def instrument_role_update(
         instrument_code: str, request: InstrumentRoleUpdateRequest
     ) -> dict[str, Any]:
         return success(
-            ledger.update_instrument_role(
-                code=instrument_code,
+            strategies.update_instrument_role(
+                portfolio_id=request.portfolio_id,
+                instrument_code=instrument_code,
                 role=request.role,
                 expected_current_role=request.expected_current_role,
                 reason=request.reason,
@@ -374,6 +365,87 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result,
             warnings=result["warnings"],
             data_quality=result["data_quality"],
+        )
+
+    @app.post("/v1/weekly-plans")
+    def weekly_plan_draft_create(
+        request: WeeklyPlanDraftCreateRequest,
+    ) -> dict[str, Any]:
+        result = planning.create_draft(
+            portfolio_id=request.portfolio_id,
+            account_id=request.account_id,
+            contribution_amount=str(request.contribution_amount),
+            plan_date_value=request.plan_date.isoformat(),
+            as_of_date_value=(
+                request.as_of_date.isoformat() if request.as_of_date else None
+            ),
+            idempotency_key=request.idempotency_key,
+            actor_ref=request.actor_ref,
+        )
+        return success(
+            result,
+            warnings=result["warnings"],
+            data_quality=result["plan"]["revision"]["data_quality"],
+        )
+
+    @app.get("/v1/weekly-plans")
+    def weekly_plan_list(
+        portfolio_id: str | None = None,
+        status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": planning.list(
+                    portfolio_id=portfolio_id,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/weekly-plans/{plan_id}")
+    def weekly_plan_get(plan_id: str) -> dict[str, Any]:
+        return success(planning.get(plan_id=plan_id))
+
+    @app.post("/v1/weekly-plans/{plan_id}/freeze")
+    def weekly_plan_freeze(
+        plan_id: str,
+        request: WeeklyPlanConfirmRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.freeze(
+                plan_id=plan_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.post("/v1/weekly-plans/{plan_id}/skip")
+    def weekly_plan_skip(
+        plan_id: str,
+        request: WeeklyPlanSkipRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.skip(
+                plan_id=plan_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+                reason=request.reason,
+            )
+        )
+
+    @app.post("/v1/weekly-plans/{plan_id}/executed")
+    def weekly_plan_executed(
+        plan_id: str,
+        request: WeeklyPlanExecutedRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.mark_executed(
+                plan_id=plan_id,
+                transaction_ids=request.transaction_ids,
+                confirmed_by=request.confirmed_by,
+            )
         )
 
     @app.post("/v1/market-data/canary")
