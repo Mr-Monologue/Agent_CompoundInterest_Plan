@@ -136,10 +136,7 @@ class PlanningService:
         connection: sqlite3.Connection,
         row: sqlite3.Row,
     ) -> sqlite3.Row:
-        if (
-            str(row["status"]) == "DRAFT"
-            and _parse_iso(str(row["expires_at"])) <= self._now()
-        ):
+        if str(row["status"]) == "DRAFT" and _parse_iso(str(row["expires_at"])) <= self._now():
             connection.execute(
                 """
                 UPDATE investment_plans
@@ -226,9 +223,7 @@ class PlanningService:
                 {
                     "id": str(item["id"]),
                     "instrument_id": (
-                        str(item["instrument_id"])
-                        if item["instrument_id"] is not None
-                        else None
+                        str(item["instrument_id"]) if item["instrument_id"] is not None else None
                     ),
                     "instrument_code": (
                         str(item["instrument_code"])
@@ -242,9 +237,7 @@ class PlanningService:
                     ),
                     "role": str(item["role"]),
                     "valuation_state": str(item["valuation_state"]),
-                    "base_amount": (
-                        f"{Decimal(int(item['base_amount_minor'])) / MONEY_SCALE:.2f}"
-                    ),
+                    "base_amount": (f"{Decimal(int(item['base_amount_minor'])) / MONEY_SCALE:.2f}"),
                     "multiplier": f"{Decimal(int(item['multiplier_bps'])) / 10000:.4f}",
                     "candidate_amount": (
                         f"{Decimal(int(item['candidate_amount_minor'])) / MONEY_SCALE:.2f}"
@@ -255,9 +248,7 @@ class PlanningService:
                     "action": str(item["action"]),
                     "data_quality": str(item["data_quality"]),
                     "reason_code": str(item["reason_code"]),
-                    "explanation_facts": json.loads(
-                        str(item["explanation_facts_json"])
-                    ),
+                    "explanation_facts": json.loads(str(item["explanation_facts_json"])),
                 }
                 for item in items
             ],
@@ -336,9 +327,7 @@ class PlanningService:
                 }
 
             now = self._now()
-            expires_at = now + timedelta(
-                minutes=self.settings.confirmation_ttl_minutes
-            )
+            expires_at = now + timedelta(minutes=self.settings.confirmation_ttl_minutes)
             token = secrets.token_urlsafe(24)
             plan_id = str(uuid4())
             revision_id = str(uuid4())
@@ -549,9 +538,7 @@ class PlanningService:
                 )
             row = self._expire_if_needed(connection, row)
             current_status = str(row["status"])
-            allowed = (
-                {"DRAFT"} if target_status == "FROZEN" else {"DRAFT", "FROZEN"}
-            )
+            allowed = {"DRAFT"} if target_status == "FROZEN" else {"DRAFT", "FROZEN"}
             if current_status == target_status:
                 result = self._plan_data(connection, row)
                 connection.commit()
@@ -565,6 +552,27 @@ class PlanningService:
                         http_status=409,
                     ),
                 )
+            if target_status == "FROZEN":
+                unresolved = connection.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM plan_items pi
+                    JOIN plan_revisions pr ON pr.id = pi.plan_revision_id
+                    WHERE pr.plan_id = ? AND pr.revision = ?
+                      AND (pi.reserved_amount_minor > 0
+                           OR pi.action = 'REVIEW_REQUIRED')
+                    """,
+                    (plan_id, row["current_revision"]),
+                ).fetchone()
+                if unresolved is not None and int(unresolved["count"]) > 0:
+                    self._rollback_and_raise(
+                        connection,
+                        LedgerError(
+                            "PLAN_NOT_EXECUTABLE",
+                            "a plan with reserved or review-required items cannot be frozen",
+                            http_status=409,
+                        ),
+                    )
             if _parse_iso(str(row["confirmation_expires_at"])) <= self._now():
                 self._rollback_and_raise(
                     connection,

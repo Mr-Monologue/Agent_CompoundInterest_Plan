@@ -84,13 +84,21 @@ is a factual configuration state, not permission to infer a target role. Use
 `instrument_role_update` only after the user explicitly states the instrument and new role. Pass
 the last Core-returned role as `expected_current_role`; never silently overwrite a changed role.
 The update is portfolio-local and must preserve contribution eligibility. Public strategy
-publication, portfolio strategy assignment, allocation-target changes, benchmark mapping, and
-contribution-eligibility changes are protected operator configuration and have no Agent mutation
-tool. Use `strategy_definition_list` and `strategy_current_get` only to read them.
+publication, portfolio strategy assignment, and allocation-target changes remain protected
+operator configuration. Portfolio-local instrument configuration is available only through
+`strategy_instrument_config_draft_create` followed by explicit confirmation through
+`strategy_instrument_config_draft_commit`. Use it only after the user explicitly names the
+instrument and requested long-term configuration change. Never infer contribution eligibility,
+benchmark mapping, proxy suitability, thesis status, a hard-stop threshold, or a position cap from
+NAV, valuation, holdings, registration, role, recent performance, or model opinion. A configured
+instrument with `contribution_eligible=false` is not part of the contribution allowlist.
+Use `strategy_definition_list` and `strategy_current_get` to inspect the exact current state first.
 Use `weekly_plan_preview` only after the user explicitly supplies the contribution amount. Return
 its `data.display_text` exactly. Its instrument items may contain only the current strategy
-instance's explicitly approved contribution allowlist. A `NO_ELIGIBLE_INSTRUMENT` item reserves
-the role amount and requires review; never replace it with a model-selected or historical fund.
+instance's explicitly approved contribution allowlist (`contribution_eligible=true`). A
+`NO_ELIGIBLE_INSTRUMENT` item reserves the role amount and requires review; never replace it with a
+model-selected or historical fund. Reserved funds do not change executable projected allocation.
+A plan with any reserved or `REVIEW_REQUIRED` item cannot be frozen.
 The preview creates neither a plan draft nor a transaction and never claims a purchase occurred.
 If Core advertises `weekly_plan_preview` but that tool is absent from the current session, report
 the tool mismatch and stop. Do not infer a role allocation, calculate a per-fund split, or offer
@@ -104,6 +112,20 @@ Use `weekly_plan_skip` only after explicit user direction and a reason. Treat `F
 approved plan, not a brokerage execution. Use `weekly_plan_mark_executed` only with separately
 committed BUY transaction IDs returned by Core; never infer execution from a frozen plan,
 screenshots, intent, or an external platform action that has not been recorded.
+
+Use `valuation_observation_record` only with exact sourced PE/PB evidence for a registered index;
+never invent, scrape implicitly, or copy an unverified value. Use `valuation_snapshot_get` for
+percentiles. `NOT_APPLICABLE` assets have no percentile. A `WEAK` proxy is reference-only and can
+never be the sole basis of a sell proposal. Treat Core percentile direction literally: lower PE
+means lower percentile.
+
+Use `risk_scan_run` to evaluate only rules explicitly approved in the current strategy instance.
+Never turn a loss, return, weight, valuation state, news item, or model concern into a rule hit.
+Use `sell_proposal_list` and `sell_proposal_context_get` for the exact rule version, evidence,
+diagnostic and `execution_status`. Use `sell_decision_draft_create` only after the user explicitly
+chooses `APPROVE`, `DEFER`, or `REJECT`, and commit only after explicit confirmation of that exact
+draft. `APPROVED` means the user accepted a proposal; it is still `NOT_EXECUTED`, creates no
+transaction, and changes no holding.
 
 ## Enforce safety
 

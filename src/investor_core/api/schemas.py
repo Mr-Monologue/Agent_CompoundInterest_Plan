@@ -49,6 +49,24 @@ class InstrumentRoleUpdateRequest(RequestModel):
     actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
 
 
+class StrategyInstrumentConfigDraftRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    instrument_code: str = Field(min_length=1, max_length=40)
+    contribution_eligible: bool
+    reason: str = Field(min_length=1, max_length=500)
+    role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"] | None = None
+    target_weight_bps: int | None = Field(default=None, ge=0, le=10000)
+    priority: int | None = Field(default=None, ge=0)
+    minimum_amount_minor: int | None = Field(default=None, ge=0)
+    maximum_amount_minor: int | None = Field(default=None, gt=0)
+    benchmark_code: str | None = Field(default=None, min_length=1, max_length=40)
+    proxy_suitability: Literal["STRONG", "WEAK", "NOT_APPLICABLE"] | None = None
+    thesis_status: Literal["ACTIVE", "REVIEW_REQUIRED", "INVALID"] | None = None
+    hard_stop_return_bps: int | None = Field(default=None, ge=-10000, lt=0)
+    maximum_position_weight_bps: int | None = Field(default=None, gt=0, le=10000)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class TransactionDraftCreateRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     account_id: str = Field(min_length=1, max_length=80)
@@ -103,9 +121,7 @@ class MarketNavSnapshotCreateRequest(RequestModel):
     source_type: Literal["OFFICIAL", "PLATFORM", "AGGREGATOR", "USER"]
     source_name: str = Field(min_length=1, max_length=200)
     source_ref: str | None = Field(default=None, max_length=1000)
-    source_lineage: (
-        Literal["EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"] | None
-    ) = None
+    source_lineage: Literal["EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"] | None = None
     verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED"
     observed_at: datetime
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
@@ -134,6 +150,31 @@ class MarketNavVerificationCreateRequest(RequestModel):
     source_ref: str = Field(min_length=1, max_length=1000)
     source_lineage: Literal["EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"]
     observed_at: datetime
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ValuationObservationCreateRequest(RequestModel):
+    instrument_code: str = Field(min_length=1, max_length=40)
+    metric: Literal["PE", "PB"]
+    observation_date: date
+    value: Decimal = Field(gt=0)
+    source_type: Literal["OFFICIAL", "PROFESSIONAL", "AGGREGATOR", "USER"]
+    source_name: str = Field(min_length=1, max_length=200)
+    source_ref: str | None = Field(default=None, max_length=1000)
+    verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED"
+    observed_at: datetime
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class RiskScanRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    account_id: str = Field(min_length=1, max_length=80)
+    as_of_date: date | None = None
+
+
+class SellDecisionDraftCreateRequest(RequestModel):
+    decision: Literal["APPROVE", "DEFER", "REJECT"]
+    user_reason: str | None = Field(default=None, max_length=1000)
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
