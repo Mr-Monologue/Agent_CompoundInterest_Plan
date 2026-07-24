@@ -32,6 +32,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "market_nav_verification_list",
         "portfolio_valuation_get",
         "portfolio_brief_get",
+        "weekly_plan_preview",
         "holding_list",
         "opening_position_draft_create",
         "transaction_list",
