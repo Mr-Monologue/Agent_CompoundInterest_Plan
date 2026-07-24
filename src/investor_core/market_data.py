@@ -1236,7 +1236,7 @@ class MarketDataService:
                     f"数据日期: {valuation['as_of_date']}\n"
                     f"数据质量: {valuation['data_quality']}\n\n"
                     "状态: BLOCKED (VALUATION_UNAVAILABLE)\n"
-                    "估值数据不可用，不能生成任何金额分配结论。"
+                    "估值数据不可用，不能生成任何金额分配结论。"  # noqa: RUF001
                 ),
             }
         if allocation["state"] == "BLOCKED_UNASSIGNED":
@@ -1257,7 +1257,7 @@ class MarketDataService:
                     f"数据日期: {valuation['as_of_date']}\n"
                     f"数据质量: {valuation['data_quality']}\n\n"
                     "状态: BLOCKED (ROLE_UNASSIGNED)\n"
-                    "存在未分配角色的持仓，不能生成资金分配结论。"
+                    "存在未分配角色的持仓，不能生成资金分配结论。"  # noqa: RUF001
                 ),
             }
 
@@ -1303,8 +1303,8 @@ class MarketDataService:
             ),
             "",
             "执行边界:",
-            "- 结果仅分配到 CORE/SATELLITE 舱位，不选择具体基金.",
-            "- 不创建交易草稿，不代表已买入，不自动卖出.",
+            "- 结果仅分配到 CORE/SATELLITE 舱位，不选择具体基金.",  # noqa: RUF001
+            "- 不创建交易草稿，不代表已买入，不自动卖出.",  # noqa: RUF001
         ]
         if warnings:
             display_lines.extend(["", "数据限制:"])
