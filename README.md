@@ -140,6 +140,10 @@ stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止
 重启，使新版本新增的 Investor MCP 工具对新会话立即可见；未运行的 Gateway 不会被
 更新器擅自启动。
 
+0.10.2 起，受管理的 `investor_core` 配置会清除旧版交互安装留下的 `tools.include`
+白名单，避免新 MCP 工具在升级后被历史配置过滤。工具缺失时，Skill 只报告能力不一致，
+不再允许模型替代 Core 推导资金方向、基金拆分或交易草稿。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
