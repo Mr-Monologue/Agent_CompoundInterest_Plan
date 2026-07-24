@@ -106,8 +106,10 @@ def test_skill_separates_public_strategy_instance_and_plan_execution() -> None:
 
     assert "Keep public strategy rules separate" in skill
     assert "does not assign a portfolio role or make the instrument eligible" in skill
-    assert "protected operator configuration and have no Agent mutation" in skill
-    assert "`NO_ELIGIBLE_INSTRUMENT` item reserves" in skill
+    assert "Portfolio-local instrument configuration is available only" in skill
+    assert "`NO_ELIGIBLE_INSTRUMENT` item reserves the role amount" in skill
+    assert "Never infer contribution eligibility" in skill
+    assert "Reserved funds do not change executable projected allocation" in skill
     assert "Treat `FROZEN` as an\napproved plan, not a brokerage execution" in skill
     assert "Never treat a preview, DRAFT, or FROZEN plan as a purchase" in safety
 

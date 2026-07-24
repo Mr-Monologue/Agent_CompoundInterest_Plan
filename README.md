@@ -154,6 +154,16 @@ stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止
 `DRAFT`、`FROZEN`、`EXECUTED`，也可进入 `EXPIRED` 或 `SKIPPED`；冻结不代表成交，
 只有用户在外部平台真实成交并提供已提交交易记录后，计划才能标记为已执行。
 
+0.12.0 完成大阶段一收口并启动大阶段二。周计划的投后比例只计入真正可执行的候选金额；
+保留资金不会虚构仓位变化，含保留或待复核项的计划不能冻结。组合本地的定投资格、代理映射、
+投资论点和风险阈值改为 Agent 可用的“草稿—明确确认—提交”流程，默认组合上下文会自动解析，
+但任何配置都不得根据净值、持仓或模型观点自动推断。
+
+大阶段二新增来源化 PE/PB 观测、固定方向的历史分位计算、`STRONG/WEAK/NOT_APPLICABLE`
+代理约束、确定性规则扫描和卖出建议书。规则只读取当前策略实例中明确批准的阈值；命中只创建
+`REVIEW_REQUIRED` 建议书。`APPROVE`、`DEFER`、`REJECT` 都有独立确认记录，其中
+`APPROVE` 仍为 `NOT_EXECUTED`，不会创建交易或改变持仓。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
@@ -163,8 +173,8 @@ uv run investor strategy assign --portfolio-id <PORTFOLIO_ID> --strategy-key val
 uv run investor strategy instrument-configure --portfolio-id <PORTFOLIO_ID> --instrument-code FUND001 --role CORE --contribution-eligible --approved-by <OPERATOR> --reason "批准为本组合定投候选"
 ```
 
-策略发布、组合绑定、目标比例、基准映射和定投资格属于受保护的本地配置，只能通过受控
-CLI/运维流程修改；普通 Agent MCP 只能读取当前实例，并在用户明确指定时修改组合内角色。
+策略发布、组合绑定和目标比例仍属于受保护的 CLI/运维配置。组合本地的基准映射、代理适用性、
+投资论点、定投资格和已支持风险阈值可由 Agent 创建精确草稿，但必须由用户明确确认后提交。
 
 之后可通过 Hermes 使用 `weekly_plan_preview` 预览、使用 `weekly_plan_draft_create` 保存
 计划；也可使用 `transaction_draft_create` 记录真实外部成交。计划确认和交易确认是两套
@@ -178,6 +188,8 @@ CLI/运维流程修改；普通 Agent MCP 只能读取当前实例，并在用�
   外部平台完成的真实交易。
 - 公共策略不包含用户标的；注册过、持有过或被标记角色的基金均不会因此自动成为定投标的。
 - 周计划只能使用当前组合策略实例中显式批准且 `contribution_eligible=true` 的标的。
+- 估值分位只来自已保存的指数 PE/PB 证据；`NOT_APPLICABLE` 不计算，`WEAK` 不能单独触发卖出。
+- 风险扫描和卖出建议不执行交易；批准建议也不改变持仓。
 - Windows 计划任务只管理 Core 进程，不调用任何投决或交易写入工具。
 - Hermes Cron 不是 Core 的唯一 supervisor；`core-health-watch` 模板仅用于后续异常通知。
 - `skills/value-dca-investor` 是 Hermes Profile 的项目源文件，不是独立交易系统。
@@ -185,6 +197,6 @@ CLI/运维流程修改；普通 Agent MCP 只能读取当前实例，并在用�
 
 ## 后续开发顺序
 
-1. 大阶段二：估值区间、PE 分位、确定性风险规则与卖出建议书。
+1. 大阶段二后续：补齐剩余卖出触发、费用诊断、成交关联和 6 个月跟踪评估。
 2. 大阶段三：自动化研究、数据交叉验证、Cron 报告和异常通知。
 3. 大阶段四：绩效归因、复盘、观察池和多用户产品化。
