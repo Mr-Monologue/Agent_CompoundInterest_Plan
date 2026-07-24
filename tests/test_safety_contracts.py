@@ -98,6 +98,20 @@ def test_skill_does_not_invent_allocation_or_sell_triggers() -> None:
     assert "observations, not allocation or\nsell rules" in policy
 
 
+def test_skill_separates_public_strategy_instance_and_plan_execution() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
+    safety = (PROJECT_ROOT / "skills/value-dca-investor/references/safety-policy.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Keep public strategy rules separate" in skill
+    assert "does not assign a portfolio role or make the instrument eligible" in skill
+    assert "protected operator configuration and have no Agent mutation" in skill
+    assert "`NO_ELIGIBLE_INSTRUMENT` item reserves" in skill
+    assert "Treat `FROZEN` as an\napproved plan, not a brokerage execution" in skill
+    assert "Never treat a preview, DRAFT, or FROZEN plan as a purchase" in safety
+
+
 def test_cron_examples_are_disabled() -> None:
     for path in (PROJECT_ROOT / "cron").rglob("*.json"):
         assert '"enabled": false' in path.read_text(encoding="utf-8")

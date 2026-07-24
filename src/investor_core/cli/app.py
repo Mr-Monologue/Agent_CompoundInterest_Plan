@@ -18,6 +18,7 @@ from investor_core.config import get_settings
 from investor_core.database import ensure_database_parent
 from investor_core.health import build_doctor_report
 from investor_core.ledger import LedgerError, LedgerService
+from investor_core.strategy import StrategyService
 from investor_core.version import __version__
 
 app = typer.Typer(no_args_is_help=True, help="Operate the Value DCA investor core.")
@@ -26,11 +27,16 @@ setup_app = typer.Typer(no_args_is_help=True, help="Create the first portfolio a
 instrument_app = typer.Typer(no_args_is_help=True, help="Manage the local instrument registry.")
 ledger_app = typer.Typer(no_args_is_help=True, help="Inspect holdings and committed transactions.")
 opening_app = typer.Typer(no_args_is_help=True, help="Import confirmed opening positions.")
+strategy_app = typer.Typer(
+    no_args_is_help=True,
+    help="Manage protected strategy assignments and instrument eligibility.",
+)
 app.add_typer(db_app, name="db")
 app.add_typer(setup_app, name="setup")
 app.add_typer(instrument_app, name="instrument")
 app.add_typer(ledger_app, name="ledger")
 app.add_typer(opening_app, name="opening")
+app.add_typer(strategy_app, name="strategy")
 
 
 def project_root() -> Path:
@@ -156,7 +162,6 @@ def instrument_add(
     code: Annotated[str, typer.Argument(help="Fund, ETF or other instrument code.")],
     name: Annotated[str, typer.Option(help="Instrument display name.")],
     asset_type: Annotated[str, typer.Option(help="FUND, ETF, STOCK, INDEX or CASH.")] = "FUND",
-    role: Annotated[str, typer.Option(help="CORE, SATELLITE or UNASSIGNED.")] = "UNASSIGNED",
     currency: Annotated[str, typer.Option(help="Three-letter currency code.")] = "CNY",
 ) -> None:
     """Idempotently register an instrument for transaction recording."""
@@ -165,12 +170,126 @@ def instrument_add(
             code=code,
             name=name,
             asset_type=asset_type,
-            role=role,
             currency=currency,
         )
     except LedgerError as error:
         emit_ledger_error(error)
     emit_ledger_result({"ok": True, "instrument": result})
+
+
+@strategy_app.command("list")
+def strategy_list() -> None:
+    """List reusable strategy definitions without user portfolio data."""
+    emit_ledger_result(
+        {"ok": True, "items": StrategyService(get_settings()).list_definitions()}
+    )
+
+
+@strategy_app.command("current")
+def strategy_current(
+    portfolio_id: Annotated[str, typer.Option(help="Existing portfolio ID.")],
+) -> None:
+    """Read the approved strategy instance for one portfolio."""
+    try:
+        result = StrategyService(get_settings()).get_assignment(
+            portfolio_id=portfolio_id
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, "assignment": result})
+
+
+@strategy_app.command("assign")
+def strategy_assign(
+    portfolio_id: Annotated[str, typer.Option(help="Existing portfolio ID.")],
+    strategy_key: Annotated[
+        str, typer.Option(help="Reusable public strategy key.")
+    ] = "value-dca",
+    strategy_version: Annotated[
+        str, typer.Option(help="Published strategy version.")
+    ] = "1.6",
+    approved_by: Annotated[
+        str, typer.Option(help="User or operator who explicitly approved the assignment.")
+    ] = "local-user",
+    reason: Annotated[
+        str, typer.Option(help="Audit reason for the assignment.")
+    ] = "Explicit local strategy assignment",
+) -> None:
+    """Explicitly bind a public strategy version to a local portfolio."""
+    try:
+        result = StrategyService(get_settings()).assign(
+            portfolio_id=portfolio_id,
+            strategy_key=strategy_key,
+            strategy_version=strategy_version,
+            instance_config={},
+            approved_by=approved_by,
+            reason=reason,
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, "assignment": result})
+
+
+@strategy_app.command("instrument-configure")
+def strategy_instrument_configure(
+    portfolio_id: Annotated[str, typer.Option(help="Existing portfolio ID.")],
+    instrument_code: Annotated[str, typer.Option(help="Registered instrument code.")],
+    role: Annotated[
+        str, typer.Option(help="CORE, SATELLITE, CASH, WATCH or UNASSIGNED.")
+    ],
+    contribution_eligible: Annotated[
+        bool,
+        typer.Option(
+            "--contribution-eligible/--not-contribution-eligible",
+            help="Explicitly allow or deny new contribution plans.",
+        ),
+    ] = False,
+    target_weight_bps: Annotated[
+        int | None,
+        typer.Option(min=0, max=10000, help="Optional within-role target in basis points."),
+    ] = None,
+    priority: Annotated[
+        int, typer.Option(min=0, help="Lower values are allocated first.")
+    ] = 100,
+    minimum_amount_minor: Annotated[
+        int, typer.Option(min=0, help="Smallest contribution in currency minor units.")
+    ] = 1,
+    maximum_amount_minor: Annotated[
+        int | None,
+        typer.Option(min=1, help="Optional contribution cap in currency minor units."),
+    ] = None,
+    benchmark_code: Annotated[
+        str, typer.Option(help="Optional registered INDEX code.")
+    ] = "",
+    thesis_status: Annotated[
+        str, typer.Option(help="ACTIVE, REVIEW_REQUIRED or INVALID.")
+    ] = "ACTIVE",
+    approved_by: Annotated[
+        str, typer.Option(help="User or operator who approved this local mapping.")
+    ] = "local-user",
+    reason: Annotated[
+        str, typer.Option(help="Audit reason for this local mapping.")
+    ] = "Explicit local instrument strategy configuration",
+) -> None:
+    """Configure a local instrument without changing the public strategy."""
+    try:
+        result = StrategyService(get_settings()).configure_instrument(
+            portfolio_id=portfolio_id,
+            instrument_code=instrument_code,
+            role=role,
+            contribution_eligible=contribution_eligible,
+            target_weight_bps=target_weight_bps,
+            priority=priority,
+            minimum_amount_minor=minimum_amount_minor,
+            maximum_amount_minor=maximum_amount_minor,
+            benchmark_code=benchmark_code or None,
+            thesis_status=thesis_status,
+            approved_by=approved_by,
+            reason=reason,
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, "assignment": result})
 
 
 @instrument_app.command("list")

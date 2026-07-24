@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 from investor_core.config import Settings
 from investor_core.ledger import LedgerError, LedgerService, utc_now
 from investor_core.source_lineage import resolve_source_lineage
+from investor_core.strategy import StrategyService
 
 JsonDict = dict[str, Any]
 NAV_SCALE = 1_000_000
@@ -237,6 +238,126 @@ def _contribution_allocation(
     }
 
 
+def _instrument_plan_items(
+    *,
+    assignment: JsonDict,
+    role_allocations: JsonDict,
+    data_quality: str,
+) -> list[JsonDict]:
+    """Split role amounts only across an explicitly approved local allowlist."""
+    items: list[JsonDict] = []
+    for role in ("CORE", "SATELLITE"):
+        role_minor = int(
+            (Decimal(str(role_allocations[role])) * MONEY_SCALE).to_integral_exact()
+        )
+        if role_minor == 0:
+            continue
+        eligible = [
+            config
+            for config in assignment["instruments"]
+            if config["role"] == role
+            and config["status"] == "ACTIVE"
+            and config["contribution_eligible"]
+            and config["thesis_status"] == "ACTIVE"
+        ]
+        eligible.sort(key=lambda item: (item["priority"], item["instrument_code"]))
+        if not eligible:
+            items.append(
+                {
+                    "instrument_id": None,
+                    "instrument_code": None,
+                    "instrument_name": None,
+                    "role": role,
+                    "valuation_state": "NOT_EVALUATED",
+                    "base_amount": "0.00",
+                    "multiplier": "0.0000",
+                    "candidate_amount": "0.00",
+                    "reserved_amount": _money(role_minor),
+                    "action": "REVIEW_REQUIRED",
+                    "data_quality": data_quality,
+                    "reason_code": "NO_ELIGIBLE_INSTRUMENT",
+                    "explanation_facts": {
+                        "role_allocation": _money(role_minor),
+                        "selection_boundary": "INSTANCE_ALLOWLIST_ONLY",
+                    },
+                }
+            )
+            continue
+
+        configured_targets = [
+            int(item["target_weight_bps"])
+            for item in eligible
+            if item["target_weight_bps"] is not None
+        ]
+        use_targets = len(configured_targets) == len(eligible) and sum(configured_targets) > 0
+        weights = (
+            configured_targets
+            if use_targets
+            else [1 for _item in eligible]
+        )
+        weight_total = sum(weights)
+        floors = [role_minor * weight // weight_total for weight in weights]
+        remainders = [
+            (role_minor * weight) % weight_total for weight in weights
+        ]
+        cents_left = role_minor - sum(floors)
+        remainder_order = sorted(
+            range(len(eligible)),
+            key=lambda index: (
+                -remainders[index],
+                eligible[index]["priority"],
+                eligible[index]["instrument_code"],
+            ),
+        )
+        for index in remainder_order[:cents_left]:
+            floors[index] += 1
+
+        for config, base_minor in zip(eligible, floors, strict=True):
+            candidate_minor = base_minor
+            reserved_minor = 0
+            reason_code = (
+                "INSTANCE_TARGET_WEIGHT"
+                if use_targets
+                else "ELIGIBLE_INSTRUMENT_EQUAL_SPLIT"
+            )
+            action = "CONTRIBUTE"
+            maximum = config["maximum_amount_minor"]
+            minimum = int(config["minimum_amount_minor"])
+            if maximum is not None and candidate_minor > int(maximum):
+                reserved_minor = candidate_minor - int(maximum)
+                candidate_minor = int(maximum)
+                reason_code = "INSTRUMENT_MAXIMUM_APPLIED"
+            if candidate_minor < minimum:
+                reserved_minor += candidate_minor
+                candidate_minor = 0
+                action = "REVIEW_REQUIRED"
+                reason_code = "BELOW_INSTRUMENT_MINIMUM"
+            items.append(
+                {
+                    "instrument_id": config["instrument_id"],
+                    "instrument_code": config["instrument_code"],
+                    "instrument_name": config["instrument_name"],
+                    "role": role,
+                    "valuation_state": "NAV_ONLY",
+                    "base_amount": _money(base_minor),
+                    "multiplier": "1.0000",
+                    "candidate_amount": _money(candidate_minor),
+                    "reserved_amount": _money(reserved_minor),
+                    "action": action,
+                    "data_quality": data_quality,
+                    "reason_code": reason_code,
+                    "explanation_facts": {
+                        "contribution_eligible": True,
+                        "target_weight_bps": config["target_weight_bps"],
+                        "priority": config["priority"],
+                        "benchmark_code": config["benchmark_code"],
+                        "thesis_status": config["thesis_status"],
+                    },
+                }
+            )
+    return items
+
+
 class MarketDataService:
     """Store immutable NAV observations and value committed holdings."""
 
@@ -249,6 +370,7 @@ class MarketDataService:
         self.settings = settings
         self._now = now
         self._ledger = LedgerService(settings, now=now)
+        self._strategy = StrategyService(settings, now=now)
 
     def _connect(self) -> sqlite3.Connection:
         path = (
@@ -1205,7 +1327,7 @@ class MarketDataService:
         contribution_amount: str,
         as_of_date_value: str | None = None,
     ) -> JsonDict:
-        """Allocate an explicit contribution between roles without proposing a trade."""
+        """Create a deterministic instrument preview from an approved instance allowlist."""
         contribution_minor = _scaled(
             contribution_amount,
             MONEY_SCALE,
@@ -1266,6 +1388,37 @@ class MarketDataService:
             role_summary=brief["role_summary"],
             contribution_minor=contribution_minor,
         )
+        assignment = self._strategy.get_assignment(portfolio_id=portfolio_id)
+        instrument_items = _instrument_plan_items(
+            assignment=assignment,
+            role_allocations=plan["role_allocations"],
+            data_quality=valuation["data_quality"],
+        )
+        candidate_minor = sum(
+            int(
+                (
+                    Decimal(str(item["candidate_amount"])) * MONEY_SCALE
+                ).to_integral_exact()
+            )
+            for item in instrument_items
+        )
+        reserved_minor = sum(
+            int(
+                (
+                    Decimal(str(item["reserved_amount"])) * MONEY_SCALE
+                ).to_integral_exact()
+            )
+            for item in instrument_items
+        )
+        plan.update(
+            {
+                "scope": "INSTRUMENT",
+                "instrument_items": instrument_items,
+                "candidate_amount": _money(candidate_minor),
+                "reserved_amount": _money(reserved_minor),
+                "selection_boundary": "INSTANCE_ALLOWLIST_ONLY",
+            }
+        )
         plan_state = (
             "TRANSITION_CONTRIBUTION"
             if allocation["state"] in {"TRANSITION_REQUIRED", "OUTSIDE_TOLERANCE"}
@@ -1277,7 +1430,7 @@ class MarketDataService:
             f"数据日期: {valuation['as_of_date']}",
             f"数据质量: {valuation['data_quality']}",
             (
-                f"策略版本: {allocation['policy']['policy']['policy_id']} "
+                f"策略版本: {allocation['policy']['strategy_key']} "
                 f"v{allocation['policy']['version']}"
             ),
             "",
@@ -1288,24 +1441,43 @@ class MarketDataService:
                 f"CORE {_display_money(plan['role_allocations']['CORE'])} | "
                 f"SATELLITE {_display_money(plan['role_allocations']['SATELLITE'])}"
             ),
-            (
-                "投后预计: "
-                f"CORE {plan['projected']['CORE']['actual_pct']}% | "
-                f"SATELLITE {plan['projected']['SATELLITE']['actual_pct']}%"
-            ),
-            (
-                "过渡退出条件: "
-                + (
-                    "已满足"
-                    if plan["transition_exit_condition_met"]
-                    else "尚未满足"
-                )
-            ),
-            "",
-            "执行边界:",
-            "- 结果仅分配到 CORE/SATELLITE 舱位，不选择具体基金.",  # noqa: RUF001
-            "- 不创建交易草稿，不代表已买入，不自动卖出.",  # noqa: RUF001
+            "标的计划:",
         ]
+        for item in instrument_items:
+            if item["instrument_code"] is None:
+                display_lines.append(
+                    f"- {item['role']}: 保留 "
+                    f"{_display_money(item['reserved_amount'])} "
+                    f"({item['reason_code']})"
+                )
+            else:
+                display_lines.append(
+                    f"- {item['instrument_code']} {item['instrument_name']} | "
+                    f"{item['role']} | 候选 "
+                    f"{_display_money(item['candidate_amount'])} | "
+                    f"{item['action']} ({item['reason_code']})"
+                )
+        display_lines.extend(
+            [
+                (
+                    "投后预计: "
+                    f"CORE {plan['projected']['CORE']['actual_pct']}% | "
+                    f"SATELLITE {plan['projected']['SATELLITE']['actual_pct']}%"
+                ),
+                (
+                    "过渡退出条件: "
+                    + (
+                        "已满足"
+                        if plan["transition_exit_condition_met"]
+                        else "尚未满足"
+                    )
+                ),
+                "",
+                "执行边界:",
+                "- 标的只能来自用户已批准的策略实例白名单.",
+                "- 不创建交易草稿，不代表已买入，不自动卖出.",  # noqa: RUF001
+            ]
+        )
         if warnings:
             display_lines.extend(["", "数据限制:"])
             display_lines.extend(f"- {_display_warning(item)}" for item in warnings)
@@ -1320,7 +1492,7 @@ class MarketDataService:
             "current_allocation": allocation,
             "plan": plan,
             "execution_boundary": {
-                "instrument_selection": "NOT_INCLUDED",
+                "instrument_selection": "APPROVED_INSTANCE_ALLOWLIST_ONLY",
                 "transaction_draft_created": False,
                 "trade_executed": False,
                 "automatic_selling_allowed": False,
@@ -1330,8 +1502,8 @@ class MarketDataService:
                 "response_field": "display_text",
                 "additions_allowed": False,
                 "instruction": (
-                    "Return display_text exactly. Do not choose instruments, create transaction "
-                    "drafts, claim execution, or add recommendations."
+                    "Return display_text exactly. Do not replace, add, or remove instruments; "
+                    "do not create transaction drafts, claim execution, or add recommendations."
                 ),
             },
             "display_text": "\n".join(display_lines),

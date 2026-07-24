@@ -33,6 +33,16 @@ Maintain these states separately:
 Only step 4 changes holdings. Always state `未成交` when the context reports
 `execution_status = NOT_EXECUTED`.
 
+## Weekly plan lifecycle
+
+1. `DRAFT`: deterministic proposal only; no approval and no transaction.
+2. `FROZEN`: the user confirmed the exact revision; still no transaction.
+3. `EXECUTED`: separately committed BUY records match the frozen plan.
+4. `EXPIRED` or `SKIPPED`: no transaction is implied.
+
+Never treat a preview, DRAFT, or FROZEN plan as a purchase. Never add an instrument outside the
+current portfolio strategy instance's explicit contribution allowlist.
+
 ## Scheduled jobs
 
 Use only read-only tools. Never freeze a plan, approve a proposal, acknowledge an alert, update a

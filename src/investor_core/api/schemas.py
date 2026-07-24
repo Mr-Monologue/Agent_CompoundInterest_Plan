@@ -33,28 +33,16 @@ class InvestmentContextSetRequest(RequestModel):
     actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
 
 
-class AllocationPolicySetRequest(RequestModel):
-    core_target_pct: Decimal = Field(ge=0, le=100)
-    satellite_target_pct: Decimal = Field(ge=0, le=100)
-    tolerance_pct: Decimal = Field(ge=0, le=100)
-    transition_trigger_pct: Decimal = Field(ge=0, le=100)
-    transition_exit_core_min_pct: Decimal = Field(ge=0, le=100)
-    transition_exit_satellite_max_pct: Decimal = Field(ge=0, le=100)
-    expected_version: int = Field(ge=1)
-    reason: str = Field(min_length=1, max_length=500)
-    actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
-
-
 class InstrumentCreateRequest(RequestModel):
     code: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=200)
     asset_type: Literal["FUND", "ETF", "STOCK", "INDEX", "CASH"] = "FUND"
     currency: str = Field(default="CNY", min_length=3, max_length=3)
-    role: Literal["CORE", "SATELLITE", "UNASSIGNED"] = "UNASSIGNED"
     actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
 
 
 class InstrumentRoleUpdateRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
     role: Literal["CORE", "SATELLITE", "UNASSIGNED"]
     expected_current_role: Literal["CORE", "SATELLITE", "UNASSIGNED"]
     reason: str = Field(min_length=1, max_length=500)
@@ -147,3 +135,27 @@ class MarketNavVerificationCreateRequest(RequestModel):
     source_lineage: Literal["EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"]
     observed_at: datetime
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class WeeklyPlanDraftCreateRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    account_id: str = Field(min_length=1, max_length=80)
+    contribution_amount: Decimal = Field(gt=0)
+    plan_date: date
+    as_of_date: date | None = None
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class WeeklyPlanConfirmRequest(RequestModel):
+    confirmation_token: str = Field(min_length=1, max_length=200)
+    confirmed_by: str = Field(min_length=1, max_length=120)
+
+
+class WeeklyPlanSkipRequest(WeeklyPlanConfirmRequest):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class WeeklyPlanExecutedRequest(RequestModel):
+    transaction_ids: list[str] = Field(min_length=1, max_length=100)
+    confirmed_by: str = Field(min_length=1, max_length=120)
