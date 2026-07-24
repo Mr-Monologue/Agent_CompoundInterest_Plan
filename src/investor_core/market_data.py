@@ -70,9 +70,7 @@ def _display_warning(warning: str) -> str:
     if warning.startswith("Conflicting NAV observations for "):
         return f"{warning.removeprefix('Conflicting NAV observations for ')} 存在冲突净值。"
     if warning.startswith("Stale NAV for "):
-        return warning.replace("Stale NAV for ", "净值已过期: ").replace(
-            " days old", " 天。"
-        )
+        return warning.replace("Stale NAV for ", "净值已过期: ").replace(" days old", " 天。")
     return warning
 
 
@@ -162,8 +160,7 @@ def _allocation_assessment(
         "transition_exit_condition_met": (
             unassigned_count == 0
             and core_actual >= Decimal(str(policy["transition_exit_core_min_pct"]))
-            and satellite_actual
-            <= Decimal(str(policy["transition_exit_satellite_max_pct"]))
+            and satellite_actual <= Decimal(str(policy["transition_exit_satellite_max_pct"]))
         ),
         "transition_principle": policy["transition_principle"],
         "automatic_selling_allowed": policy["automatic_selling_allowed"],
@@ -178,22 +175,16 @@ def _contribution_allocation(
 ) -> JsonDict:
     policy = policy_record["policy"]
     core_minor = int(
-        (
-            Decimal(str(role_summary["CORE"]["market_value"])) * MONEY_SCALE
-        ).to_integral_exact()
+        (Decimal(str(role_summary["CORE"]["market_value"])) * MONEY_SCALE).to_integral_exact()
     )
     satellite_minor = int(
-        (
-            Decimal(str(role_summary["SATELLITE"]["market_value"])) * MONEY_SCALE
-        ).to_integral_exact()
+        (Decimal(str(role_summary["SATELLITE"]["market_value"])) * MONEY_SCALE).to_integral_exact()
     )
     current_total_minor = core_minor + satellite_minor
     projected_total_minor = current_total_minor + contribution_minor
     core_target = Decimal(str(policy["core_target_pct"])) / Decimal(100)
     desired_core_minor = int(
-        (Decimal(projected_total_minor) * core_target).to_integral_value(
-            rounding=ROUND_HALF_UP
-        )
+        (Decimal(projected_total_minor) * core_target).to_integral_value(rounding=ROUND_HALF_UP)
     )
     core_contribution_minor = min(
         contribution_minor,
@@ -202,18 +193,15 @@ def _contribution_allocation(
     satellite_contribution_minor = contribution_minor - core_contribution_minor
     projected_core_minor = core_minor + core_contribution_minor
     projected_satellite_minor = satellite_minor + satellite_contribution_minor
-    projected_core_pct = Decimal(projected_core_minor) / Decimal(
-        projected_total_minor
-    ) * Decimal(100)
-    projected_satellite_pct = Decimal(projected_satellite_minor) / Decimal(
-        projected_total_minor
-    ) * Decimal(100)
-    exit_condition_met = (
-        projected_core_pct
-        >= Decimal(str(policy["transition_exit_core_min_pct"]))
-        and projected_satellite_pct
-        <= Decimal(str(policy["transition_exit_satellite_max_pct"]))
+    projected_core_pct = (
+        Decimal(projected_core_minor) / Decimal(projected_total_minor) * Decimal(100)
     )
+    projected_satellite_pct = (
+        Decimal(projected_satellite_minor) / Decimal(projected_total_minor) * Decimal(100)
+    )
+    exit_condition_met = projected_core_pct >= Decimal(
+        str(policy["transition_exit_core_min_pct"])
+    ) and projected_satellite_pct <= Decimal(str(policy["transition_exit_satellite_max_pct"]))
     return {
         "contribution_amount": _money(contribution_minor),
         "role_allocations": {
@@ -247,9 +235,7 @@ def _instrument_plan_items(
     """Split role amounts only across an explicitly approved local allowlist."""
     items: list[JsonDict] = []
     for role in ("CORE", "SATELLITE"):
-        role_minor = int(
-            (Decimal(str(role_allocations[role])) * MONEY_SCALE).to_integral_exact()
-        )
+        role_minor = int((Decimal(str(role_allocations[role])) * MONEY_SCALE).to_integral_exact())
         if role_minor == 0:
             continue
         eligible = [
@@ -290,16 +276,10 @@ def _instrument_plan_items(
             if item["target_weight_bps"] is not None
         ]
         use_targets = len(configured_targets) == len(eligible) and sum(configured_targets) > 0
-        weights = (
-            configured_targets
-            if use_targets
-            else [1 for _item in eligible]
-        )
+        weights = configured_targets if use_targets else [1 for _item in eligible]
         weight_total = sum(weights)
         floors = [role_minor * weight // weight_total for weight in weights]
-        remainders = [
-            (role_minor * weight) % weight_total for weight in weights
-        ]
+        remainders = [(role_minor * weight) % weight_total for weight in weights]
         cents_left = role_minor - sum(floors)
         remainder_order = sorted(
             range(len(eligible)),
@@ -316,9 +296,7 @@ def _instrument_plan_items(
             candidate_minor = base_minor
             reserved_minor = 0
             reason_code = (
-                "INSTANCE_TARGET_WEIGHT"
-                if use_targets
-                else "ELIGIBLE_INSTRUMENT_EQUAL_SPLIT"
+                "INSTANCE_TARGET_WEIGHT" if use_targets else "ELIGIBLE_INSTRUMENT_EQUAL_SPLIT"
             )
             action = "CONTRIBUTE"
             maximum = config["maximum_amount_minor"]
@@ -356,6 +334,63 @@ def _instrument_plan_items(
                 }
             )
     return items
+
+
+def _apply_executable_projection(
+    *,
+    plan: JsonDict,
+    role_summary: dict[str, JsonDict],
+    instrument_items: list[JsonDict],
+    policy_record: JsonDict,
+) -> JsonDict:
+    """Project only executable candidate amounts; reserved cash changes no allocation."""
+    executable_by_role = {"CORE": 0, "SATELLITE": 0}
+    reserved_by_role = {"CORE": 0, "SATELLITE": 0}
+    for item in instrument_items:
+        role = str(item["role"])
+        if role not in executable_by_role:
+            continue
+        executable_by_role[role] += int(
+            (Decimal(str(item["candidate_amount"])) * MONEY_SCALE).to_integral_exact()
+        )
+        reserved_by_role[role] += int(
+            (Decimal(str(item["reserved_amount"])) * MONEY_SCALE).to_integral_exact()
+        )
+    current_by_role = {
+        role: int(
+            (Decimal(str(role_summary[role]["market_value"])) * MONEY_SCALE).to_integral_exact()
+        )
+        for role in ("CORE", "SATELLITE")
+    }
+    executable_total = sum(executable_by_role.values())
+    projected_total = sum(current_by_role.values()) + executable_total
+    projected: JsonDict = {"total_market_value": _money(projected_total)}
+    for role in ("CORE", "SATELLITE"):
+        value = current_by_role[role] + executable_by_role[role]
+        pct = (
+            Decimal(value) / Decimal(projected_total) * Decimal(100)
+            if projected_total
+            else Decimal("0")
+        )
+        projected[role] = {
+            "market_value": _money(value),
+            "actual_pct": f"{pct:.2f}",
+        }
+    plan["executable_role_allocations"] = {
+        role: _money(value) for role, value in executable_by_role.items()
+    }
+    plan["reserved_role_allocations"] = {
+        role: _money(value) for role, value in reserved_by_role.items()
+    }
+    plan["projected"] = projected
+    plan["projection_basis"] = "EXECUTABLE_CANDIDATE_AMOUNT_ONLY"
+    policy = policy_record["policy"]
+    plan["transition_exit_condition_met"] = Decimal(
+        str(projected["CORE"]["actual_pct"])
+    ) >= Decimal(str(policy["transition_exit_core_min_pct"])) and Decimal(
+        str(projected["SATELLITE"]["actual_pct"])
+    ) <= Decimal(str(policy["transition_exit_satellite_max_pct"]))
+    return plan
 
 
 class MarketDataService:
@@ -1098,12 +1133,9 @@ class MarketDataService:
             account_id=account_id,
             as_of_date_value=as_of_date_value,
         )
-        portfolios = {
-            str(item["id"]): item for item in self._ledger.list_portfolios()
-        }
+        portfolios = {str(item["id"]): item for item in self._ledger.list_portfolios()}
         accounts = {
-            str(item["id"]): item
-            for item in self._ledger.list_accounts(portfolio_id=portfolio_id)
+            str(item["id"]): item for item in self._ledger.list_accounts(portfolio_id=portfolio_id)
         }
         portfolio = portfolios.get(portfolio_id)
         account = accounts.get(account_id)
@@ -1185,12 +1217,14 @@ class MarketDataService:
                 "reason_code": "VERSIONED_POLICY_CONFIGURED",
             },
             "risk_assessment": {
-                "available": False,
-                "reason_code": "RISK_RULES_NOT_CONFIGURED",
+                "available": True,
+                "reason_code": "CONFIGURED_RULE_SCAN_AVAILABLE",
+                "tool": "risk_scan_run",
             },
             "sell_proposal": {
-                "available": False,
-                "reason_code": "SELL_RULES_NOT_IMPLEMENTED",
+                "available": True,
+                "reason_code": "RULE_HITS_CREATE_REVIEW_ONLY_PROPOSALS",
+                "tool": "sell_proposal_list",
             },
             "weekly_plan": {
                 "available": True,
@@ -1200,6 +1234,11 @@ class MarketDataService:
             "instrument_role_update": {
                 "available": True,
                 "reason_code": "AVAILABLE_WITH_EXPECTED_CURRENT_ROLE",
+            },
+            "strategy_instrument_configuration": {
+                "available": True,
+                "reason_code": "DRAFT_CONFIRM_COMMIT_REQUIRED",
+                "tool": "strategy_instrument_config_draft_create",
             },
         }
         display_lines = [
@@ -1262,10 +1301,7 @@ class MarketDataService:
                         "SATELLITE "
                         f"{allocation['deviation_pct_points']['SATELLITE']} 个百分点"
                     ),
-                    (
-                        f"- 状态: {allocation['state']} "
-                        f"({allocation['reason_code']})"
-                    ),
+                    (f"- 状态: {allocation['state']} ({allocation['reason_code']})"),
                     "- 过渡原则: 优先使用新增资金，不自动卖出。",  # noqa: RUF001
                 ]
             )
@@ -1273,8 +1309,8 @@ class MarketDataService:
             [
                 "",
                 "当前能力边界:",
-                "- 未配置确定性风险规则, 不能判断风险规则是否触发.",
-                "- 未实现卖出规则, 不能生成卖出结论.",
+                "- 确定性风险扫描可用; 只评估策略实例中明确配置的规则.",
+                "- 规则命中只生成待复核提案, 不创建或执行交易.",
                 "- 周度资金计划预览可用; 必须由用户明确提供本周新增资金金额.",
                 "- 角色变更工具可用; 仅在用户明确指定新角色时调用.",
             ]
@@ -1292,11 +1328,7 @@ class MarketDataService:
                 "independence_assessment": (
                     "NO_EVIDENCE"
                     if not source_lineages
-                    else (
-                        "SINGLE_UPSTREAM"
-                        if len(source_lineages) == 1
-                        else "MULTIPLE_UPSTREAMS"
-                    )
+                    else ("SINGLE_UPSTREAM" if len(source_lineages) == 1 else "MULTIPLE_UPSTREAMS")
                 ),
             },
             "narrative_contract": {
@@ -1395,20 +1427,18 @@ class MarketDataService:
             data_quality=valuation["data_quality"],
         )
         candidate_minor = sum(
-            int(
-                (
-                    Decimal(str(item["candidate_amount"])) * MONEY_SCALE
-                ).to_integral_exact()
-            )
+            int((Decimal(str(item["candidate_amount"])) * MONEY_SCALE).to_integral_exact())
             for item in instrument_items
         )
         reserved_minor = sum(
-            int(
-                (
-                    Decimal(str(item["reserved_amount"])) * MONEY_SCALE
-                ).to_integral_exact()
-            )
+            int((Decimal(str(item["reserved_amount"])) * MONEY_SCALE).to_integral_exact())
             for item in instrument_items
+        )
+        plan = _apply_executable_projection(
+            plan=plan,
+            role_summary=brief["role_summary"],
+            instrument_items=instrument_items,
+            policy_record=allocation["policy"],
         )
         plan.update(
             {
@@ -1419,11 +1449,18 @@ class MarketDataService:
                 "selection_boundary": "INSTANCE_ALLOWLIST_ONLY",
             }
         )
-        plan_state = (
-            "TRANSITION_CONTRIBUTION"
-            if allocation["state"] in {"TRANSITION_REQUIRED", "OUTSIDE_TOLERANCE"}
-            else "MAINTENANCE_CONTRIBUTION"
-        )
+        if reserved_minor:
+            plan_state = "REVIEW_REQUIRED"
+            plan_reason_code = (
+                "NO_EXECUTABLE_INSTRUMENT" if candidate_minor == 0 else "PARTIALLY_EXECUTABLE"
+            )
+        else:
+            plan_state = (
+                "TRANSITION_CONTRIBUTION"
+                if allocation["state"] in {"TRANSITION_REQUIRED", "OUTSIDE_TOLERANCE"}
+                else "MAINTENANCE_CONTRIBUTION"
+            )
+            plan_reason_code = allocation["reason_code"]
         warnings = valuation["warnings"]
         display_lines = [
             "周度资金计划预览",
@@ -1440,6 +1477,11 @@ class MarketDataService:
                 "舱位分配: "
                 f"CORE {_display_money(plan['role_allocations']['CORE'])} | "
                 f"SATELLITE {_display_money(plan['role_allocations']['SATELLITE'])}"
+            ),
+            (
+                "可执行金额: "
+                f"{_display_money(plan['candidate_amount'])} | "
+                f"保留金额: {_display_money(plan['reserved_amount'])}"
             ),
             "标的计划:",
         ]
@@ -1460,21 +1502,17 @@ class MarketDataService:
         display_lines.extend(
             [
                 (
-                    "投后预计: "
+                    "按可执行金额投后预计: "
                     f"CORE {plan['projected']['CORE']['actual_pct']}% | "
                     f"SATELLITE {plan['projected']['SATELLITE']['actual_pct']}%"
                 ),
                 (
                     "过渡退出条件: "
-                    + (
-                        "已满足"
-                        if plan["transition_exit_condition_met"]
-                        else "尚未满足"
-                    )
+                    + ("已满足" if plan["transition_exit_condition_met"] else "尚未满足")
                 ),
                 "",
                 "执行边界:",
-                "- 标的只能来自用户已批准的策略实例白名单.",
+                "- 标的只能来自当前策略实例中明确批准可定投的配置.",
                 "- 不创建交易草稿，不代表已买入，不自动卖出.",  # noqa: RUF001
             ]
         )
@@ -1484,7 +1522,7 @@ class MarketDataService:
         return {
             "available": True,
             "state": plan_state,
-            "reason_code": allocation["reason_code"],
+            "reason_code": plan_reason_code,
             "as_of_date": valuation["as_of_date"],
             "data_quality": valuation["data_quality"],
             "warnings": warnings,

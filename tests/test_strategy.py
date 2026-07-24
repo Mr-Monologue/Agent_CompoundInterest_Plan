@@ -199,3 +199,47 @@ def test_role_update_preserves_explicit_contribution_eligibility(tmp_path: Path)
     assert config["contribution_eligible"] is True
     assert config["target_weight_bps"] == 10000
     assert config["maximum_amount_minor"] == 5000
+
+
+def test_strategy_configuration_requires_exact_confirmation(tmp_path: Path) -> None:
+    ledger, strategy = services(tmp_path / "investor.db")
+    portfolio = ledger.create_portfolio(name="测试组合")
+    ledger.create_instrument(code="FUND001", name="测试基金")
+    strategy.assign(
+        portfolio_id=str(portfolio["id"]),
+        strategy_key="value-dca",
+        strategy_version="1.6",
+        instance_config={},
+        approved_by="test-user",
+        reason="测试策略实例",
+    )
+
+    created = strategy.create_config_draft(
+        portfolio_id=str(portfolio["id"]),
+        instrument_code="FUND001",
+        contribution_eligible=True,
+        role="CORE",
+        reason="用户明确批准该标的长期参与核心舱定投",
+    )
+
+    assert created["draft"]["status"] == "PENDING"
+    assert created["draft"]["execution_status"] == "NOT_APPLIED"
+    assert strategy.get_assignment(portfolio_id=str(portfolio["id"]))["instruments"] == []
+
+    with pytest.raises(LedgerError) as mismatch:
+        strategy.commit_config_draft(
+            draft_id=str(created["draft"]["id"]),
+            confirmation_token="wrong",
+            confirmed_by="test-user",
+        )
+    assert mismatch.value.code == "CONFIRMATION_MISMATCH"
+
+    committed = strategy.commit_config_draft(
+        draft_id=str(created["draft"]["id"]),
+        confirmation_token=str(created["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    config = committed["assignment"]["instruments"][0]
+    assert config["instrument_code"] == "FUND001"
+    assert config["contribution_eligible"] is True
+    assert config["proxy_suitability"] == "NOT_APPLICABLE"

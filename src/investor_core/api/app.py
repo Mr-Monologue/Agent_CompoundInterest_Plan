@@ -18,9 +18,13 @@ from investor_core.api.schemas import (
     MarketNavVerificationCreateRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
+    RiskScanRequest,
+    SellDecisionDraftCreateRequest,
+    StrategyInstrumentConfigDraftRequest,
     TransactionDraftCommitRequest,
     TransactionDraftCreateRequest,
     TransactionReversalDraftCreateRequest,
+    ValuationObservationCreateRequest,
     WeeklyPlanConfirmRequest,
     WeeklyPlanDraftCreateRequest,
     WeeklyPlanExecutedRequest,
@@ -33,6 +37,7 @@ from investor_core.logging_config import build_uvicorn_log_config
 from investor_core.market_data import MarketDataService
 from investor_core.market_sync import MarketSyncService
 from investor_core.planning import PlanningService
+from investor_core.risk import RiskService
 from investor_core.strategy import StrategyService
 from investor_core.version import __version__
 
@@ -58,6 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     market_sync = MarketSyncService(runtime_settings)
     strategies = StrategyService(runtime_settings)
     planning = PlanningService(runtime_settings)
+    risk = RiskService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -177,6 +183,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 expected_current_role=request.expected_current_role,
                 reason=request.reason,
                 actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post("/v1/strategy-instrument-config-drafts")
+    def strategy_instrument_config_draft_create(
+        request: StrategyInstrumentConfigDraftRequest,
+    ) -> dict[str, Any]:
+        result = strategies.create_config_draft(**request.model_dump())
+        return success(result, warnings=result["warnings"])
+
+    @app.get("/v1/strategy-instrument-config-drafts/{draft_id}")
+    def strategy_instrument_config_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(strategies.get_config_draft(draft_id=draft_id))
+
+    @app.post("/v1/strategy-instrument-config-drafts/{draft_id}/commit")
+    def strategy_instrument_config_draft_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            strategies.commit_config_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
             )
         )
 
@@ -376,9 +406,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             account_id=request.account_id,
             contribution_amount=str(request.contribution_amount),
             plan_date_value=request.plan_date.isoformat(),
-            as_of_date_value=(
-                request.as_of_date.isoformat() if request.as_of_date else None
-            ),
+            as_of_date_value=(request.as_of_date.isoformat() if request.as_of_date else None),
             idempotency_key=request.idempotency_key,
             actor_ref=request.actor_ref,
         )
@@ -515,6 +543,125 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             else []
         )
         return success({"items": items}, warnings=warnings, data_quality=quality)
+
+    @app.post("/v1/valuation-observations")
+    def valuation_observation_create(
+        request: ValuationObservationCreateRequest,
+    ) -> dict[str, Any]:
+        result = risk.record_valuation_observation(
+            instrument_code=request.instrument_code,
+            metric=request.metric,
+            observation_date=request.observation_date.isoformat(),
+            value=str(request.value),
+            source_type=request.source_type,
+            source_name=request.source_name,
+            source_ref=request.source_ref,
+            verification_status=request.verification_status,
+            observed_at=request.observed_at.isoformat(),
+            actor_ref=request.actor_ref,
+        )
+        quality = (
+            "PASS"
+            if request.verification_status == "VERIFIED"
+            and request.source_type in {"OFFICIAL", "PROFESSIONAL"}
+            else "WARNING"
+        )
+        return success(
+            result,
+            warnings=(
+                []
+                if quality == "PASS"
+                else ["Valuation observation is single-source or unverified"]
+            ),
+            data_quality=quality,
+        )
+
+    @app.get("/v1/valuation-snapshot")
+    def valuation_snapshot_get(
+        portfolio_id: str,
+        instrument_code: str,
+        metric: str = "PE",
+        as_of_date: str | None = None,
+        lookback_days: int = Query(default=1826, ge=30, le=7305),
+    ) -> dict[str, Any]:
+        result = risk.valuation_snapshot(
+            portfolio_id=portfolio_id,
+            instrument_code=instrument_code,
+            metric=metric,
+            as_of_date=as_of_date,
+            lookback_days=lookback_days,
+        )
+        return success(
+            result,
+            warnings=(
+                ["Valuation evidence is single-source or unverified"]
+                if result.get("data_quality") == "WARNING"
+                else []
+            ),
+            data_quality=str(result.get("data_quality", "PASS")),
+        )
+
+    @app.post("/v1/risk-scans")
+    def risk_scan(request: RiskScanRequest) -> dict[str, Any]:
+        result = risk.scan(
+            portfolio_id=request.portfolio_id,
+            account_id=request.account_id,
+            as_of_date=(request.as_of_date.isoformat() if request.as_of_date else None),
+        )
+        return success(
+            result,
+            warnings=(
+                ["Risk scan was data-blocked"] if result["data_quality"] == "SOURCE_ERROR" else []
+            ),
+            data_quality=result["data_quality"],
+        )
+
+    @app.get("/v1/sell-proposals")
+    def sell_proposal_list(
+        portfolio_id: str,
+        status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": risk.list_proposals(
+                    portfolio_id=portfolio_id,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/sell-proposals/{proposal_id}")
+    def sell_proposal_get(proposal_id: str) -> dict[str, Any]:
+        return success(risk.get_proposal(proposal_id=proposal_id))
+
+    @app.post("/v1/sell-proposals/{proposal_id}/decision-drafts")
+    def sell_decision_draft_create(
+        proposal_id: str,
+        request: SellDecisionDraftCreateRequest,
+    ) -> dict[str, Any]:
+        return success(
+            risk.create_decision_draft(
+                proposal_id=proposal_id,
+                decision=request.decision,
+                user_reason=request.user_reason,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post("/v1/sell-decision-drafts/{draft_id}/commit")
+    def sell_decision_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            risk.commit_decision(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
 
     return app
 

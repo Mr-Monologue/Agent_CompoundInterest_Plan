@@ -234,13 +234,9 @@ async def strategy_definition_list() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def strategy_current_get(
-    portfolio_id: str = "", account_id: str = ""
-) -> dict[str, Any]:
+async def strategy_current_get(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
     """Read the approved strategy instance and local instrument configuration."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     return await core_request(
@@ -287,9 +283,7 @@ async def instrument_role_update(
     account_id: str = "",
 ) -> dict[str, Any]:
     """Update an explicitly requested portfolio-local role with stale-write protection."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     return await core_request(
@@ -306,6 +300,77 @@ async def instrument_role_update(
 
 
 @mcp.tool()
+async def strategy_instrument_config_draft_create(
+    instrument_code: str,
+    contribution_eligible: bool,
+    reason: str,
+    role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"] | None = None,
+    target_weight_bps: int | None = None,
+    priority: int | None = None,
+    minimum_amount_minor: int | None = None,
+    maximum_amount_minor: int | None = None,
+    benchmark_code: str = "",
+    proxy_suitability: Literal["STRONG", "WEAK", "NOT_APPLICABLE"] | None = None,
+    thesis_status: Literal["ACTIVE", "REVIEW_REQUIRED", "INVALID"] | None = None,
+    hard_stop_return_bps: int | None = None,
+    maximum_position_weight_bps: int | None = None,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Preview a portfolio-local strategy configuration; NAV never decides eligibility."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/strategy-instrument-config-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "instrument_code": instrument_code,
+            "contribution_eligible": contribution_eligible,
+            "reason": reason,
+            "role": role,
+            "target_weight_bps": target_weight_bps,
+            "priority": priority,
+            "minimum_amount_minor": minimum_amount_minor,
+            "maximum_amount_minor": maximum_amount_minor,
+            "benchmark_code": benchmark_code or None,
+            "proxy_suitability": proxy_suitability,
+            "thesis_status": thesis_status,
+            "hard_stop_return_bps": hard_stop_return_bps,
+            "maximum_position_weight_bps": maximum_position_weight_bps,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def strategy_instrument_config_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read one strategy configuration preview without exposing its token."""
+    return await core_request(
+        "GET",
+        f"/v1/strategy-instrument-config-drafts/{draft_id}",
+    )
+
+
+@mcp.tool()
+async def strategy_instrument_config_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Apply one exact portfolio-local strategy config after explicit confirmation."""
+    return await core_request(
+        "POST",
+        f"/v1/strategy-instrument-config-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
 async def market_nav_snapshot_record(
     instrument_code: str,
     nav_date: str,
@@ -315,10 +380,7 @@ async def market_nav_snapshot_record(
     observed_at: str,
     verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED",
     source_ref: str = "",
-    source_lineage: Literal[
-        "EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"
-    ]
-    | None = None,
+    source_lineage: Literal["EASTMONEY", "WIND", "FUND_MANAGER_OFFICIAL", "ALIPAY"] | None = None,
     currency: str = "CNY",
 ) -> dict[str, Any]:
     """Record an immutable sourced NAV observation; this never changes holdings."""
@@ -464,6 +526,145 @@ async def market_nav_verification_list(
 
 
 @mcp.tool()
+async def valuation_observation_record(
+    instrument_code: str,
+    metric: Literal["PE", "PB"],
+    observation_date: str,
+    value: str,
+    source_type: Literal["OFFICIAL", "PROFESSIONAL", "AGGREGATOR", "USER"],
+    source_name: str,
+    observed_at: str,
+    verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED",
+    source_ref: str = "",
+) -> dict[str, Any]:
+    """Record sourced PE/PB evidence for an index; never infer or scrape a value."""
+    return await core_request(
+        "POST",
+        "/v1/valuation-observations",
+        payload={
+            "instrument_code": instrument_code,
+            "metric": metric,
+            "observation_date": observation_date,
+            "value": value,
+            "source_type": source_type,
+            "source_name": source_name,
+            "source_ref": source_ref or None,
+            "verification_status": verification_status,
+            "observed_at": observed_at,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def valuation_snapshot_get(
+    instrument_code: str,
+    metric: Literal["PE", "PB"] = "PE",
+    as_of_date: str = "",
+    lookback_days: int = 1826,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Calculate a deterministic percentile from stored benchmark evidence."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "instrument_code": instrument_code,
+        "metric": metric,
+        "lookback_days": lookback_days,
+    }
+    if as_of_date:
+        params["as_of_date"] = as_of_date
+    return await core_request("GET", "/v1/valuation-snapshot", params=params)
+
+
+@mcp.tool()
+async def risk_scan_run(
+    as_of_date: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Run configured deterministic rules; may create proposals, never transactions."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/risk-scans",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+            "as_of_date": as_of_date or None,
+        },
+    )
+
+
+@mcp.tool()
+async def sell_proposal_list(
+    status: str = "",
+    limit: int = 100,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """List deterministic sell proposals; every item remains unexecuted."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "limit": limit,
+    }
+    if status:
+        params["status"] = status
+    return await core_request("GET", "/v1/sell-proposals", params=params)
+
+
+@mcp.tool()
+async def sell_proposal_context_get(proposal_id: str) -> dict[str, Any]:
+    """Read rule evidence and diagnostics; approval is not a SELL transaction."""
+    return await core_request("GET", f"/v1/sell-proposals/{proposal_id}")
+
+
+@mcp.tool()
+async def sell_decision_draft_create(
+    proposal_id: str,
+    decision: Literal["APPROVE", "DEFER", "REJECT"],
+    user_reason: str = "",
+) -> dict[str, Any]:
+    """Preview a human decision on a proposal; creates no transaction."""
+    return await core_request(
+        "POST",
+        f"/v1/sell-proposals/{proposal_id}/decision-drafts",
+        payload={
+            "decision": decision,
+            "user_reason": user_reason or None,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def sell_decision_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Commit a proposal decision; even APPROVE does not change holdings."""
+    return await core_request(
+        "POST",
+        f"/v1/sell-decision-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
 async def portfolio_valuation_get(
     as_of_date: str = "", portfolio_id: str = "", account_id: str = ""
 ) -> dict[str, Any]:
@@ -562,9 +763,7 @@ async def weekly_plan_list(
     limit: int = 100,
 ) -> dict[str, Any]:
     """List audited weekly plans without changing plan or transaction state."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     params: dict[str, Any] = {

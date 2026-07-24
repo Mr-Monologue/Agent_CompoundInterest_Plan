@@ -95,9 +95,7 @@ def configured_services(
 
 
 def test_plan_lifecycle_is_separate_from_transactions(tmp_path: Path) -> None:
-    ledger, planning, portfolio_id, account_id = configured_services(
-        tmp_path / "investor.db"
-    )
+    ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
 
     created = planning.create_draft(
         portfolio_id=portfolio_id,
@@ -111,9 +109,10 @@ def test_plan_lifecycle_is_separate_from_transactions(tmp_path: Path) -> None:
     assert created["plan"]["status"] == "DRAFT"
     assert created["plan"]["items"][0]["instrument_code"] == "CORE01"
     assert created["plan"]["items"][0]["candidate_amount"] == "100.00"
-    assert ledger.list_transactions(portfolio_id=portfolio_id, account_id=account_id)[
-        0
-    ]["kind"] == "OPENING"
+    assert (
+        ledger.list_transactions(portfolio_id=portfolio_id, account_id=account_id)[0]["kind"]
+        == "OPENING"
+    )
     assert all(
         item["kind"] == "OPENING"
         for item in ledger.list_transactions(
@@ -165,9 +164,7 @@ def test_plan_lifecycle_is_separate_from_transactions(tmp_path: Path) -> None:
 def test_plan_reserves_role_amount_when_no_instrument_is_approved(
     tmp_path: Path,
 ) -> None:
-    _ledger, planning, portfolio_id, account_id = configured_services(
-        tmp_path / "investor.db"
-    )
+    _ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
     settings = planning.settings
     StrategyService(settings).configure_instrument(
         portfolio_id=portfolio_id,
@@ -199,12 +196,23 @@ def test_plan_reserves_role_amount_when_no_instrument_is_approved(
     assert item["reason_code"] == "NO_ELIGIBLE_INSTRUMENT"
     assert item["reserved_amount"] == "100.00"
     assert item["candidate_amount"] == "0.00"
+    summary = created["plan"]["revision"]["summary"]
+    assert summary["state"] == "REVIEW_REQUIRED"
+    assert summary["reason_code"] == "NO_EXECUTABLE_INSTRUMENT"
+    assert summary["plan"]["projected"]["CORE"]["actual_pct"] == "10.00"
+    assert summary["plan"]["projected"]["SATELLITE"]["actual_pct"] == "90.00"
+
+    with pytest.raises(LedgerError) as blocked:
+        planning.freeze(
+            plan_id=str(created["plan"]["id"]),
+            confirmation_token=str(created["confirmation_token"]),
+            confirmed_by="test-user",
+        )
+    assert blocked.value.code == "PLAN_NOT_EXECUTABLE"
 
 
 def test_plan_idempotency_does_not_reissue_confirmation_token(tmp_path: Path) -> None:
-    _ledger, planning, portfolio_id, account_id = configured_services(
-        tmp_path / "investor.db"
-    )
+    _ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
     arguments = {
         "portfolio_id": portfolio_id,
         "account_id": account_id,
