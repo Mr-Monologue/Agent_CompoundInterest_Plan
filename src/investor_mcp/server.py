@@ -524,6 +524,29 @@ async def portfolio_brief_get(
 
 
 @mcp.tool()
+async def weekly_plan_preview(
+    contribution_amount: str,
+    as_of_date: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Preview an explicit weekly contribution by role; never creates or executes trades."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "account_id": resolved_account_id,
+        "contribution_amount": contribution_amount,
+    }
+    if as_of_date:
+        params["as_of_date"] = as_of_date
+    return await core_request("GET", "/v1/weekly-plan-preview", params=params)
+
+
+@mcp.tool()
 async def holding_list(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
     """List latest deterministic holdings reconstructed from committed records."""
     resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(

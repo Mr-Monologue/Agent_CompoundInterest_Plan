@@ -169,6 +169,74 @@ def _allocation_assessment(
     }
 
 
+def _contribution_allocation(
+    *,
+    policy_record: JsonDict,
+    role_summary: dict[str, JsonDict],
+    contribution_minor: int,
+) -> JsonDict:
+    policy = policy_record["policy"]
+    core_minor = int(
+        (
+            Decimal(str(role_summary["CORE"]["market_value"])) * MONEY_SCALE
+        ).to_integral_exact()
+    )
+    satellite_minor = int(
+        (
+            Decimal(str(role_summary["SATELLITE"]["market_value"])) * MONEY_SCALE
+        ).to_integral_exact()
+    )
+    current_total_minor = core_minor + satellite_minor
+    projected_total_minor = current_total_minor + contribution_minor
+    core_target = Decimal(str(policy["core_target_pct"])) / Decimal(100)
+    desired_core_minor = int(
+        (Decimal(projected_total_minor) * core_target).to_integral_value(
+            rounding=ROUND_HALF_UP
+        )
+    )
+    core_contribution_minor = min(
+        contribution_minor,
+        max(0, desired_core_minor - core_minor),
+    )
+    satellite_contribution_minor = contribution_minor - core_contribution_minor
+    projected_core_minor = core_minor + core_contribution_minor
+    projected_satellite_minor = satellite_minor + satellite_contribution_minor
+    projected_core_pct = Decimal(projected_core_minor) / Decimal(
+        projected_total_minor
+    ) * Decimal(100)
+    projected_satellite_pct = Decimal(projected_satellite_minor) / Decimal(
+        projected_total_minor
+    ) * Decimal(100)
+    exit_condition_met = (
+        projected_core_pct
+        >= Decimal(str(policy["transition_exit_core_min_pct"]))
+        and projected_satellite_pct
+        <= Decimal(str(policy["transition_exit_satellite_max_pct"]))
+    )
+    return {
+        "contribution_amount": _money(contribution_minor),
+        "role_allocations": {
+            "CORE": _money(core_contribution_minor),
+            "SATELLITE": _money(satellite_contribution_minor),
+        },
+        "projected": {
+            "total_market_value": _money(projected_total_minor),
+            "CORE": {
+                "market_value": _money(projected_core_minor),
+                "actual_pct": f"{projected_core_pct:.2f}",
+            },
+            "SATELLITE": {
+                "market_value": _money(projected_satellite_minor),
+                "actual_pct": f"{projected_satellite_pct:.2f}",
+            },
+        },
+        "transition_exit_condition_met": exit_condition_met,
+        "calculation_method": "TARGET_WEIGHT_GAP_FILL",
+        "scope": "ROLE_ONLY",
+        "automatic_selling_allowed": False,
+    }
+
+
 class MarketDataService:
     """Store immutable NAV observations and value committed holdings."""
 
@@ -1003,8 +1071,9 @@ class MarketDataService:
                 "reason_code": "SELL_RULES_NOT_IMPLEMENTED",
             },
             "weekly_plan": {
-                "available": False,
-                "reason_code": "WEEKLY_PLAN_NOT_IMPLEMENTED",
+                "available": True,
+                "reason_code": "REQUIRES_EXPLICIT_CONTRIBUTION_AMOUNT",
+                "tool": "weekly_plan_preview",
             },
             "instrument_role_update": {
                 "available": True,
@@ -1083,7 +1152,8 @@ class MarketDataService:
                 "",
                 "当前能力边界:",
                 "- 未配置确定性风险规则, 不能判断风险规则是否触发.",
-                "- 未实现卖出规则与周度计划, 不能生成卖出或定投结论.",
+                "- 未实现卖出规则, 不能生成卖出结论.",
+                "- 周度资金计划预览可用; 必须由用户明确提供本周新增资金金额.",
                 "- 角色变更工具可用; 仅在用户明确指定新角色时调用.",
             ]
         )
@@ -1122,6 +1192,146 @@ class MarketDataService:
                 "instruction": (
                     "Return display_text exactly. Do not add headings, summaries, interpretations, "
                     "priorities, recommendations, questions, or next actions."
+                ),
+            },
+            "display_text": "\n".join(display_lines),
+        }
+
+    def weekly_plan_preview(
+        self,
+        *,
+        portfolio_id: str,
+        account_id: str,
+        contribution_amount: str,
+        as_of_date_value: str | None = None,
+    ) -> JsonDict:
+        """Allocate an explicit contribution between roles without proposing a trade."""
+        contribution_minor = _scaled(
+            contribution_amount,
+            MONEY_SCALE,
+            "contribution_amount",
+        )
+        brief = self.portfolio_brief(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            as_of_date_value=as_of_date_value,
+        )
+        valuation = brief["valuation"]
+        allocation = brief["allocation_assessment"]
+        if valuation["totals"] is None:
+            return {
+                "available": False,
+                "state": "BLOCKED",
+                "reason_code": "VALUATION_UNAVAILABLE",
+                "as_of_date": valuation["as_of_date"],
+                "data_quality": valuation["data_quality"],
+                "warnings": valuation["warnings"],
+                "narrative_contract": {
+                    "mode": "EXACT_TEXT",
+                    "response_field": "display_text",
+                    "additions_allowed": False,
+                },
+                "display_text": (
+                    "周度资金计划预览\n"
+                    f"数据日期: {valuation['as_of_date']}\n"
+                    f"数据质量: {valuation['data_quality']}\n\n"
+                    "状态: BLOCKED (VALUATION_UNAVAILABLE)\n"
+                    "估值数据不可用，不能生成任何金额分配结论。"  # noqa: RUF001
+                ),
+            }
+        if allocation["state"] == "BLOCKED_UNASSIGNED":
+            return {
+                "available": False,
+                "state": "BLOCKED",
+                "reason_code": "ROLE_UNASSIGNED",
+                "as_of_date": valuation["as_of_date"],
+                "data_quality": valuation["data_quality"],
+                "warnings": valuation["warnings"],
+                "narrative_contract": {
+                    "mode": "EXACT_TEXT",
+                    "response_field": "display_text",
+                    "additions_allowed": False,
+                },
+                "display_text": (
+                    "周度资金计划预览\n"
+                    f"数据日期: {valuation['as_of_date']}\n"
+                    f"数据质量: {valuation['data_quality']}\n\n"
+                    "状态: BLOCKED (ROLE_UNASSIGNED)\n"
+                    "存在未分配角色的持仓，不能生成资金分配结论。"  # noqa: RUF001
+                ),
+            }
+
+        plan = _contribution_allocation(
+            policy_record=allocation["policy"],
+            role_summary=brief["role_summary"],
+            contribution_minor=contribution_minor,
+        )
+        plan_state = (
+            "TRANSITION_CONTRIBUTION"
+            if allocation["state"] in {"TRANSITION_REQUIRED", "OUTSIDE_TOLERANCE"}
+            else "MAINTENANCE_CONTRIBUTION"
+        )
+        warnings = valuation["warnings"]
+        display_lines = [
+            "周度资金计划预览",
+            f"数据日期: {valuation['as_of_date']}",
+            f"数据质量: {valuation['data_quality']}",
+            (
+                f"策略版本: {allocation['policy']['policy']['policy_id']} "
+                f"v{allocation['policy']['version']}"
+            ),
+            "",
+            f"本周新增资金: {_display_money(plan['contribution_amount'])}",
+            f"计划状态: {plan_state}",
+            (
+                "舱位分配: "
+                f"CORE {_display_money(plan['role_allocations']['CORE'])} | "
+                f"SATELLITE {_display_money(plan['role_allocations']['SATELLITE'])}"
+            ),
+            (
+                "投后预计: "
+                f"CORE {plan['projected']['CORE']['actual_pct']}% | "
+                f"SATELLITE {plan['projected']['SATELLITE']['actual_pct']}%"
+            ),
+            (
+                "过渡退出条件: "
+                + (
+                    "已满足"
+                    if plan["transition_exit_condition_met"]
+                    else "尚未满足"
+                )
+            ),
+            "",
+            "执行边界:",
+            "- 结果仅分配到 CORE/SATELLITE 舱位，不选择具体基金.",  # noqa: RUF001
+            "- 不创建交易草稿，不代表已买入，不自动卖出.",  # noqa: RUF001
+        ]
+        if warnings:
+            display_lines.extend(["", "数据限制:"])
+            display_lines.extend(f"- {_display_warning(item)}" for item in warnings)
+        return {
+            "available": True,
+            "state": plan_state,
+            "reason_code": allocation["reason_code"],
+            "as_of_date": valuation["as_of_date"],
+            "data_quality": valuation["data_quality"],
+            "warnings": warnings,
+            "policy": allocation["policy"],
+            "current_allocation": allocation,
+            "plan": plan,
+            "execution_boundary": {
+                "instrument_selection": "NOT_INCLUDED",
+                "transaction_draft_created": False,
+                "trade_executed": False,
+                "automatic_selling_allowed": False,
+            },
+            "narrative_contract": {
+                "mode": "EXACT_TEXT",
+                "response_field": "display_text",
+                "additions_allowed": False,
+                "instruction": (
+                    "Return display_text exactly. Do not choose instruments, create transaction "
+                    "drafts, claim execution, or add recommendations."
                 ),
             },
             "display_text": "\n".join(display_lines),
