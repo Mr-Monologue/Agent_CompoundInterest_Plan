@@ -45,6 +45,10 @@ def configure_investor_mcp(
 
     for incompatible_key in ("url", "headers", "auth"):
         entry.pop(incompatible_key, None)
+    # investor_core is a locally managed, versioned server. A tools.include list
+    # written by an older interactive install would otherwise hide every tool
+    # added by a later release.
+    entry.pop("tools", None)
     entry.update(
         {
             "command": "uv",

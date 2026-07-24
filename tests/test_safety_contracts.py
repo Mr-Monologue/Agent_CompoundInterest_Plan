@@ -32,6 +32,9 @@ def test_skill_never_offers_an_unavailable_investor_capability() -> None:
     assert "Check the tools actually available" in skill
     assert "Never\n   name, offer, or imply an Investor capability" in skill
     assert "Attribute rules precisely" in skill
+    assert "report\nthe tool mismatch and stop" in skill
+    assert "calculate a per-fund split" in skill
+    assert "model-derived substitute" in skill
 
 
 def test_opening_positions_are_not_fabricated_buy_transactions() -> None:
