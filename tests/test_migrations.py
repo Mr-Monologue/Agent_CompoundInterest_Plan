@@ -46,11 +46,18 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "portfolios",
         "schema_meta",
         "settings",
+        "strategy_assignments",
+        "strategy_definitions",
+        "strategy_instrument_configs",
+        "strategy_versions",
+        "investment_plans",
+        "plan_items",
+        "plan_revisions",
         "transaction_drafts",
         "transactions",
     }
     assert phase == ("2",)
-    assert revision == ("0008_allocation_policy",)
+    assert revision == ("0009_strategy_instance_plan",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -140,7 +147,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0008_allocation_policy",
+            "0009_strategy_instance_plan",
         )
 
 
@@ -218,6 +225,93 @@ def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(
     assert '"core_target_pct": "65.00"' in policy[1]
     assert policy[2] == "system:approved-strategy-v1.6"
     assert audit == ("ALLOCATION_POLICY_INITIALIZED",)
+
+
+def test_strategy_instance_migration_preserves_policy_without_inventing_buy_targets(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0008_allocation_policy")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO portfolios (id, name, base_currency, status, created_at)
+            VALUES ('portfolio-existing', '已有组合', 'CNY', 'ACTIVE', '2026-07-20T00:00:00Z')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO instruments (
+                id, code, name, asset_type, currency, role, status, created_at
+            ) VALUES (
+                'instrument-existing', 'HISTORY01', '历史持仓基金', 'FUND',
+                'CNY', 'CORE', 'ACTIVE', '2026-07-20T00:00:00Z'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO settings (
+                key, version, value_json, value_hash, status, approved_by,
+                approved_at, created_at
+            ) VALUES (
+                'allocation_policy:portfolio-existing', 1,
+                ?,
+                'legacy-hash', 'ACTIVE', 'test-user',
+                '2026-07-20T00:00:00Z', '2026-07-20T00:00:00Z'
+            )
+            """,
+            (
+                '{"policy_id":"value-dca-v1.6","core_target_pct":"65.00",'
+                '"satellite_target_pct":"35.00","tolerance_pct":"10.00",'
+                '"transition_trigger_pct":"15.00",'
+                '"transition_exit_core_min_pct":"55.00",'
+                '"transition_exit_satellite_max_pct":"45.00",'
+                '"transition_principle":"INCREMENTAL_FUNDS_FIRST",'
+                '"automatic_selling_allowed":false}',
+            ),
+        )
+        connection.commit()
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        assignment = connection.execute(
+            """
+            SELECT a.portfolio_id, d.strategy_key, v.version, a.approved_by
+            FROM strategy_assignments a
+            JOIN strategy_versions v ON v.id = a.strategy_version_id
+            JOIN strategy_definitions d ON d.id = v.strategy_definition_id
+            WHERE a.status = 'ACTIVE'
+            """
+        ).fetchone()
+        config = connection.execute(
+            """
+            SELECT role, contribution_eligible
+            FROM strategy_instrument_configs
+            WHERE instrument_id = 'instrument-existing'
+            """
+        ).fetchone()
+
+    assert assignment == ("portfolio-existing", "value-dca", "1.6", "test-user")
+    assert config == ("CORE", 0)
+
+
+def test_new_portfolio_does_not_receive_an_implicit_strategy(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    service = LedgerService(Settings(environment=Environment.TEST, db_path=database_path))
+    portfolio = service.create_portfolio(name="新用户组合")
+
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM strategy_assignments WHERE portfolio_id = ?",
+            (portfolio["id"],),
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM settings WHERE key = ?",
+            (f"allocation_policy:{portfolio['id']}",),
+        ).fetchone() == (0,)
 
 
 def test_market_sync_migration_preserves_existing_holding_and_nav(tmp_path: Path) -> None:

@@ -18,8 +18,8 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "account_list",
         "investment_context_get",
         "investment_context_set",
-        "allocation_policy_get",
-        "allocation_policy_set",
+        "strategy_definition_list",
+        "strategy_current_get",
         "instrument_create",
         "instrument_list",
         "instrument_role_update",
@@ -33,6 +33,12 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "portfolio_valuation_get",
         "portfolio_brief_get",
         "weekly_plan_preview",
+        "weekly_plan_draft_create",
+        "weekly_plan_list",
+        "weekly_plan_get",
+        "weekly_plan_freeze",
+        "weekly_plan_skip",
+        "weekly_plan_mark_executed",
         "holding_list",
         "opening_position_draft_create",
         "transaction_list",
@@ -162,14 +168,16 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
 
     asyncio.run(server.portfolio_create("个人投资组合"))
     asyncio.run(server.account_create("portfolio-1", "测试账户", "测试平台"))
-    asyncio.run(server.instrument_create("INDEX001", "测试指数", "INDEX", role="CORE"))
-    asyncio.run(server.instrument_create("FUND007", "测试基金G", "FUND", role="CORE"))
+    asyncio.run(server.instrument_create("INDEX001", "测试指数", "INDEX"))
+    asyncio.run(server.instrument_create("FUND007", "测试基金G", "FUND"))
     asyncio.run(
         server.instrument_role_update(
             "FUND007",
             "SATELLITE",
             "CORE",
             "用户明确将该标的归入卫星角色",
+            portfolio_id="portfolio-1",
+            account_id="account-1",
         )
     )
 
@@ -198,7 +206,6 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
                 "name": "测试指数",
                 "asset_type": "INDEX",
                 "currency": "CNY",
-                "role": "CORE",
                 "actor_ref": "hermes",
             },
         ),
@@ -210,14 +217,14 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
                 "name": "测试基金G",
                 "asset_type": "FUND",
                 "currency": "CNY",
-                "role": "CORE",
                 "actor_ref": "hermes",
             },
         ),
         (
             "PATCH",
-            "/v1/instruments/FUND007/role",
+            "/v1/strategy-instruments/FUND007/role",
             {
+                "portfolio_id": "portfolio-1",
                 "role": "SATELLITE",
                 "expected_current_role": "CORE",
                 "reason": "用户明确将该标的归入卫星角色",

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from investor_core.api.app import create_app
 from investor_core.config import Environment, Settings
+from investor_core.strategy import StrategyService
 
 
 def _client_with_holding(tmp_path: Path) -> tuple[TestClient, str, str]:
@@ -20,6 +21,14 @@ def _client_with_holding(tmp_path: Path) -> tuple[TestClient, str, str]:
     )
     client = TestClient(create_app(settings))
     portfolio = client.post("/v1/portfolios", json={"name": "个人投资组合"}).json()["data"]
+    StrategyService(settings).assign(
+        portfolio_id=str(portfolio["id"]),
+        strategy_key="value-dca",
+        strategy_version="1.6",
+        instance_config={},
+        approved_by="test-user",
+        reason="测试显式策略实例",
+    )
     account = client.post(
         "/v1/accounts",
         json={
@@ -380,7 +389,7 @@ def test_portfolio_brief_exposes_versioned_allocation_policy(tmp_path: Path) -> 
         "reason_code": "AVAILABLE_WITH_EXPECTED_CURRENT_ROLE",
     }
     assert data["allocation_assessment"]["state"] == "BLOCKED_UNASSIGNED"
-    assert data["allocation_assessment"]["policy"]["version"] == 1
+    assert data["allocation_assessment"]["policy"]["version"] == "1.6"
     assert data["allocation_assessment"]["policy"]["policy"]["core_target_pct"] == "65.00"
     assert data["role_summary"]["CORE"]["target_pct"] == "65.00"
     assert data["role_summary"]["CORE"]["assessment"] == "UNDER_TARGET"
@@ -409,17 +418,30 @@ def test_portfolio_brief_deterministically_flags_transition_and_formats_losses(
     tmp_path: Path,
 ) -> None:
     client, portfolio_id, account_id = _client_with_holding(tmp_path)
-    client.patch(
-        "/v1/instruments/FUND001/role",
-        json={
-            "role": "CORE",
-            "expected_current_role": "UNASSIGNED",
-            "reason": "测试核心角色",
-        },
+    strategy = StrategyService(
+        Settings(
+            environment=Environment.TEST,
+            db_path=tmp_path / "investor.db",
+            market_nav_max_age_days=7,
+        )
+    )
+    strategy.update_instrument_role(
+        portfolio_id=portfolio_id,
+        instrument_code="FUND001",
+        role="CORE",
+        expected_current_role="UNASSIGNED",
+        reason="测试核心角色",
     )
     client.post(
         "/v1/instruments",
-        json={"code": "FUND002", "name": "测试基金B", "role": "SATELLITE"},
+        json={"code": "FUND002", "name": "测试基金B"},
+    )
+    strategy.update_instrument_role(
+        portfolio_id=portfolio_id,
+        instrument_code="FUND002",
+        role="SATELLITE",
+        expected_current_role="UNASSIGNED",
+        reason="测试卫星角色",
     )
     opening = client.post(
         "/v1/opening-position-drafts",
@@ -485,17 +507,37 @@ def test_weekly_plan_preview_routes_incremental_funds_to_underweight_role(
     tmp_path: Path,
 ) -> None:
     client, portfolio_id, account_id = _client_with_holding(tmp_path)
-    client.patch(
-        "/v1/instruments/FUND001/role",
-        json={
-            "role": "CORE",
-            "expected_current_role": "UNASSIGNED",
-            "reason": "测试核心角色",
-        },
+    strategy = StrategyService(
+        Settings(
+            environment=Environment.TEST,
+            db_path=tmp_path / "investor.db",
+            market_nav_max_age_days=7,
+        )
+    )
+    strategy.configure_instrument(
+        portfolio_id=portfolio_id,
+        instrument_code="FUND001",
+        role="CORE",
+        contribution_eligible=True,
+        target_weight_bps=10000,
+        priority=1,
+        minimum_amount_minor=1,
+        maximum_amount_minor=None,
+        benchmark_code=None,
+        thesis_status="ACTIVE",
+        approved_by="test-user",
+        reason="测试定投白名单",
     )
     client.post(
         "/v1/instruments",
-        json={"code": "FUND002", "name": "测试基金B", "role": "SATELLITE"},
+        json={"code": "FUND002", "name": "测试基金B"},
+    )
+    strategy.update_instrument_role(
+        portfolio_id=portfolio_id,
+        instrument_code="FUND002",
+        role="SATELLITE",
+        expected_current_role="UNASSIGNED",
+        reason="测试卫星角色",
     )
     opening = client.post(
         "/v1/opening-position-drafts",
@@ -553,13 +595,16 @@ def test_weekly_plan_preview_routes_incremental_funds_to_underweight_role(
     assert data["plan"]["projected"]["SATELLITE"]["actual_pct"] == "45.00"
     assert data["plan"]["transition_exit_condition_met"] is True
     assert data["execution_boundary"] == {
-        "instrument_selection": "NOT_INCLUDED",
+        "instrument_selection": "APPROVED_INSTANCE_ALLOWLIST_ONLY",
         "transaction_draft_created": False,
         "trade_executed": False,
         "automatic_selling_allowed": False,
     }
+    assert data["plan"]["scope"] == "INSTRUMENT"
+    assert data["plan"]["instrument_items"][0]["instrument_code"] == "FUND001"
+    assert data["plan"]["instrument_items"][0]["candidate_amount"] == "100.00"
     assert "CORE ¥100.00 | SATELLITE ¥0.00" in data["display_text"]
-    assert "不选择具体基金" in data["display_text"]
+    assert "FUND001 测试基金A" in data["display_text"]
 
 
 def test_weekly_plan_preview_blocks_amount_conclusions_without_valuation(

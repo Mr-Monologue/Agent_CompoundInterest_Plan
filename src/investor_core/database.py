@@ -29,10 +29,17 @@ REQUIRED_TABLES = {
     "portfolios",
     "schema_meta",
     "settings",
+    "strategy_assignments",
+    "strategy_definitions",
+    "strategy_instrument_configs",
+    "strategy_versions",
+    "investment_plans",
+    "plan_items",
+    "plan_revisions",
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0008_allocation_policy"
+EXPECTED_ALEMBIC_REVISION = "0009_strategy_instance_plan"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -108,7 +115,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Allocation policy schema is current"
+            schema_message = "Strategy instance and investment plan schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",

@@ -228,8 +228,16 @@ async def investment_context_set(portfolio_id: str, account_id: str) -> dict[str
 
 
 @mcp.tool()
-async def allocation_policy_get(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
-    """Get the active versioned CORE/SATELLITE allocation policy."""
+async def strategy_definition_list() -> dict[str, Any]:
+    """List reusable public strategy versions without any user's portfolio data."""
+    return await core_request("GET", "/v1/strategies")
+
+
+@mcp.tool()
+async def strategy_current_get(
+    portfolio_id: str = "", account_id: str = ""
+) -> dict[str, Any]:
+    """Read the approved strategy instance and local instrument configuration."""
     resolved_portfolio_id, _, error = await resolve_investment_context(
         portfolio_id, account_id
     )
@@ -237,44 +245,8 @@ async def allocation_policy_get(portfolio_id: str = "", account_id: str = "") ->
         return error
     return await core_request(
         "GET",
-        "/v1/allocation-policy",
+        "/v1/strategy-assignment",
         params={"portfolio_id": resolved_portfolio_id},
-    )
-
-
-@mcp.tool()
-async def allocation_policy_set(
-    core_target_pct: str,
-    satellite_target_pct: str,
-    tolerance_pct: str,
-    transition_trigger_pct: str,
-    transition_exit_core_min_pct: str,
-    transition_exit_satellite_max_pct: str,
-    expected_version: int,
-    reason: str,
-    portfolio_id: str = "",
-    account_id: str = "",
-) -> dict[str, Any]:
-    """Version an explicitly approved allocation policy; this never trades or changes holdings."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
-    if error is not None:
-        return error
-    return await core_request(
-        "PUT",
-        f"/v1/allocation-policy/{resolved_portfolio_id}",
-        payload={
-            "core_target_pct": core_target_pct,
-            "satellite_target_pct": satellite_target_pct,
-            "tolerance_pct": tolerance_pct,
-            "transition_trigger_pct": transition_trigger_pct,
-            "transition_exit_core_min_pct": transition_exit_core_min_pct,
-            "transition_exit_satellite_max_pct": transition_exit_satellite_max_pct,
-            "expected_version": expected_version,
-            "reason": reason,
-            "actor_ref": "hermes",
-        },
     )
 
 
@@ -284,7 +256,6 @@ async def instrument_create(
     name: str,
     asset_type: Literal["FUND", "ETF", "STOCK", "INDEX", "CASH"] = "FUND",
     currency: str = "CNY",
-    role: Literal["CORE", "SATELLITE", "UNASSIGNED"] = "UNASSIGNED",
 ) -> dict[str, Any]:
     """Idempotently register an instrument; INDEX records are non-tradable benchmarks."""
     return await core_request(
@@ -295,7 +266,6 @@ async def instrument_create(
             "name": name,
             "asset_type": asset_type,
             "currency": currency,
-            "role": role,
             "actor_ref": "hermes",
         },
     )
@@ -313,12 +283,20 @@ async def instrument_role_update(
     role: Literal["CORE", "SATELLITE", "UNASSIGNED"],
     expected_current_role: Literal["CORE", "SATELLITE", "UNASSIGNED"],
     reason: str,
+    portfolio_id: str = "",
+    account_id: str = "",
 ) -> dict[str, Any]:
-    """Update an explicitly requested instrument role with stale-write protection and audit."""
+    """Update an explicitly requested portfolio-local role with stale-write protection."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
     return await core_request(
         "PATCH",
-        f"/v1/instruments/{code}/role",
+        f"/v1/strategy-instruments/{code}/role",
         payload={
+            "portfolio_id": resolved_portfolio_id,
             "role": role,
             "expected_current_role": expected_current_role,
             "reason": reason,
@@ -544,6 +522,117 @@ async def weekly_plan_preview(
     if as_of_date:
         params["as_of_date"] = as_of_date
     return await core_request("GET", "/v1/weekly-plan-preview", params=params)
+
+
+@mcp.tool()
+async def weekly_plan_draft_create(
+    contribution_amount: str,
+    plan_date: str,
+    idempotency_key: str,
+    as_of_date: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Create a DRAFT from the exact Core plan; this creates no transaction."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/weekly-plans",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+            "contribution_amount": contribution_amount,
+            "plan_date": plan_date,
+            "as_of_date": as_of_date or None,
+            "idempotency_key": idempotency_key,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_plan_list(
+    status: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List audited weekly plans without changing plan or transaction state."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "limit": limit,
+    }
+    if status:
+        params["status"] = status
+    return await core_request("GET", "/v1/weekly-plans", params=params)
+
+
+@mcp.tool()
+async def weekly_plan_get(plan_id: str) -> dict[str, Any]:
+    """Read one audited weekly plan without exposing its confirmation token."""
+    return await core_request("GET", f"/v1/weekly-plans/{plan_id}")
+
+
+@mcp.tool()
+async def weekly_plan_freeze(
+    plan_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Freeze one exact DRAFT after explicit user confirmation; this never trades."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plans/{plan_id}/freeze",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_plan_skip(
+    plan_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Skip one DRAFT or FROZEN plan after explicit user confirmation."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plans/{plan_id}/skip",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+            "reason": reason,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_plan_mark_executed(
+    plan_id: str,
+    transaction_ids: list[str],
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Link a FROZEN plan to separately committed BUY records; never execute a trade."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plans/{plan_id}/executed",
+        payload={
+            "transaction_ids": transaction_ids,
+            "confirmed_by": confirmed_by,
+        },
+    )
 
 
 @mcp.tool()
