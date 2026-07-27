@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.13.0",
+  "version": "0.14.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0011_sell_lifecycle",
+  "database_revision": "0012_operations_automation",
   "minimum_current_version": "0.5.3",
-  "notes": "Close executable weekly-plan projection and add confirmed local strategy governance, sourced valuation percentiles, deterministic risk scans, and non-executing sell proposals without embedding user-specific funds."
+  "notes": "Add governed, pausable and idempotent automation for market sync, risk scans, weekly plan drafts, sell follow-ups and system health, with fact bundles, SILENT delivery, retries, alerts and an auditable notification outbox."
 }
