@@ -46,6 +46,151 @@ def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _validate_lifecycle_rules(value: JsonDict | None) -> JsonDict:
+    rules = dict(value or {})
+    supported = {
+        "replacement_min_score_delta_bps",
+        "replacement_min_consecutive_periods",
+        "underperformance_threshold_bps",
+        "underperformance_min_days",
+        "take_profit_return_bps",
+        "take_profit_min_holding_days",
+        "take_profit_fraction_bps",
+        "objective_sell_fraction_bps",
+        "max_tracking_error_bps",
+        "max_expense_ratio_bps",
+        "liquidity_priority",
+    }
+    unknown = sorted(set(rules) - supported)
+    if unknown:
+        raise LedgerError(
+            "UNSUPPORTED_LIFECYCLE_RULE",
+            "unsupported lifecycle rule keys",
+            details={"unknown_keys": unknown},
+        )
+    integer_rules = {key: int(item) for key, item in rules.items()}
+    required_groups = (
+        {
+            "replacement_min_score_delta_bps",
+            "replacement_min_consecutive_periods",
+        },
+        {"underperformance_threshold_bps", "underperformance_min_days"},
+        {
+            "take_profit_return_bps",
+            "take_profit_min_holding_days",
+            "take_profit_fraction_bps",
+        },
+    )
+    for group in required_groups:
+        supplied = group.intersection(integer_rules)
+        if supplied and supplied != group:
+            raise LedgerError(
+                "INCOMPLETE_LIFECYCLE_RULE",
+                "related lifecycle rule parameters must be configured together",
+                details={"required_keys": sorted(group), "supplied_keys": sorted(supplied)},
+            )
+    if (
+        "underperformance_threshold_bps" in integer_rules
+        and not -10000 <= integer_rules["underperformance_threshold_bps"] < 0
+    ):
+        raise LedgerError(
+            "INVALID_UNDERPERFORMANCE_RULE",
+            "underperformance threshold must be -10000..<0 bps",
+        )
+    for key in {
+        "replacement_min_score_delta_bps",
+        "take_profit_return_bps",
+        "max_tracking_error_bps",
+        "max_expense_ratio_bps",
+        "liquidity_priority",
+    }:
+        if key in integer_rules and integer_rules[key] < 0:
+            raise LedgerError("INVALID_LIFECYCLE_RULE", f"{key} must be nonnegative")
+    for key in {
+        "replacement_min_consecutive_periods",
+        "underperformance_min_days",
+    }:
+        if key in integer_rules and integer_rules[key] < 1:
+            raise LedgerError("INVALID_LIFECYCLE_RULE", f"{key} must be positive")
+    for key in {"take_profit_fraction_bps", "objective_sell_fraction_bps"}:
+        if key in integer_rules and not 1 <= integer_rules[key] <= 10000:
+            raise LedgerError("INVALID_LIFECYCLE_RULE", f"{key} must be 1..10000 bps")
+    if (
+        "take_profit_return_bps" in integer_rules
+        and integer_rules["take_profit_return_bps"] <= 0
+    ):
+        raise LedgerError(
+            "INVALID_TAKE_PROFIT_RULE",
+            "take-profit return must be positive",
+        )
+    if (
+        "take_profit_min_holding_days" in integer_rules
+        and integer_rules["take_profit_min_holding_days"] < 0
+    ):
+        raise LedgerError(
+            "INVALID_TAKE_PROFIT_RULE",
+            "take-profit holding period must be nonnegative",
+        )
+    return integer_rules
+
+
+def _validate_redemption_policy(value: JsonDict | None) -> JsonDict:
+    policy = dict(value or {})
+    supported = {"fee_bps", "fee_waiver_holding_days", "short_term_penalty_bps"}
+    unknown = sorted(set(policy) - supported)
+    if unknown:
+        raise LedgerError(
+            "UNSUPPORTED_REDEMPTION_POLICY",
+            "unsupported redemption policy keys",
+            details={"unknown_keys": unknown},
+        )
+    normalized = {key: int(item) for key, item in policy.items()}
+    for key in {"fee_bps", "short_term_penalty_bps"}:
+        if key in normalized and not 0 <= normalized[key] <= 10000:
+            raise LedgerError("INVALID_REDEMPTION_POLICY", f"{key} must be 0..10000 bps")
+    if (
+        "fee_waiver_holding_days" in normalized
+        and normalized["fee_waiver_holding_days"] < 0
+    ):
+        raise LedgerError(
+            "INVALID_REDEMPTION_POLICY",
+            "fee waiver holding days must be nonnegative",
+        )
+    return normalized
+
+
+def _validate_exposure_profile(value: JsonDict | None) -> JsonDict:
+    profile = dict(value or {})
+    supported = {"industry", "market", "geography", "style"}
+    unknown = sorted(set(profile) - supported)
+    if unknown:
+        raise LedgerError(
+            "UNSUPPORTED_EXPOSURE_DIMENSION",
+            "unsupported exposure profile dimensions",
+            details={"unknown_keys": unknown},
+        )
+    normalized: JsonDict = {}
+    for dimension, raw_weights in profile.items():
+        if not isinstance(raw_weights, dict):
+            raise LedgerError(
+                "INVALID_EXPOSURE_PROFILE",
+                f"{dimension} exposure must be an object of label to bps",
+            )
+        weights = {str(label): int(weight) for label, weight in raw_weights.items()}
+        if any(weight < 0 or weight > 10000 for weight in weights.values()):
+            raise LedgerError(
+                "INVALID_EXPOSURE_PROFILE",
+                f"{dimension} exposure weights must be 0..10000 bps",
+            )
+        if sum(weights.values()) > 10000:
+            raise LedgerError(
+                "INVALID_EXPOSURE_PROFILE",
+                f"{dimension} exposure weights cannot exceed 10000 bps",
+            )
+        normalized[dimension] = weights
+    return normalized
+
+
 class StrategyService:
     """Keep public rules separate from a user's portfolio configuration."""
 
@@ -250,6 +395,22 @@ class StrategyService:
                         if config["maximum_position_weight_bps"] is not None
                         else None
                     ),
+                    "lifecycle_rules": self._decode_json(
+                        config["lifecycle_rules_json"],
+                        code="INVALID_LIFECYCLE_RULES",
+                        message="saved lifecycle rules are invalid",
+                    ),
+                    "redemption_policy": self._decode_json(
+                        config["redemption_policy_json"],
+                        code="INVALID_REDEMPTION_POLICY",
+                        message="saved redemption policy is invalid",
+                    ),
+                    "exposure_profile": self._decode_json(
+                        config["exposure_profile_json"],
+                        code="INVALID_EXPOSURE_PROFILE",
+                        message="saved exposure profile is invalid",
+                    ),
+                    "fund_destination": config["fund_destination"],
                     "approved_by": str(config["approved_by"]),
                     "approved_at": str(config["approved_at"]),
                 }
@@ -393,6 +554,10 @@ class StrategyService:
         proxy_suitability: str = "NOT_APPLICABLE",
         hard_stop_return_bps: int | None = None,
         maximum_position_weight_bps: int | None = None,
+        lifecycle_rules: JsonDict | None = None,
+        redemption_policy: JsonDict | None = None,
+        exposure_profile: JsonDict | None = None,
+        fund_destination: str | None = None,
     ) -> JsonDict:
         """Protected operation: approve one instrument for a strategy instance."""
         normalized_role = role.strip().upper()
@@ -432,6 +597,10 @@ class StrategyService:
                 "APPROVAL_REQUIRED",
                 "approved_by and reason are required for instrument configuration",
             )
+        normalized_lifecycle_rules = _validate_lifecycle_rules(lifecycle_rules)
+        normalized_redemption_policy = _validate_redemption_policy(redemption_policy)
+        normalized_exposure_profile = _validate_exposure_profile(exposure_profile)
+        normalized_destination = fund_destination.strip() if fund_destination else None
 
         connection = self._connect()
         try:
@@ -506,6 +675,10 @@ class StrategyService:
                 "proxy_suitability": normalized_suitability,
                 "hard_stop_return_bps": hard_stop_return_bps,
                 "maximum_position_weight_bps": maximum_position_weight_bps,
+                "lifecycle_rules": normalized_lifecycle_rules,
+                "redemption_policy": normalized_redemption_policy,
+                "exposure_profile": normalized_exposure_profile,
+                "fund_destination": normalized_destination,
             }
             before_hash = _canonical_hash(dict(current)) if current is not None else None
             config_id = str(current["id"]) if current is not None else str(uuid4())
@@ -518,8 +691,11 @@ class StrategyService:
                         minimum_amount_minor, maximum_amount_minor, status,
                         benchmark_instrument_id, thesis_status, approved_by,
                         approved_at, created_at, updated_at, proxy_suitability,
-                        hard_stop_return_bps, maximum_position_weight_bps
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        hard_stop_return_bps, maximum_position_weight_bps,
+                        lifecycle_rules_json, redemption_policy_json,
+                        exposure_profile_json, fund_destination
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                              ?, ?, ?, ?)
                     """,
                     (
                         config_id,
@@ -540,6 +716,10 @@ class StrategyService:
                         normalized_suitability,
                         hard_stop_return_bps,
                         maximum_position_weight_bps,
+                        _canonical_json(normalized_lifecycle_rules),
+                        _canonical_json(normalized_redemption_policy),
+                        _canonical_json(normalized_exposure_profile),
+                        normalized_destination,
                     ),
                 )
             else:
@@ -552,7 +732,9 @@ class StrategyService:
                         benchmark_instrument_id = ?, thesis_status = ?,
                         approved_by = ?, approved_at = ?, updated_at = ?,
                         proxy_suitability = ?, hard_stop_return_bps = ?,
-                        maximum_position_weight_bps = ?
+                        maximum_position_weight_bps = ?, lifecycle_rules_json = ?,
+                        redemption_policy_json = ?, exposure_profile_json = ?,
+                        fund_destination = ?
                     WHERE id = ?
                     """,
                     (
@@ -570,6 +752,10 @@ class StrategyService:
                         normalized_suitability,
                         hard_stop_return_bps,
                         maximum_position_weight_bps,
+                        _canonical_json(normalized_lifecycle_rules),
+                        _canonical_json(normalized_redemption_policy),
+                        _canonical_json(normalized_exposure_profile),
+                        normalized_destination,
                         config_id,
                     ),
                 )
@@ -654,6 +840,10 @@ class StrategyService:
             maximum_position_weight_bps=(
                 config["maximum_position_weight_bps"] if config is not None else None
             ),
+            lifecycle_rules=(config["lifecycle_rules"] if config is not None else None),
+            redemption_policy=(config["redemption_policy"] if config is not None else None),
+            exposure_profile=(config["exposure_profile"] if config is not None else None),
+            fund_destination=(config["fund_destination"] if config is not None else None),
         )
         return {
             "portfolio_id": portfolio_id,
@@ -680,6 +870,10 @@ class StrategyService:
         thesis_status: str | None = None,
         hard_stop_return_bps: int | None = None,
         maximum_position_weight_bps: int | None = None,
+        lifecycle_rules: JsonDict | None = None,
+        redemption_policy: JsonDict | None = None,
+        exposure_profile: JsonDict | None = None,
+        fund_destination: str | None = None,
         actor_ref: str = "hermes",
     ) -> JsonDict:
         """Create an expiring preview; NAV never determines contribution eligibility."""
@@ -724,8 +918,12 @@ class StrategyService:
                 "proxy_suitability": "NOT_APPLICABLE",
                 "hard_stop_return_bps": None,
                 "maximum_position_weight_bps": None,
+                "lifecycle_rules": {},
+                "redemption_policy": {},
+                "exposure_profile": {},
+                "fund_destination": None,
             }
-        request = {
+        request: JsonDict = {
             "portfolio_id": portfolio_id,
             "instrument_code": normalized_code,
             "role": (role or str(current["role"])).strip().upper(),
@@ -763,8 +961,25 @@ class StrategyService:
                 if maximum_position_weight_bps is not None
                 else current["maximum_position_weight_bps"]
             ),
+            "lifecycle_rules": (
+                lifecycle_rules if lifecycle_rules is not None else current["lifecycle_rules"]
+            ),
+            "redemption_policy": (
+                redemption_policy
+                if redemption_policy is not None
+                else current["redemption_policy"]
+            ),
+            "exposure_profile": (
+                exposure_profile if exposure_profile is not None else current["exposure_profile"]
+            ),
+            "fund_destination": (
+                fund_destination if fund_destination is not None else current["fund_destination"]
+            ),
             "reason": reason.strip(),
         }
+        request["lifecycle_rules"] = _validate_lifecycle_rules(request["lifecycle_rules"])
+        request["redemption_policy"] = _validate_redemption_policy(request["redemption_policy"])
+        request["exposure_profile"] = _validate_exposure_profile(request["exposure_profile"])
         # Reuse the protected validator without mutating by checking the key invariants here.
         if request["contribution_eligible"] and current["asset_type"] == "INDEX":
             raise LedgerError(
@@ -931,6 +1146,10 @@ class StrategyService:
             proxy_suitability=str(request["proxy_suitability"]),
             hard_stop_return_bps=request["hard_stop_return_bps"],
             maximum_position_weight_bps=request["maximum_position_weight_bps"],
+            lifecycle_rules=request["lifecycle_rules"],
+            redemption_policy=request["redemption_policy"],
+            exposure_profile=request["exposure_profile"],
+            fund_destination=request["fund_destination"],
         )
         with self._connect() as update:
             timestamp = _iso(self._now())

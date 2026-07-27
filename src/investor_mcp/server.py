@@ -314,6 +314,10 @@ async def strategy_instrument_config_draft_create(
     thesis_status: Literal["ACTIVE", "REVIEW_REQUIRED", "INVALID"] | None = None,
     hard_stop_return_bps: int | None = None,
     maximum_position_weight_bps: int | None = None,
+    lifecycle_rules: dict[str, Any] | None = None,
+    redemption_policy: dict[str, Any] | None = None,
+    exposure_profile: dict[str, Any] | None = None,
+    fund_destination: str = "",
     portfolio_id: str = "",
     account_id: str = "",
 ) -> dict[str, Any]:
@@ -339,6 +343,10 @@ async def strategy_instrument_config_draft_create(
             "thesis_status": thesis_status,
             "hard_stop_return_bps": hard_stop_return_bps,
             "maximum_position_weight_bps": maximum_position_weight_bps,
+            "lifecycle_rules": lifecycle_rules,
+            "redemption_policy": redemption_policy,
+            "exposure_profile": exposure_profile,
+            "fund_destination": fund_destination or None,
             "actor_ref": "hermes",
         },
     )
@@ -583,6 +591,8 @@ async def valuation_snapshot_get(
 @mcp.tool()
 async def risk_scan_run(
     as_of_date: str = "",
+    liquidity_amount: str = "",
+    liquidity_destination: str = "",
     portfolio_id: str = "",
     account_id: str = "",
 ) -> dict[str, Any]:
@@ -599,8 +609,63 @@ async def risk_scan_run(
             "portfolio_id": resolved_portfolio_id,
             "account_id": resolved_account_id,
             "as_of_date": as_of_date or None,
+            "liquidity_amount": liquidity_amount or None,
+            "liquidity_destination": liquidity_destination or None,
         },
     )
+
+
+@mcp.tool()
+async def lifecycle_observation_record(
+    instrument_code: str,
+    observation_type: Literal[
+        "RELATIVE_PERFORMANCE",
+        "REPLACEMENT_CANDIDATE",
+        "OBJECTIVE_STATUS",
+        "TOOL_QUALITY",
+        "REDEMPTION_TERMS",
+        "EXPOSURE_PROFILE",
+    ],
+    observation_date: str,
+    facts: dict[str, Any],
+    source_type: Literal["OFFICIAL", "PROFESSIONAL", "AGGREGATOR", "PLATFORM", "USER"],
+    source_name: str,
+    observed_at: str,
+    verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED",
+    source_ref: str = "",
+) -> dict[str, Any]:
+    """Record sourced lifecycle evidence; unverified evidence cannot trigger a sale."""
+    return await core_request(
+        "POST",
+        "/v1/lifecycle-observations",
+        payload={
+            "instrument_code": instrument_code,
+            "observation_type": observation_type,
+            "observation_date": observation_date,
+            "facts": facts,
+            "source_type": source_type,
+            "source_name": source_name,
+            "source_ref": source_ref or None,
+            "verification_status": verification_status,
+            "observed_at": observed_at,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def lifecycle_observation_list(
+    instrument_code: str = "",
+    observation_type: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List immutable lifecycle evidence without making an investment conclusion."""
+    params: dict[str, Any] = {"limit": limit}
+    if instrument_code:
+        params["instrument_code"] = instrument_code
+    if observation_type:
+        params["observation_type"] = observation_type
+    return await core_request("GET", "/v1/lifecycle-observations", params=params)
 
 
 @mcp.tool()
@@ -661,6 +726,38 @@ async def sell_decision_commit(
             "confirmation_token": confirmation_token,
             "confirmed_by": confirmed_by,
         },
+    )
+
+
+@mcp.tool()
+async def sell_followup_list(
+    status: str = "",
+    limit: int = 100,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """List six-month reviews for committed proposal-linked SELL records."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {"portfolio_id": resolved_portfolio_id, "limit": limit}
+    if status:
+        params["status"] = status
+    return await core_request("GET", "/v1/sell-followups", params=params)
+
+
+@mcp.tool()
+async def sell_followup_evaluate(
+    followup_id: str,
+    as_of_date: str = "",
+) -> dict[str, Any]:
+    """Evaluate a due sell follow-up from stored NAV evidence; never changes strategy."""
+    return await core_request(
+        "POST",
+        f"/v1/sell-followups/{followup_id}/evaluate",
+        payload={"as_of_date": as_of_date or None, "actor_ref": "hermes"},
     )
 
 
@@ -925,6 +1022,7 @@ async def transaction_draft_create(
     platform: str,
     idempotency_key: str,
     note: str = "",
+    sell_proposal_id: str = "",
     portfolio_id: str = "",
     account_id: str = "",
 ) -> dict[str, Any]:
@@ -949,6 +1047,7 @@ async def transaction_draft_create(
             "platform": platform,
             "idempotency_key": idempotency_key,
             "note": note or None,
+            "sell_proposal_id": sell_proposal_id or None,
             "actor_ref": "hermes",
         },
     )

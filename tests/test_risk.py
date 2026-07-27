@@ -147,3 +147,100 @@ def test_sell_rule_creates_proposal_but_approval_never_changes_holding(
     assert committed["execution_status"] == "NOT_EXECUTED"
     assert committed["transaction_created"] is False
     assert ledger.list_holdings(portfolio_id=portfolio_id, account_id=account_id) == before
+
+
+def test_verified_lifecycle_evidence_and_linked_sell_complete_the_lifecycle(
+    tmp_path: Path,
+) -> None:
+    ledger, risk, portfolio_id, account_id = configured_risk_services(tmp_path / "investor.db")
+    settings = Settings(environment=Environment.TEST, db_path=tmp_path / "investor.db")
+    strategy = StrategyService(settings)
+    strategy.configure_instrument(
+        portfolio_id=portfolio_id,
+        instrument_code="FUND001",
+        role="SATELLITE",
+        contribution_eligible=False,
+        target_weight_bps=None,
+        priority=100,
+        minimum_amount_minor=1,
+        maximum_amount_minor=None,
+        benchmark_code="INDEX001",
+        proxy_suitability="WEAK",
+        thesis_status="ACTIVE",
+        hard_stop_return_bps=-2500,
+        maximum_position_weight_bps=None,
+        lifecycle_rules={
+            "replacement_min_score_delta_bps": 500,
+            "replacement_min_consecutive_periods": 2,
+        },
+        redemption_policy={"fee_bps": 50},
+        exposure_profile={"industry": {"TEST": 10000}},
+        fund_destination="CASH_BUFFER",
+        approved_by="test-user",
+        reason="approve deterministic sell lifecycle test",
+    )
+    risk.record_lifecycle_observation(
+        instrument_code="FUND001",
+        observation_type="REPLACEMENT_CANDIDATE",
+        observation_date="2026-07-21",
+        facts={
+            "candidate_code": "FUND002",
+            "score_delta_bps": 800,
+            "consecutive_periods": 3,
+        },
+        source_type="PROFESSIONAL",
+        source_name="test research",
+        source_ref="test://replacement",
+        verification_status="VERIFIED",
+        observed_at="2026-07-21T16:00:00+08:00",
+    )
+
+    scan = risk.scan(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        as_of_date="2026-07-21",
+    )
+    proposal = next(
+        item for item in scan["sell_proposals"] if item["trigger_code"] == "SELL_04_REPLACE"
+    )
+    assert proposal["recommended_action"] == "FULL_SELL"
+    assert proposal["recommended_amount"] == "100.00"
+    assert proposal["diagnostic"]["checklist"]["fees_estimated"] is True
+    assert proposal["diagnostic"]["checklist"]["fund_destination_configured"] is True
+
+    decision = risk.create_decision_draft(
+        proposal_id=str(proposal["id"]),
+        decision="APPROVE",
+        user_reason="approved for external execution",
+    )
+    risk.commit_decision(
+        draft_id=str(decision["draft"]["id"]),
+        confirmation_token=str(decision["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    trade = ledger.create_transaction_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        instrument_code="FUND001",
+        side="SELL",
+        trade_date_value="2026-07-21",
+        amount="100.00",
+        nav="1.000000",
+        shares="100.000000",
+        platform="测试平台",
+        idempotency_key="linked-sell",
+        sell_proposal_id=str(proposal["id"]),
+    )
+    committed = ledger.commit_transaction_draft(
+        draft_id=str(trade["draft"]["id"]),
+        confirmation_token=str(trade["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+
+    assert committed["sell_execution_link"]["sell_proposal_id"] == proposal["id"]
+    assert committed["sell_followup"]["status"] == "PENDING"
+    holdings = ledger.list_holdings(portfolio_id=portfolio_id, account_id=account_id)
+    assert holdings[0]["total_shares"] == "0.000000"
+    executed = risk.get_proposal(proposal_id=str(proposal["id"]))
+    assert executed["status"] == "EXECUTED"
+    assert executed["execution_status"] == "EXECUTED"
