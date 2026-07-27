@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "name": "automation-retry-due",
+  "schedule": "*/5 * * * *",
+  "timezone": "Asia/Shanghai",
+  "no_agent": true,
+  "script": "uv --directory C:\\investor\\value-dca-agent run investor operations retry-due",
+  "note": "Retries only persisted failed runs whose backoff elapsed; no due retry produces empty stdout."
+}
