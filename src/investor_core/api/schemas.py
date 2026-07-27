@@ -216,6 +216,36 @@ class SellFollowupEvaluateRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
+class AutomationPolicyDraftCreateRequest(RequestModel):
+    portfolio_id: str | None = Field(default=None, min_length=1, max_length=80)
+    job_name: Literal[
+        "DAILY_MARKET_SYNC",
+        "DAILY_RISK_SCAN",
+        "WEEKLY_PLAN_PREPARE",
+        "SELL_FOLLOWUP_DUE",
+        "SYSTEM_DOCTOR",
+    ]
+    enabled: bool
+    schedule: str = Field(min_length=1, max_length=120)
+    timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=80)
+    config: dict[str, Any] = Field(default_factory=dict)
+    reason: str = Field(min_length=1, max_length=500)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class AutomationJobRunRequest(RequestModel):
+    portfolio_id: str | None = Field(default=None, min_length=1, max_length=80)
+    job_name: Literal[
+        "DAILY_MARKET_SYNC",
+        "DAILY_RISK_SCAN",
+        "WEEKLY_PLAN_PREPARE",
+        "SELL_FOLLOWUP_DUE",
+        "SYSTEM_DOCTOR",
+    ]
+    scheduled_for: str = Field(min_length=1, max_length=80)
+    actor_ref: str = Field(default="operations-runner", min_length=1, max_length=120)
+
+
 class WeeklyPlanDraftCreateRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     account_id: str = Field(min_length=1, max_length=80)

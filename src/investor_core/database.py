@@ -17,7 +17,10 @@ if TYPE_CHECKING:
 REQUIRED_TABLES = {
     "alembic_version",
     "accounts",
+    "alerts",
     "audit_events",
+    "automation_policies",
+    "automation_policy_drafts",
     "backups",
     "holding_snapshots",
     "instruments",
@@ -26,7 +29,9 @@ REQUIRED_TABLES = {
     "market_data_source_health",
     "market_sync_runs",
     "market_nav_verifications",
+    "notification_outbox",
     "portfolios",
+    "report_bundles",
     "schema_meta",
     "settings",
     "strategy_assignments",
@@ -39,7 +44,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0011_sell_lifecycle"
+EXPECTED_ALEMBIC_REVISION = "0012_operations_automation"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -115,7 +120,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Deterministic sell lifecycle schema is current"
+            schema_message = "Governed automation operations schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",
