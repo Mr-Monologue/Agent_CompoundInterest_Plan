@@ -117,3 +117,16 @@ def test_skill_separates_public_strategy_instance_and_plan_execution() -> None:
 def test_cron_examples_are_disabled() -> None:
     for path in (PROJECT_ROOT / "cron").rglob("*.json"):
         assert '"enabled": false' in path.read_text(encoding="utf-8")
+
+
+def test_automation_skill_keeps_cron_read_only_and_silent() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
+    template = (PROJECT_ROOT / "cron/agent-jobs/automation-report-delivery.example.json").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Never claim a job is scheduled merely" in skill
+    assert "require an active Core policy with `enabled=true`" in skill
+    assert "return exactly `[SILENT]`" in skill
+    assert "Never let a scheduled Agent call a mutation tool" in skill
+    assert "Never call a write tool" in template
