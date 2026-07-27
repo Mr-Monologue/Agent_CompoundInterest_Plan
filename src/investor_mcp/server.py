@@ -160,6 +160,145 @@ async def system_health_get(
 
 
 @mcp.tool()
+async def automation_policy_draft_create(
+    job_name: Literal[
+        "DAILY_MARKET_SYNC",
+        "DAILY_RISK_SCAN",
+        "WEEKLY_PLAN_PREPARE",
+        "SELL_FOLLOWUP_DUE",
+        "SYSTEM_DOCTOR",
+    ],
+    enabled: bool,
+    schedule: str,
+    reason: str,
+    config: dict[str, Any] | None = None,
+    timezone: str = "Asia/Shanghai",
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Draft an exact local automation policy; this never runs a job or changes holdings."""
+    resolved_portfolio = portfolio_id
+    if job_name != "SYSTEM_DOCTOR" and not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/automation-policy-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio or None,
+            "job_name": job_name,
+            "enabled": enabled,
+            "schedule": schedule,
+            "timezone": timezone,
+            "config": config or {},
+            "reason": reason,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def automation_policy_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read an automation policy draft without exposing its confirmation token."""
+    return await core_request("GET", f"/v1/automation-policy-drafts/{draft_id}")
+
+
+@mcp.tool()
+async def automation_policy_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Commit one exact automation policy after explicit user confirmation."""
+    return await core_request(
+        "POST",
+        f"/v1/automation-policy-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def automation_policy_list(
+    portfolio_id: str = "",
+    active_only: bool = True,
+) -> dict[str, Any]:
+    """List governed automation policies without running any job."""
+    return await core_request(
+        "GET",
+        "/v1/automation-policies",
+        params={
+            "portfolio_id": portfolio_id or None,
+            "active_only": active_only,
+        },
+    )
+
+
+@mcp.tool()
+async def automation_status_get() -> dict[str, Any]:
+    """Get active policies, run counts, due retries, open alerts and pending delivery facts."""
+    return await core_request("GET", "/v1/automation-status")
+
+
+@mcp.tool()
+async def automation_run_list(
+    job_name: str = "",
+    status: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List deterministic automation run status, retry state and outcomes."""
+    return await core_request(
+        "GET",
+        "/v1/automation-runs",
+        params={
+            "job_name": job_name or None,
+            "status": status or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def automation_report_bundle_list(
+    portfolio_id: str = "",
+    bundle_type: str = "",
+    delivery_action: Literal["", "SILENT", "NOTIFY"] = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Read committed automation fact bundles; SILENT bundles require no user message."""
+    return await core_request(
+        "GET",
+        "/v1/report-bundles",
+        params={
+            "portfolio_id": portfolio_id or None,
+            "bundle_type": bundle_type or None,
+            "delivery_action": delivery_action or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def automation_alert_list(
+    portfolio_id: str = "",
+    status: str = "OPEN",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List deterministic operational alerts without acknowledging or mutating them."""
+    return await core_request(
+        "GET",
+        "/v1/alerts",
+        params={
+            "portfolio_id": portfolio_id or None,
+            "status": status or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
 async def portfolio_create(name: str, base_currency: str = "CNY") -> dict[str, Any]:
     """Idempotently create a portfolio configuration; this does not change holdings."""
     return await core_request(
@@ -737,9 +876,7 @@ async def sell_followup_list(
     account_id: str = "",
 ) -> dict[str, Any]:
     """List six-month reviews for committed proposal-linked SELL records."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     params: dict[str, Any] = {"portfolio_id": resolved_portfolio_id, "limit": limit}

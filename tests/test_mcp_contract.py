@@ -12,6 +12,14 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
 
     assert [tool.name for tool in tools] == [
         "system_health_get",
+        "automation_policy_draft_create",
+        "automation_policy_draft_get",
+        "automation_policy_draft_commit",
+        "automation_policy_list",
+        "automation_status_get",
+        "automation_run_list",
+        "automation_report_bundle_list",
+        "automation_alert_list",
         "portfolio_create",
         "portfolio_list",
         "account_create",

@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "name": "sell-followup-due",
+  "schedule": "0 8 * * *",
+  "timezone": "Asia/Shanghai",
+  "no_agent": true,
+  "script": "uv --directory C:\\investor\\value-dca-agent run investor operations run SELL_FOLLOWUP_DUE --scheduled-for ${BUSINESS_DATE}",
+  "note": "Evaluates due evidence only; no due follow-up produces silent stdout."
+}

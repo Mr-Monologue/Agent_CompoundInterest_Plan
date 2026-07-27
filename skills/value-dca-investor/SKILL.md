@@ -140,6 +140,22 @@ committed transaction may change holdings and mark the proposal `EXECUTED`. Neve
 from approval alone. Use `sell_followup_list` and `sell_followup_evaluate` for due six-month
 reviews. Follow-up results describe post-sale evidence and never alter strategy parameters.
 
+Use `automation_policy_list`, `automation_run_list`, `automation_report_bundle_list`, and
+`automation_alert_list` to inspect unattended operations. Never claim a job is scheduled merely
+because a Cron example exists; require an active Core policy with `enabled=true`. Creating or
+pausing an automation policy requires `automation_policy_draft_create` followed by explicit
+confirmation through `automation_policy_draft_commit`. Never infer a contribution amount,
+delivery target, schedule, or enabled state. `WEEKLY_PLAN_PREPARE` requires a user-approved fixed
+contribution amount in that local policy and may create only a `DRAFT`; it cannot freeze a plan or
+create a transaction.
+
+Scheduled Agent reports are read-only. Read the committed report bundle, preserve its dates,
+quality, reason code and facts, and return exactly `[SILENT]` when `delivery_action=SILENT`.
+`NOTIFY` means a fact bundle is eligible for delivery, not that it was delivered. Core script jobs
+may sync sourced NAVs, run configured risk rules, prepare a DRAFT weekly plan, or evaluate due
+sell follow-ups. They may never confirm a policy, freeze a plan, approve a proposal, commit a
+transaction, alter strategy configuration, or replay a user mutation after restart.
+
 ## Enforce safety
 
 - Never execute a trade or claim that a trade was executed without a committed transaction record.
@@ -155,6 +171,8 @@ reviews. Follow-up results describe post-sale evidence and never alter strategy 
 - Never describe two endpoints backed by the same upstream publisher as independent sources.
 - Never present performance adjectives or portfolio-allocation opinions as policy conclusions when
   Core supplied only holdings, roles, market values, or returns.
+- Never let a scheduled Agent call a mutation tool; deterministic writes belong only to the
+  pre-approved Core job and every run must have a stable idempotency key.
 
 Read [safety-policy.md](references/safety-policy.md) before any mutation, sell, rebalance, or transition request.
 
