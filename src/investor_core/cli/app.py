@@ -18,6 +18,7 @@ from investor_core.config import get_settings
 from investor_core.database import ensure_database_parent
 from investor_core.health import build_doctor_report
 from investor_core.ledger import LedgerError, LedgerService
+from investor_core.operations import OperationsService
 from investor_core.strategy import StrategyService
 from investor_core.version import __version__
 
@@ -31,12 +32,17 @@ strategy_app = typer.Typer(
     no_args_is_help=True,
     help="Manage protected strategy assignments and instrument eligibility.",
 )
+operations_app = typer.Typer(
+    no_args_is_help=True,
+    help="Run and inspect explicitly approved deterministic automation.",
+)
 app.add_typer(db_app, name="db")
 app.add_typer(setup_app, name="setup")
 app.add_typer(instrument_app, name="instrument")
 app.add_typer(ledger_app, name="ledger")
 app.add_typer(opening_app, name="opening")
 app.add_typer(strategy_app, name="strategy")
+app.add_typer(operations_app, name="operations")
 
 
 def project_root() -> Path:
@@ -135,9 +141,7 @@ def emit_ledger_error(error: LedgerError) -> NoReturn:
 
 @setup_app.command("init")
 def setup_init(
-    portfolio_name: Annotated[
-        str, typer.Option(help="Portfolio display name.")
-    ] = "个人投资组合",
+    portfolio_name: Annotated[str, typer.Option(help="Portfolio display name.")] = "个人投资组合",
     account_name: Annotated[str, typer.Option(help="Account display name.")] = "默认账户",
     platform: Annotated[str, typer.Option(help="Broker or fund platform name.")] = "未配置",
     currency: Annotated[str, typer.Option(help="Three-letter currency code.")] = "CNY",
@@ -180,9 +184,7 @@ def instrument_add(
 @strategy_app.command("list")
 def strategy_list() -> None:
     """List reusable strategy definitions without user portfolio data."""
-    emit_ledger_result(
-        {"ok": True, "items": StrategyService(get_settings()).list_definitions()}
-    )
+    emit_ledger_result({"ok": True, "items": StrategyService(get_settings()).list_definitions()})
 
 
 @strategy_app.command("current")
@@ -191,9 +193,7 @@ def strategy_current(
 ) -> None:
     """Read the approved strategy instance for one portfolio."""
     try:
-        result = StrategyService(get_settings()).get_assignment(
-            portfolio_id=portfolio_id
-        )
+        result = StrategyService(get_settings()).get_assignment(portfolio_id=portfolio_id)
     except LedgerError as error:
         emit_ledger_error(error)
     emit_ledger_result({"ok": True, "assignment": result})
@@ -202,12 +202,8 @@ def strategy_current(
 @strategy_app.command("assign")
 def strategy_assign(
     portfolio_id: Annotated[str, typer.Option(help="Existing portfolio ID.")],
-    strategy_key: Annotated[
-        str, typer.Option(help="Reusable public strategy key.")
-    ] = "value-dca",
-    strategy_version: Annotated[
-        str, typer.Option(help="Published strategy version.")
-    ] = "1.6",
+    strategy_key: Annotated[str, typer.Option(help="Reusable public strategy key.")] = "value-dca",
+    strategy_version: Annotated[str, typer.Option(help="Published strategy version.")] = "1.6",
     approved_by: Annotated[
         str, typer.Option(help="User or operator who explicitly approved the assignment.")
     ] = "local-user",
@@ -234,9 +230,7 @@ def strategy_assign(
 def strategy_instrument_configure(
     portfolio_id: Annotated[str, typer.Option(help="Existing portfolio ID.")],
     instrument_code: Annotated[str, typer.Option(help="Registered instrument code.")],
-    role: Annotated[
-        str, typer.Option(help="CORE, SATELLITE, CASH, WATCH or UNASSIGNED.")
-    ],
+    role: Annotated[str, typer.Option(help="CORE, SATELLITE, CASH, WATCH or UNASSIGNED.")],
     contribution_eligible: Annotated[
         bool,
         typer.Option(
@@ -248,9 +242,7 @@ def strategy_instrument_configure(
         int | None,
         typer.Option(min=0, max=10000, help="Optional within-role target in basis points."),
     ] = None,
-    priority: Annotated[
-        int, typer.Option(min=0, help="Lower values are allocated first.")
-    ] = 100,
+    priority: Annotated[int, typer.Option(min=0, help="Lower values are allocated first.")] = 100,
     minimum_amount_minor: Annotated[
         int, typer.Option(min=0, help="Smallest contribution in currency minor units.")
     ] = 1,
@@ -258,9 +250,7 @@ def strategy_instrument_configure(
         int | None,
         typer.Option(min=1, help="Optional contribution cap in currency minor units."),
     ] = None,
-    benchmark_code: Annotated[
-        str, typer.Option(help="Optional registered INDEX code.")
-    ] = "",
+    benchmark_code: Annotated[str, typer.Option(help="Optional registered INDEX code.")] = "",
     thesis_status: Annotated[
         str, typer.Option(help="ACTIVE, REVIEW_REQUIRED or INVALID.")
     ] = "ACTIVE",
@@ -372,6 +362,78 @@ def opening_commit(
     except LedgerError as error:
         emit_ledger_error(error)
     emit_ledger_result({"ok": True, **result})
+
+
+@operations_app.command("run")
+def operations_run(
+    job_name: Annotated[
+        str,
+        typer.Argument(
+            help=(
+                "DAILY_MARKET_SYNC, DAILY_RISK_SCAN, WEEKLY_PLAN_PREPARE, "
+                "SELL_FOLLOWUP_DUE or SYSTEM_DOCTOR."
+            )
+        ),
+    ],
+    scheduled_for: Annotated[
+        str,
+        typer.Option(help="Stable market date or scheduled timestamp used for idempotency."),
+    ],
+    portfolio_id: Annotated[
+        str,
+        typer.Option(help="Optional portfolio; default investment context is used when omitted."),
+    ] = "",
+) -> None:
+    """Run one governed job; unconfigured or paused jobs succeed silently."""
+    try:
+        result = OperationsService(get_settings()).run_job(
+            job_name=job_name,
+            scheduled_for=scheduled_for,
+            portfolio_id=portfolio_id or None,
+            actor_ref="operations-runner",
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    display_text = str(result["display_text"])
+    if display_text != "[SILENT]":
+        emit_ledger_result({"ok": True, **result})
+
+
+@operations_app.command("status")
+def operations_status(
+    job_name: Annotated[str, typer.Option(help="Optional deterministic job name.")] = "",
+    status: Annotated[str, typer.Option(help="Optional run status filter.")] = "",
+    limit: Annotated[int, typer.Option(min=1, max=500)] = 100,
+) -> None:
+    """List automation policies, recent runs, alerts and pending delivery records."""
+    service = OperationsService(get_settings())
+    try:
+        result = {
+            "policies": service.list_policies(active_only=True),
+            "runs": service.list_runs(
+                job_name=job_name or None,
+                status=status or None,
+                limit=limit,
+            ),
+            "alerts": service.list_alerts(status="OPEN", limit=limit),
+            "outbox": service.list_outbox(status="PENDING", limit=limit),
+        }
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, **result})
+
+
+@operations_app.command("retry-due")
+def operations_retry_due(
+    limit: Annotated[int, typer.Option(min=1, max=100)] = 20,
+) -> None:
+    """Retry failed deterministic jobs whose persisted backoff has elapsed."""
+    try:
+        result = OperationsService(get_settings()).retry_due(limit=limit)
+    except LedgerError as error:
+        emit_ledger_error(error)
+    if result["display_text"] != "[SILENT]":
+        emit_ledger_result({"ok": True, **result})
 
 
 @app.command()
