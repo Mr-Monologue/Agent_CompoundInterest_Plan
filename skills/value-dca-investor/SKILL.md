@@ -121,11 +121,24 @@ means lower percentile.
 
 Use `risk_scan_run` to evaluate only rules explicitly approved in the current strategy instance.
 Never turn a loss, return, weight, valuation state, news item, or model concern into a rule hit.
+Replacement, sustained-underperformance, objective-completion and core-tool-quality rules require
+exact sourced facts recorded through `lifecycle_observation_record`. An `UNVERIFIED` observation is
+auditable context but cannot trigger a sell proposal. Liquidity scans require both the user's exact
+cash amount and named destination; never infer either. Take-profit rules require the explicitly
+approved threshold, minimum holding period and sell fraction. Redemption-fee, destination and
+before/after-exposure fields are Core diagnostics, not permission to execute.
 Use `sell_proposal_list` and `sell_proposal_context_get` for the exact rule version, evidence,
 diagnostic and `execution_status`. Use `sell_decision_draft_create` only after the user explicitly
 chooses `APPROVE`, `DEFER`, or `REJECT`, and commit only after explicit confirmation of that exact
 draft. `APPROVED` means the user accepted a proposal; it is still `NOT_EXECUTED`, creates no
 transaction, and changes no holding.
+
+After the user actually redeems outside Investor Core, record the exact external execution with
+`transaction_draft_create(side="SELL", sell_proposal_id=...)`. The proposal must already be
+`APPROVED`; the separate transaction draft still requires its own one-time confirmation. Only its
+committed transaction may change holdings and mark the proposal `EXECUTED`. Never create this draft
+from approval alone. Use `sell_followup_list` and `sell_followup_evaluate` for due six-month
+reviews. Follow-up results describe post-sale evidence and never alter strategy parameters.
 
 ## Enforce safety
 

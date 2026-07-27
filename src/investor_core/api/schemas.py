@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -64,6 +64,10 @@ class StrategyInstrumentConfigDraftRequest(RequestModel):
     thesis_status: Literal["ACTIVE", "REVIEW_REQUIRED", "INVALID"] | None = None
     hard_stop_return_bps: int | None = Field(default=None, ge=-10000, lt=0)
     maximum_position_weight_bps: int | None = Field(default=None, gt=0, le=10000)
+    lifecycle_rules: dict[str, Any] | None = None
+    redemption_policy: dict[str, Any] | None = None
+    exposure_profile: dict[str, Any] | None = None
+    fund_destination: str | None = Field(default=None, max_length=200)
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
@@ -79,7 +83,14 @@ class TransactionDraftCreateRequest(RequestModel):
     platform: str = Field(min_length=1, max_length=120)
     idempotency_key: str = Field(min_length=1, max_length=200)
     note: str | None = Field(default=None, max_length=1000)
+    sell_proposal_id: str | None = Field(default=None, min_length=1, max_length=80)
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_sell_proposal_link(self) -> Self:
+        if self.sell_proposal_id is not None and self.side != "SELL":
+            raise ValueError("sell_proposal_id is only valid for SELL drafts")
+        return self
 
 
 class OpeningPositionDraftCreateRequest(RequestModel):
@@ -166,15 +177,42 @@ class ValuationObservationCreateRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
+class LifecycleObservationCreateRequest(RequestModel):
+    instrument_code: str = Field(min_length=1, max_length=40)
+    observation_type: Literal[
+        "RELATIVE_PERFORMANCE",
+        "REPLACEMENT_CANDIDATE",
+        "OBJECTIVE_STATUS",
+        "TOOL_QUALITY",
+        "REDEMPTION_TERMS",
+        "EXPOSURE_PROFILE",
+    ]
+    observation_date: date
+    facts: dict[str, Any]
+    source_type: Literal["OFFICIAL", "PROFESSIONAL", "AGGREGATOR", "PLATFORM", "USER"]
+    source_name: str = Field(min_length=1, max_length=200)
+    source_ref: str | None = Field(default=None, max_length=1000)
+    verification_status: Literal["VERIFIED", "UNVERIFIED"] = "UNVERIFIED"
+    observed_at: datetime
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class RiskScanRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     account_id: str = Field(min_length=1, max_length=80)
     as_of_date: date | None = None
+    liquidity_amount: Decimal | None = Field(default=None, gt=0)
+    liquidity_destination: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class SellDecisionDraftCreateRequest(RequestModel):
     decision: Literal["APPROVE", "DEFER", "REJECT"]
     user_reason: str | None = Field(default=None, max_length=1000)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class SellFollowupEvaluateRequest(RequestModel):
+    as_of_date: date | None = None
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
