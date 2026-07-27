@@ -1,0 +1,1334 @@
+"""Governed deterministic automation, fact bundles, alerts and delivery outbox."""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import secrets
+import sqlite3
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from investor_core.config import Settings
+from investor_core.health import build_doctor_report
+from investor_core.ledger import JsonDict, LedgerError, LedgerService, utc_now
+from investor_core.market_sync import MarketSyncService
+from investor_core.planning import PlanningService
+from investor_core.risk import RiskService
+
+SUPPORTED_JOBS = {
+    "DAILY_MARKET_SYNC",
+    "DAILY_RISK_SCAN",
+    "WEEKLY_PLAN_PREPARE",
+    "SELL_FOLLOWUP_DUE",
+    "SYSTEM_DOCTOR",
+}
+PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
+
+
+def _iso(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _hash(value: object) -> str:
+    return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+def _token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+class OperationsService:
+    """Run only explicitly approved deterministic jobs and persist every outcome."""
+
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        now: Callable[[], datetime] = utc_now,
+        ledger: LedgerService | None = None,
+        market_sync: MarketSyncService | None = None,
+        risk: RiskService | None = None,
+        planning: PlanningService | None = None,
+    ) -> None:
+        self.settings = settings
+        self._now = now
+        self._ledger = ledger or LedgerService(settings, now=now)
+        self._market_sync = market_sync or MarketSyncService(settings, now=now)
+        self._risk = risk or RiskService(settings, now=now)
+        self._planning = planning or PlanningService(settings, now=now)
+
+    def _connect(self) -> sqlite3.Connection:
+        path = (
+            ":memory:"
+            if str(self.settings.db_path) == ":memory:"
+            else str(Path(self.settings.db_path).resolve())
+        )
+        connection = sqlite3.connect(path, timeout=10.0, isolation_level=None)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("PRAGMA journal_mode=WAL")
+        return connection
+
+    def _audit(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        action: str,
+        entity_type: str,
+        entity_id: str,
+        actor_ref: str,
+        details: JsonDict,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO audit_events (
+                id, occurred_at, actor_type, actor_ref, action, entity_type,
+                entity_id, before_hash, after_hash, details_json, trace_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+            """,
+            (
+                str(uuid4()),
+                _iso(self._now()),
+                "CRON" if actor_ref in {"cron", "operations-runner"} else "USER",
+                actor_ref,
+                action,
+                entity_type,
+                entity_id,
+                _hash(details),
+                _json(details),
+                str(uuid4()),
+            ),
+        )
+
+    @staticmethod
+    def _normalize_job(job_name: str) -> str:
+        normalized = job_name.strip().upper().replace("-", "_")
+        if normalized not in SUPPORTED_JOBS:
+            raise LedgerError(
+                "AUTOMATION_JOB_UNSUPPORTED",
+                "automation job is not supported",
+                details={"supported_jobs": sorted(SUPPORTED_JOBS)},
+            )
+        return normalized
+
+    @staticmethod
+    def _validate_config(job_name: str, config: JsonDict) -> JsonDict:
+        allowed_common = {"delivery_target", "max_attempts"}
+        allowed_by_job = {
+            "DAILY_MARKET_SYNC": {"provider_id"},
+            "DAILY_RISK_SCAN": set(),
+            "WEEKLY_PLAN_PREPARE": {"contribution_amount"},
+            "SELL_FOLLOWUP_DUE": set(),
+            "SYSTEM_DOCTOR": set(),
+        }
+        unknown = set(config) - allowed_common - allowed_by_job[job_name]
+        if unknown:
+            raise LedgerError(
+                "AUTOMATION_CONFIG_INVALID",
+                "automation config contains unsupported fields",
+                details={"fields": sorted(unknown)},
+            )
+        normalized = dict(config)
+        target = str(normalized.get("delivery_target", "origin")).strip()
+        if not target or len(target) > 200:
+            raise LedgerError(
+                "AUTOMATION_CONFIG_INVALID",
+                "delivery_target must be between 1 and 200 characters",
+            )
+        normalized["delivery_target"] = target
+        attempts = int(normalized.get("max_attempts", 3))
+        if attempts < 1 or attempts > 5:
+            raise LedgerError(
+                "AUTOMATION_CONFIG_INVALID",
+                "max_attempts must be between 1 and 5",
+            )
+        normalized["max_attempts"] = attempts
+        if job_name == "DAILY_MARKET_SYNC":
+            provider_id = str(normalized.get("provider_id", "AKSHARE_OPEN_FUND")).strip()
+            if provider_id != "AKSHARE_OPEN_FUND":
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "the configured market provider is unsupported",
+                )
+            normalized["provider_id"] = provider_id
+        if job_name == "WEEKLY_PLAN_PREPARE":
+            try:
+                amount = Decimal(str(normalized["contribution_amount"]))
+            except (KeyError, InvalidOperation) as exc:
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "weekly plan automation requires an explicit contribution_amount",
+                ) from exc
+            if (
+                not amount.is_finite()
+                or amount <= 0
+                or amount * 100 != (amount * 100).to_integral_value()
+            ):
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    (
+                        "contribution_amount must be a positive currency amount "
+                        "with at most 2 decimals"
+                    ),
+                )
+            normalized["contribution_amount"] = f"{amount:.2f}"
+        return normalized
+
+    def create_policy_draft(
+        self,
+        *,
+        job_name: str,
+        enabled: bool,
+        schedule: str,
+        timezone: str,
+        config: JsonDict,
+        reason: str,
+        portfolio_id: str | None = None,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        job = self._normalize_job(job_name)
+        normalized_portfolio = portfolio_id.strip() if portfolio_id else None
+        if job in PORTFOLIO_JOBS and not normalized_portfolio:
+            context = self._ledger.get_investment_context()
+            normalized_portfolio = str(context["portfolio"]["id"])
+        if job == "SYSTEM_DOCTOR":
+            normalized_portfolio = None
+        normalized_schedule = schedule.strip()
+        if not normalized_schedule or len(normalized_schedule) > 120:
+            raise LedgerError(
+                "AUTOMATION_SCHEDULE_INVALID",
+                "schedule must be between 1 and 120 characters",
+            )
+        try:
+            ZoneInfo(timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise LedgerError(
+                "INVALID_TIMEZONE",
+                "configured automation timezone is not available",
+                details={"timezone": timezone},
+            ) from exc
+        normalized_config = self._validate_config(job, config)
+        payload = {
+            "portfolio_id": normalized_portfolio,
+            "job_name": job,
+            "enabled": bool(enabled),
+            "schedule": normalized_schedule,
+            "timezone": timezone,
+            "config": normalized_config,
+            "reason": reason.strip(),
+        }
+        if not payload["reason"]:
+            raise LedgerError("MISSING_REQUIRED_FIELD", "reason is required")
+        content_hash = _hash(payload)
+        token = secrets.token_urlsafe(24)
+        draft_id = str(uuid4())
+        created_at = self._now()
+        expires_at = created_at + timedelta(minutes=self.settings.confirmation_ttl_minutes)
+        with self._connect() as connection:
+            if normalized_portfolio is not None:
+                portfolio = connection.execute(
+                    "SELECT id FROM portfolios WHERE id = ? AND status = 'ACTIVE'",
+                    (normalized_portfolio,),
+                ).fetchone()
+                if portfolio is None:
+                    raise LedgerError(
+                        "PORTFOLIO_NOT_FOUND",
+                        "active portfolio was not found",
+                        http_status=404,
+                    )
+            connection.execute(
+                """
+                INSERT INTO automation_policy_drafts (
+                    id, portfolio_id, job_name, enabled, schedule, timezone,
+                    config_json, reason, content_hash, confirmation_digest,
+                    status, created_by, created_at, expires_at, committed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, NULL)
+                """,
+                (
+                    draft_id,
+                    normalized_portfolio,
+                    job,
+                    int(enabled),
+                    normalized_schedule,
+                    timezone,
+                    _json(normalized_config),
+                    str(payload["reason"]),
+                    content_hash,
+                    _token_digest(token),
+                    actor_ref,
+                    _iso(created_at),
+                    _iso(expires_at),
+                ),
+            )
+            self._audit(
+                connection,
+                action="AUTOMATION_POLICY_DRAFT_CREATED",
+                entity_type="automation_policy_draft",
+                entity_id=draft_id,
+                actor_ref=actor_ref,
+                details={**payload, "automatic_trade": False},
+            )
+        return {
+            "draft": {
+                "id": draft_id,
+                **payload,
+                "status": "PENDING",
+                "content_hash": content_hash,
+                "created_at": _iso(created_at),
+                "expires_at": _iso(expires_at),
+            },
+            "confirmation_token": token,
+            "holdings_changed": False,
+            "transactions_created": False,
+        }
+
+    def get_policy_draft(self, *, draft_id: str) -> JsonDict:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM automation_policy_drafts WHERE id = ?", (draft_id,)
+            ).fetchone()
+            if row is None:
+                raise LedgerError(
+                    "AUTOMATION_POLICY_DRAFT_NOT_FOUND",
+                    "automation policy draft was not found",
+                    http_status=404,
+                )
+            if str(row["status"]) == "PENDING" and self._now() >= datetime.fromisoformat(
+                str(row["expires_at"]).replace("Z", "+00:00")
+            ):
+                connection.execute(
+                    "UPDATE automation_policy_drafts SET status='EXPIRED' WHERE id = ?",
+                    (draft_id,),
+                )
+                row = connection.execute(
+                    "SELECT * FROM automation_policy_drafts WHERE id = ?", (draft_id,)
+                ).fetchone()
+                assert row is not None
+            return self._draft_data(row)
+
+    @staticmethod
+    def _draft_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "portfolio_id": row["portfolio_id"],
+            "job_name": str(row["job_name"]),
+            "enabled": bool(row["enabled"]),
+            "schedule": str(row["schedule"]),
+            "timezone": str(row["timezone"]),
+            "config": json.loads(str(row["config_json"])),
+            "reason": str(row["reason"]),
+            "content_hash": str(row["content_hash"]),
+            "status": str(row["status"]),
+            "created_by": str(row["created_by"]),
+            "created_at": str(row["created_at"]),
+            "expires_at": str(row["expires_at"]),
+            "committed_at": row["committed_at"],
+        }
+
+    def commit_policy_draft(
+        self,
+        *,
+        draft_id: str,
+        confirmation_token: str,
+        confirmed_by: str,
+    ) -> JsonDict:
+        now = self._now()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM automation_policy_drafts WHERE id = ?", (draft_id,)
+            ).fetchone()
+            if row is None:
+                raise LedgerError(
+                    "AUTOMATION_POLICY_DRAFT_NOT_FOUND",
+                    "automation policy draft was not found",
+                    http_status=404,
+                )
+            if str(row["status"]) != "PENDING":
+                raise LedgerError(
+                    "STATE_CONFLICT",
+                    "automation policy draft is not pending",
+                    details={"status": str(row["status"])},
+                    http_status=409,
+                )
+            if now >= datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00")):
+                connection.execute(
+                    "UPDATE automation_policy_drafts SET status='EXPIRED' WHERE id = ?",
+                    (draft_id,),
+                )
+                connection.commit()
+                raise LedgerError(
+                    "CONFIRMATION_EXPIRED",
+                    "automation policy confirmation expired",
+                    http_status=409,
+                )
+            if not hmac.compare_digest(
+                str(row["confirmation_digest"]), _token_digest(confirmation_token)
+            ):
+                raise LedgerError(
+                    "CONFIRMATION_MISMATCH",
+                    "automation policy confirmation token does not match",
+                    http_status=409,
+                )
+            current = connection.execute(
+                """
+                SELECT * FROM automation_policies
+                WHERE portfolio_id IS ? AND job_name = ? AND status = 'ACTIVE'
+                ORDER BY version DESC LIMIT 1
+                """,
+                (row["portfolio_id"], row["job_name"]),
+            ).fetchone()
+            version = int(current["version"]) + 1 if current is not None else 1
+            if current is not None:
+                connection.execute(
+                    "UPDATE automation_policies SET status='RETIRED' WHERE id = ?",
+                    (current["id"],),
+                )
+            policy_id = str(uuid4())
+            timestamp = _iso(now)
+            connection.execute(
+                """
+                INSERT INTO automation_policies (
+                    id, portfolio_id, job_name, version, enabled, schedule,
+                    timezone, config_json, content_hash, status, approved_by,
+                    approved_at, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+                """,
+                (
+                    policy_id,
+                    row["portfolio_id"],
+                    row["job_name"],
+                    version,
+                    row["enabled"],
+                    row["schedule"],
+                    row["timezone"],
+                    row["config_json"],
+                    row["content_hash"],
+                    confirmed_by,
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE automation_policy_drafts
+                SET status='COMMITTED', committed_at=?
+                WHERE id=?
+                """,
+                (timestamp, draft_id),
+            )
+            self._audit(
+                connection,
+                action="AUTOMATION_POLICY_COMMITTED",
+                entity_type="automation_policy",
+                entity_id=policy_id,
+                actor_ref=confirmed_by,
+                details={
+                    "job_name": str(row["job_name"]),
+                    "version": version,
+                    "enabled": bool(row["enabled"]),
+                    "portfolio_id": row["portfolio_id"],
+                    "automatic_trade": False,
+                },
+            )
+            policy = connection.execute(
+                "SELECT * FROM automation_policies WHERE id = ?", (policy_id,)
+            ).fetchone()
+            assert policy is not None
+        return {
+            "policy": self._policy_data(policy),
+            "holdings_changed": False,
+            "transactions_created": False,
+        }
+
+    @staticmethod
+    def _policy_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "portfolio_id": row["portfolio_id"],
+            "job_name": str(row["job_name"]),
+            "version": int(row["version"]),
+            "enabled": bool(row["enabled"]),
+            "schedule": str(row["schedule"]),
+            "timezone": str(row["timezone"]),
+            "config": json.loads(str(row["config_json"])),
+            "content_hash": str(row["content_hash"]),
+            "status": str(row["status"]),
+            "approved_by": str(row["approved_by"]),
+            "approved_at": str(row["approved_at"]),
+        }
+
+    def list_policies(
+        self, *, portfolio_id: str | None = None, active_only: bool = True
+    ) -> list[JsonDict]:
+        query = "SELECT * FROM automation_policies WHERE 1=1"
+        params: list[object] = []
+        if portfolio_id is not None:
+            query += " AND portfolio_id IS ?"
+            params.append(portfolio_id)
+        if active_only:
+            query += " AND status='ACTIVE'"
+        query += " ORDER BY job_name, version DESC"
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._policy_data(row) for row in rows]
+
+    def _resolve_policy(
+        self, *, job_name: str, portfolio_id: str | None
+    ) -> tuple[sqlite3.Row | None, str | None, str | None]:
+        job = self._normalize_job(job_name)
+        resolved_portfolio = portfolio_id.strip() if portfolio_id else None
+        account_id: str | None = None
+        if job in PORTFOLIO_JOBS and not resolved_portfolio:
+            context = self._ledger.get_investment_context()
+            resolved_portfolio = str(context["portfolio"]["id"])
+            account_id = str(context["account"]["id"])
+        elif job in PORTFOLIO_JOBS:
+            context = self._ledger.get_investment_context()
+            if str(context["portfolio"]["id"]) != resolved_portfolio:
+                raise LedgerError(
+                    "INVESTMENT_CONTEXT_MISMATCH",
+                    "automation portfolio differs from the saved default context",
+                    http_status=409,
+                )
+            account_id = str(context["account"]["id"])
+        with self._connect() as connection:
+            policy = connection.execute(
+                """
+                SELECT * FROM automation_policies
+                WHERE portfolio_id IS ? AND job_name = ? AND status='ACTIVE'
+                ORDER BY version DESC LIMIT 1
+                """,
+                (resolved_portfolio, job),
+            ).fetchone()
+        return policy, resolved_portfolio, account_id
+
+    def run_job(
+        self,
+        *,
+        job_name: str,
+        scheduled_for: str,
+        portfolio_id: str | None = None,
+        actor_ref: str = "operations-runner",
+    ) -> JsonDict:
+        job = self._normalize_job(job_name)
+        scheduled = scheduled_for.strip()
+        if not scheduled or len(scheduled) > 80:
+            raise LedgerError(
+                "AUTOMATION_SCHEDULED_FOR_INVALID",
+                "scheduled_for must be a stable date or timestamp",
+            )
+        policy, resolved_portfolio, account_id = self._resolve_policy(
+            job_name=job, portfolio_id=portfolio_id
+        )
+        if policy is None:
+            return self._record_skip(
+                job_name=job,
+                scheduled_for=scheduled,
+                portfolio_id=resolved_portfolio,
+                reason_code="AUTOMATION_POLICY_NOT_CONFIGURED",
+            )
+        policy_data = self._policy_data(policy)
+        if not bool(policy["enabled"]):
+            return self._record_skip(
+                job_name=job,
+                scheduled_for=scheduled,
+                portfolio_id=resolved_portfolio,
+                reason_code="AUTOMATION_PAUSED",
+                policy=policy_data,
+            )
+        config = json.loads(str(policy["config_json"]))
+        idempotency_key = (
+            f"{job}:{resolved_portfolio or 'global'}:{scheduled}:v{int(policy['version'])}"
+        )
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT * FROM job_runs WHERE idempotency_key = ?", (idempotency_key,)
+            ).fetchone()
+            if existing is not None and str(existing["status"]) in {
+                "SUCCESS",
+                "DEGRADED",
+                "SKIPPED",
+            }:
+                return {
+                    "job_run": self._run_data(existing),
+                    "idempotent_replay": True,
+                    "display_text": self._display_for_run(connection, str(existing["id"])),
+                }
+            max_attempts = int(config["max_attempts"])
+            if existing is not None and int(existing["attempt_count"]) >= max_attempts:
+                return {
+                    "job_run": self._run_data(existing),
+                    "idempotent_replay": True,
+                    "reason_code": "MAX_ATTEMPTS_EXHAUSTED",
+                    "display_text": self._display_for_run(connection, str(existing["id"])),
+                }
+            now = _iso(self._now())
+            if existing is None:
+                run_id = str(uuid4())
+                attempt_count = 1
+                connection.execute(
+                    """
+                    INSERT INTO job_runs (
+                        id, job_name, scheduled_for, idempotency_key, status,
+                        started_at, finished_at, input_json, output_json,
+                        error_code, error_summary, trace_id, attempt_count,
+                        max_attempts, heartbeat_at, next_retry_at
+                    ) VALUES (?, ?, ?, ?, 'RUNNING', ?, NULL, ?, '{}',
+                              NULL, NULL, ?, 1, ?, ?, NULL)
+                    """,
+                    (
+                        run_id,
+                        job,
+                        scheduled,
+                        idempotency_key,
+                        now,
+                        _json(
+                            {
+                                "portfolio_id": resolved_portfolio,
+                                "account_id": account_id,
+                                "policy_id": str(policy["id"]),
+                                "policy_version": int(policy["version"]),
+                            }
+                        ),
+                        str(uuid4()),
+                        max_attempts,
+                        now,
+                    ),
+                )
+            else:
+                run_id = str(existing["id"])
+                attempt_count = int(existing["attempt_count"]) + 1
+                connection.execute(
+                    """
+                    UPDATE job_runs
+                    SET status='RUNNING', started_at=?, finished_at=NULL,
+                        error_code=NULL, error_summary=NULL, heartbeat_at=?,
+                        next_retry_at=NULL, attempt_count=?
+                    WHERE id=?
+                    """,
+                    (now, now, attempt_count, run_id),
+                )
+        try:
+            facts, quality, notify, reason_code = self._execute(
+                job_name=job,
+                scheduled_for=scheduled,
+                portfolio_id=resolved_portfolio,
+                account_id=account_id,
+                config=config,
+            )
+            bundle = self._finish_success(
+                run_id=run_id,
+                job_name=job,
+                scheduled_for=scheduled,
+                portfolio_id=resolved_portfolio,
+                facts=facts,
+                quality=quality,
+                notify=notify,
+                reason_code=reason_code,
+                delivery_target=str(config["delivery_target"]),
+                actor_ref=actor_ref,
+            )
+            return {
+                "job_run": self.get_run(run_id=run_id),
+                "report_bundle": bundle,
+                "idempotent_replay": False,
+                "display_text": "[SILENT]" if not notify else bundle["display_text"],
+            }
+        except LedgerError as exc:
+            return self._finish_failure(
+                run_id=run_id,
+                job_name=job,
+                portfolio_id=resolved_portfolio,
+                scheduled_for=scheduled,
+                error=exc,
+                attempt_count=attempt_count,
+                max_attempts=max_attempts,
+                delivery_target=str(config["delivery_target"]),
+                actor_ref=actor_ref,
+            )
+        except Exception as exc:
+            return self._finish_failure(
+                run_id=run_id,
+                job_name=job,
+                portfolio_id=resolved_portfolio,
+                scheduled_for=scheduled,
+                error=LedgerError(
+                    "INTERNAL_ERROR",
+                    "automation job failed unexpectedly",
+                    details={"error_type": type(exc).__name__},
+                ),
+                attempt_count=attempt_count,
+                max_attempts=max_attempts,
+                delivery_target=str(config["delivery_target"]),
+                actor_ref=actor_ref,
+            )
+
+    def _execute(
+        self,
+        *,
+        job_name: str,
+        scheduled_for: str,
+        portfolio_id: str | None,
+        account_id: str | None,
+        config: JsonDict,
+    ) -> tuple[JsonDict, str, bool, str]:
+        business_date = scheduled_for[:10]
+        if job_name == "SYSTEM_DOCTOR":
+            report = build_doctor_report(self.settings).model_dump(mode="json")
+            notify = report["status"] != "PASS"
+            return (
+                report,
+                "PASS" if not notify else "SOURCE_ERROR",
+                notify,
+                ("SYSTEM_HEALTHY" if not notify else "SYSTEM_HEALTH_FAILED"),
+            )
+        assert portfolio_id is not None and account_id is not None
+        if job_name == "DAILY_MARKET_SYNC":
+            holdings = self._ledger.list_holdings(portfolio_id=portfolio_id, account_id=account_id)
+            codes = [
+                str(item["instrument_code"])
+                for item in holdings
+                if Decimal(str(item["total_shares"])) != 0
+            ]
+            if not codes:
+                return (
+                    {"items": [], "requested_count": 0},
+                    "PASS",
+                    False,
+                    "NO_ACTIVE_HOLDINGS",
+                )
+            result = self._market_sync.sync_navs(
+                provider_id=str(config["provider_id"]),
+                instrument_codes=codes,
+                as_of_date_value=business_date,
+                actor_ref="cron",
+            )
+            quality = str(result["data_quality"])
+            notify = str(result["status"]) != "PASS"
+            return (
+                result,
+                quality,
+                notify,
+                ("MARKET_SYNC_COMPLETED" if not notify else "MARKET_SYNC_DEGRADED"),
+            )
+        if job_name == "DAILY_RISK_SCAN":
+            result = self._risk.scan(
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                as_of_date=business_date,
+            )
+            proposals = list(result["sell_proposals"])
+            notify = bool(proposals) or str(result["state"]) == "DATA_BLOCKED"
+            return result, str(result["data_quality"]), notify, str(result["reason_code"])
+        if job_name == "WEEKLY_PLAN_PREPARE":
+            result = self._planning.create_draft(
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                contribution_amount=str(config["contribution_amount"]),
+                plan_date_value=business_date,
+                as_of_date_value=business_date,
+                idempotency_key=f"automation-weekly:{portfolio_id}:{business_date}",
+                actor_ref="cron",
+            )
+            facts = {key: value for key, value in result.items() if key != "confirmation_token"}
+            return (
+                facts,
+                ("WARNING" if result["warnings"] else "PASS"),
+                True,
+                "WEEKLY_PLAN_DRAFT_READY",
+            )
+        if job_name == "SELL_FOLLOWUP_DUE":
+            followups = self._risk.list_followups(portfolio_id=portfolio_id, status=None, limit=500)
+            due = [
+                item
+                for item in followups
+                if str(item["status"]) in {"PENDING", "DUE", "DATA_BLOCKED"}
+                and str(item["due_at"]) <= business_date
+            ]
+            items = [
+                self._risk.evaluate_followup(
+                    followup_id=str(item["id"]),
+                    as_of_date=business_date,
+                    actor_ref="cron",
+                )
+                for item in due
+            ]
+            blocked = any(str(item["status"]) == "DATA_BLOCKED" for item in items)
+            return (
+                {"items": items, "due_count": len(due)},
+                "SOURCE_ERROR" if blocked else "PASS",
+                bool(items),
+                "SELL_FOLLOWUPS_DUE" if items else "NO_SELL_FOLLOWUP_DUE",
+            )
+        raise AssertionError(f"unsupported job dispatch: {job_name}")
+
+    def _record_skip(
+        self,
+        *,
+        job_name: str,
+        scheduled_for: str,
+        portfolio_id: str | None,
+        reason_code: str,
+        policy: JsonDict | None = None,
+    ) -> JsonDict:
+        key = f"{job_name}:{portfolio_id or 'global'}:{scheduled_for}:{reason_code}"
+        created = False
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT * FROM job_runs WHERE idempotency_key=?", (key,)
+            ).fetchone()
+            if existing is None:
+                created = True
+                run_id = str(uuid4())
+                timestamp = _iso(self._now())
+                output = {"reason_code": reason_code, "policy": policy}
+                connection.execute(
+                    """
+                    INSERT INTO job_runs (
+                        id, job_name, scheduled_for, idempotency_key, status,
+                        started_at, finished_at, input_json, output_json,
+                        error_code, error_summary, trace_id, attempt_count,
+                        max_attempts, heartbeat_at, next_retry_at
+                    ) VALUES (?, ?, ?, ?, 'SKIPPED', ?, ?, '{}', ?, NULL, NULL,
+                              ?, 1, 1, ?, NULL)
+                    """,
+                    (
+                        run_id,
+                        job_name,
+                        scheduled_for,
+                        key,
+                        timestamp,
+                        timestamp,
+                        _json(output),
+                        str(uuid4()),
+                        timestamp,
+                    ),
+                )
+                existing = connection.execute(
+                    "SELECT * FROM job_runs WHERE id=?", (run_id,)
+                ).fetchone()
+                assert existing is not None
+            return {
+                "job_run": self._run_data(existing),
+                "idempotent_replay": not created,
+                "display_text": "[SILENT]",
+            }
+
+    def _finish_success(
+        self,
+        *,
+        run_id: str,
+        job_name: str,
+        scheduled_for: str,
+        portfolio_id: str | None,
+        facts: JsonDict,
+        quality: str,
+        notify: bool,
+        reason_code: str,
+        delivery_target: str,
+        actor_ref: str,
+    ) -> JsonDict:
+        timestamp = _iso(self._now())
+        facts_hash = _hash(facts)
+        bundle_id = str(uuid4())
+        display_text = f"{job_name} 已生成待查看事实包, 数据质量: {quality}, 原因: {reason_code}。"
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE job_runs SET status=?, finished_at=?, heartbeat_at=?,
+                    output_json=?, error_code=NULL, error_summary=NULL,
+                    next_retry_at=NULL
+                WHERE id=?
+                """,
+                (
+                    "DEGRADED" if quality != "PASS" else "SUCCESS",
+                    timestamp,
+                    timestamp,
+                    _json(
+                        {
+                            "reason_code": reason_code,
+                            "data_quality": quality,
+                            "delivery_action": "NOTIFY" if notify else "SILENT",
+                            "facts_hash": facts_hash,
+                        }
+                    ),
+                    run_id,
+                ),
+            )
+            existing = connection.execute(
+                """
+                SELECT * FROM report_bundles
+                WHERE portfolio_id IS ? AND bundle_type=?
+                  AND scheduled_for=? AND facts_hash=?
+                """,
+                (portfolio_id, job_name, scheduled_for, facts_hash),
+            ).fetchone()
+            if existing is None:
+                connection.execute(
+                    """
+                    INSERT INTO report_bundles (
+                        id, portfolio_id, job_run_id, bundle_type, scheduled_for,
+                        facts_json, facts_hash, data_quality, delivery_action,
+                        reason_code, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        bundle_id,
+                        portfolio_id,
+                        run_id,
+                        job_name,
+                        scheduled_for,
+                        _json(facts),
+                        facts_hash,
+                        quality,
+                        "NOTIFY" if notify else "SILENT",
+                        reason_code,
+                        timestamp,
+                    ),
+                )
+                if notify:
+                    connection.execute(
+                        """
+                        INSERT INTO notification_outbox (
+                            id, report_bundle_id, alert_id, delivery_target,
+                            status, dedup_key, attempt_count, max_attempts,
+                            next_attempt_at, last_error_code, created_at, sent_at
+                        ) VALUES (?, ?, NULL, ?, 'PENDING', ?, 0, 5, ?, NULL, ?, NULL)
+                        """,
+                        (
+                            str(uuid4()),
+                            bundle_id,
+                            delivery_target,
+                            f"bundle:{bundle_id}:{delivery_target}",
+                            timestamp,
+                            timestamp,
+                        ),
+                    )
+                self._audit(
+                    connection,
+                    action="AUTOMATION_REPORT_BUNDLE_CREATED",
+                    entity_type="report_bundle",
+                    entity_id=bundle_id,
+                    actor_ref=actor_ref,
+                    details={
+                        "job_name": job_name,
+                        "delivery_action": "NOTIFY" if notify else "SILENT",
+                        "reason_code": reason_code,
+                    },
+                )
+                row = connection.execute(
+                    "SELECT * FROM report_bundles WHERE id=?", (bundle_id,)
+                ).fetchone()
+            else:
+                row = existing
+            assert row is not None
+            data = self._bundle_data(row)
+            data["display_text"] = display_text
+            return data
+
+    def _finish_failure(
+        self,
+        *,
+        run_id: str,
+        job_name: str,
+        portfolio_id: str | None,
+        scheduled_for: str,
+        error: LedgerError,
+        attempt_count: int,
+        max_attempts: int,
+        delivery_target: str,
+        actor_ref: str,
+    ) -> JsonDict:
+        now = self._now()
+        retry_minutes = (5, 15, 30, 60, 120)[min(attempt_count - 1, 4)]
+        next_retry = (
+            _iso(now + timedelta(minutes=retry_minutes)) if attempt_count < max_attempts else None
+        )
+        context = {
+            "job_name": job_name,
+            "scheduled_for": scheduled_for,
+            "error_code": error.code,
+            "error_summary": error.message,
+            "attempt_count": attempt_count,
+            "max_attempts": max_attempts,
+            "next_retry_at": next_retry,
+        }
+        fingerprint = _hash(
+            {
+                "portfolio_id": portfolio_id,
+                "job_name": job_name,
+                "scheduled_for": scheduled_for,
+                "error_code": error.code,
+            }
+        )
+        timestamp = _iso(now)
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE job_runs
+                SET status='FAILED', finished_at=?, heartbeat_at=?,
+                    output_json=?, error_code=?, error_summary=?,
+                    next_retry_at=?
+                WHERE id=?
+                """,
+                (
+                    timestamp,
+                    timestamp,
+                    _json(context),
+                    error.code,
+                    error.message,
+                    next_retry,
+                    run_id,
+                ),
+            )
+            alert = connection.execute(
+                "SELECT * FROM alerts WHERE fingerprint=?", (fingerprint,)
+            ).fetchone()
+            if alert is None:
+                alert_id = str(uuid4())
+                connection.execute(
+                    """
+                    INSERT INTO alerts (
+                        id, portfolio_id, job_run_id, code, severity, status,
+                        fingerprint, context_json, occurrence_count, created_at,
+                        last_seen_at, acknowledged_at, acknowledged_by
+                    ) VALUES (?, ?, ?, ?, 'CRITICAL', 'OPEN', ?, ?, 1, ?, ?, NULL, NULL)
+                    """,
+                    (
+                        alert_id,
+                        portfolio_id,
+                        run_id,
+                        error.code,
+                        fingerprint,
+                        _json(context),
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO notification_outbox (
+                        id, report_bundle_id, alert_id, delivery_target, status,
+                        dedup_key, attempt_count, max_attempts, next_attempt_at,
+                        last_error_code, created_at, sent_at
+                    ) VALUES (?, NULL, ?, ?, 'PENDING', ?, 0, 5, ?, NULL, ?, NULL)
+                    """,
+                    (
+                        str(uuid4()),
+                        alert_id,
+                        delivery_target,
+                        f"alert:{alert_id}:{delivery_target}",
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+                self._audit(
+                    connection,
+                    action="AUTOMATION_FAILURE_ALERT_CREATED",
+                    entity_type="alert",
+                    entity_id=alert_id,
+                    actor_ref=actor_ref,
+                    details=context,
+                )
+            else:
+                alert_id = str(alert["id"])
+                connection.execute(
+                    """
+                    UPDATE alerts
+                    SET occurrence_count=occurrence_count+1, last_seen_at=?,
+                        context_json=?, status='OPEN'
+                    WHERE id=?
+                    """,
+                    (timestamp, _json(context), alert_id),
+                )
+            run = connection.execute("SELECT * FROM job_runs WHERE id=?", (run_id,)).fetchone()
+            assert run is not None
+        return {
+            "job_run": self._run_data(run),
+            "alert_id": alert_id,
+            "idempotent_replay": False,
+            "display_text": (
+                f"{job_name} 执行失败: {error.code}。"
+                f"{' 已安排重试。' if next_retry else ' 已达到最大重试次数。'}"
+            ),
+        }
+
+    @staticmethod
+    def _run_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "job_name": str(row["job_name"]),
+            "scheduled_for": str(row["scheduled_for"]),
+            "idempotency_key": str(row["idempotency_key"]),
+            "status": str(row["status"]),
+            "started_at": str(row["started_at"]),
+            "finished_at": row["finished_at"],
+            "input": json.loads(str(row["input_json"])),
+            "output": json.loads(str(row["output_json"])),
+            "error_code": row["error_code"],
+            "error_summary": row["error_summary"],
+            "attempt_count": int(row["attempt_count"]),
+            "max_attempts": int(row["max_attempts"]),
+            "heartbeat_at": row["heartbeat_at"],
+            "next_retry_at": row["next_retry_at"],
+        }
+
+    def get_run(self, *, run_id: str) -> JsonDict:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM job_runs WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise LedgerError(
+                    "AUTOMATION_RUN_NOT_FOUND",
+                    "automation job run was not found",
+                    http_status=404,
+                )
+            return self._run_data(row)
+
+    def list_runs(
+        self, *, job_name: str | None = None, status: str | None = None, limit: int = 100
+    ) -> list[JsonDict]:
+        if limit < 1 or limit > 500:
+            raise LedgerError("INVALID_LIMIT", "limit must be between 1 and 500")
+        query = "SELECT * FROM job_runs WHERE 1=1"
+        params: list[object] = []
+        if job_name:
+            query += " AND job_name=?"
+            params.append(self._normalize_job(job_name))
+        if status:
+            query += " AND status=?"
+            params.append(status.strip().upper())
+        query += " ORDER BY started_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._run_data(row) for row in rows]
+
+    @staticmethod
+    def _bundle_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "portfolio_id": row["portfolio_id"],
+            "job_run_id": str(row["job_run_id"]),
+            "bundle_type": str(row["bundle_type"]),
+            "scheduled_for": str(row["scheduled_for"]),
+            "facts": json.loads(str(row["facts_json"])),
+            "facts_hash": str(row["facts_hash"]),
+            "data_quality": str(row["data_quality"]),
+            "delivery_action": str(row["delivery_action"]),
+            "reason_code": str(row["reason_code"]),
+            "created_at": str(row["created_at"]),
+        }
+
+    def list_report_bundles(
+        self,
+        *,
+        portfolio_id: str | None = None,
+        bundle_type: str | None = None,
+        delivery_action: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = "SELECT * FROM report_bundles WHERE 1=1"
+        params: list[object] = []
+        if portfolio_id:
+            query += " AND portfolio_id=?"
+            params.append(portfolio_id)
+        if bundle_type:
+            query += " AND bundle_type=?"
+            params.append(self._normalize_job(bundle_type))
+        if delivery_action:
+            query += " AND delivery_action=?"
+            params.append(delivery_action.strip().upper())
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._bundle_data(row) for row in rows]
+
+    def list_alerts(
+        self,
+        *,
+        portfolio_id: str | None = None,
+        status: str | None = "OPEN",
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = "SELECT * FROM alerts WHERE 1=1"
+        params: list[object] = []
+        if portfolio_id:
+            query += " AND portfolio_id=?"
+            params.append(portfolio_id)
+        if status:
+            query += " AND status=?"
+            params.append(status.strip().upper())
+        query += " ORDER BY last_seen_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "portfolio_id": row["portfolio_id"],
+                "job_run_id": str(row["job_run_id"]),
+                "code": str(row["code"]),
+                "severity": str(row["severity"]),
+                "status": str(row["status"]),
+                "context": json.loads(str(row["context_json"])),
+                "occurrence_count": int(row["occurrence_count"]),
+                "created_at": str(row["created_at"]),
+                "last_seen_at": str(row["last_seen_at"]),
+                "acknowledged_at": row["acknowledged_at"],
+                "acknowledged_by": row["acknowledged_by"],
+            }
+            for row in rows
+        ]
+
+    def list_outbox(self, *, status: str | None = "PENDING", limit: int = 100) -> list[JsonDict]:
+        query = "SELECT * FROM notification_outbox WHERE 1=1"
+        params: list[object] = []
+        if status:
+            query += " AND status=?"
+            params.append(status.strip().upper())
+        query += " ORDER BY created_at LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "report_bundle_id": row["report_bundle_id"],
+                "alert_id": row["alert_id"],
+                "delivery_target": str(row["delivery_target"]),
+                "status": str(row["status"]),
+                "attempt_count": int(row["attempt_count"]),
+                "max_attempts": int(row["max_attempts"]),
+                "next_attempt_at": row["next_attempt_at"],
+                "last_error_code": row["last_error_code"],
+                "created_at": str(row["created_at"]),
+                "sent_at": row["sent_at"],
+            }
+            for row in rows
+        ]
+
+    def status_summary(self) -> JsonDict:
+        """Return deterministic automation state without running or delivering anything."""
+        with self._connect() as connection:
+            policies = connection.execute(
+                """
+                SELECT job_name, portfolio_id, version, enabled, schedule, timezone,
+                       approved_at
+                FROM automation_policies
+                WHERE status='ACTIVE'
+                ORDER BY job_name, portfolio_id
+                """
+            ).fetchall()
+            run_counts = connection.execute(
+                "SELECT status, COUNT(*) AS count FROM job_runs GROUP BY status"
+            ).fetchall()
+            latest_runs = connection.execute(
+                """
+                SELECT * FROM job_runs
+                WHERE job_name IN (
+                    'DAILY_MARKET_SYNC','DAILY_RISK_SCAN','WEEKLY_PLAN_PREPARE',
+                    'SELL_FOLLOWUP_DUE','SYSTEM_DOCTOR'
+                )
+                ORDER BY started_at DESC LIMIT 20
+                """
+            ).fetchall()
+            open_alerts = int(
+                connection.execute("SELECT COUNT(*) FROM alerts WHERE status='OPEN'").fetchone()[0]
+            )
+            pending_outbox = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM notification_outbox WHERE status='PENDING'"
+                ).fetchone()[0]
+            )
+            due_retries = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM job_runs
+                    WHERE status='FAILED' AND next_retry_at IS NOT NULL
+                      AND next_retry_at <= ? AND attempt_count < max_attempts
+                    """,
+                    (_iso(self._now()),),
+                ).fetchone()[0]
+            )
+        return {
+            "policies": [
+                {
+                    "job_name": str(row["job_name"]),
+                    "portfolio_id": row["portfolio_id"],
+                    "version": int(row["version"]),
+                    "enabled": bool(row["enabled"]),
+                    "schedule": str(row["schedule"]),
+                    "timezone": str(row["timezone"]),
+                    "approved_at": str(row["approved_at"]),
+                }
+                for row in policies
+            ],
+            "run_counts": {str(row["status"]): int(row["count"]) for row in run_counts},
+            "latest_runs": [self._run_data(row) for row in latest_runs],
+            "open_alert_count": open_alerts,
+            "pending_outbox_count": pending_outbox,
+            "due_retry_count": due_retries,
+            "automatic_trade": False,
+        }
+
+    def retry_due(self, *, limit: int = 20) -> JsonDict:
+        """Retry due failed jobs while preserving their original idempotency identity."""
+        if limit < 1 or limit > 100:
+            raise LedgerError("INVALID_LIMIT", "limit must be between 1 and 100")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM job_runs
+                WHERE status='FAILED' AND next_retry_at IS NOT NULL
+                  AND next_retry_at <= ? AND attempt_count < max_attempts
+                ORDER BY next_retry_at, started_at LIMIT ?
+                """,
+                (_iso(self._now()), limit),
+            ).fetchall()
+        results: list[JsonDict] = []
+        for row in rows:
+            input_data = json.loads(str(row["input_json"]))
+            results.append(
+                self.run_job(
+                    job_name=str(row["job_name"]),
+                    scheduled_for=str(row["scheduled_for"]),
+                    portfolio_id=(
+                        str(input_data["portfolio_id"]) if input_data.get("portfolio_id") else None
+                    ),
+                    actor_ref="operations-retry",
+                )
+            )
+        return {
+            "retried_count": len(results),
+            "items": results,
+            "display_text": "[SILENT]" if not results else "AUTOMATION_RETRIES_COMPLETED",
+        }
+
+    @staticmethod
+    def _display_for_run(connection: sqlite3.Connection, run_id: str) -> str:
+        row = connection.execute(
+            """
+            SELECT delivery_action, bundle_type, data_quality, reason_code
+            FROM report_bundles WHERE job_run_id=?
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (run_id,),
+        ).fetchone()
+        if row is None or str(row["delivery_action"]) == "SILENT":
+            return "[SILENT]"
+        return (
+            f"{row['bundle_type']} 已生成待查看事实包, "
+            f"数据质量: {row['data_quality']}, 原因: {row['reason_code']}。"
+        )
