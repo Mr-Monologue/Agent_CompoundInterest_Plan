@@ -39,7 +39,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0010_strategy_governance_risk"
+EXPECTED_ALEMBIC_REVISION = "0011_sell_lifecycle"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -115,7 +115,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Strategy instance and investment plan schema is current"
+            schema_message = "Deterministic sell lifecycle schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",

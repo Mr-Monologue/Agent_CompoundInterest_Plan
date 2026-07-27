@@ -7,6 +7,7 @@ import hmac
 import json
 import secrets
 import sqlite3
+from calendar import monthrange
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -50,6 +51,13 @@ def _iso(value: datetime) -> str:
 
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, min(value.day, monthrange(year, month)[1]))
 
 
 def _canonical_hash(payload: JsonDict) -> str:
@@ -983,6 +991,7 @@ class LedgerService:
 
     @staticmethod
     def _draft_data(row: sqlite3.Row) -> JsonDict:
+        row_keys = set(row.keys())
         result = {
             "id": row["id"],
             "portfolio_id": row["portfolio_id"],
@@ -999,6 +1008,9 @@ class LedgerService:
             "platform": row["platform"],
             "note": row["note"],
             "reversal_of_transaction_id": row["reversal_of_transaction_id"],
+            "sell_proposal_id": (
+                row["sell_proposal_id"] if "sell_proposal_id" in row_keys else None
+            ),
             "status": row["status"],
             "idempotency_key": row["idempotency_key"],
             "expires_at": row["expires_at"],
@@ -1035,11 +1047,17 @@ class LedgerService:
         platform: str,
         idempotency_key: str,
         note: str | None = None,
+        sell_proposal_id: str | None = None,
         actor_ref: str = "hermes",
     ) -> JsonDict:
         normalized_side = side.strip().upper()
         if normalized_side not in {"BUY", "SELL"}:
             raise LedgerError("INVALID_SIDE", "side must be BUY or SELL")
+        if sell_proposal_id is not None and normalized_side != "SELL":
+            raise LedgerError(
+                "INVALID_SELL_PROPOSAL_LINK",
+                "a sell proposal can only be linked to a SELL transaction",
+            )
         try:
             normalized_trade_date = date.fromisoformat(trade_date_value).isoformat()
         except ValueError as exc:
@@ -1110,6 +1128,7 @@ class LedgerService:
                 "shares_micros": shares_micros,
                 "platform": normalized_platform,
                 "note": note,
+                "sell_proposal_id": sell_proposal_id,
             }
             request_hash = _canonical_hash(payload)
             existing = connection.execute(
@@ -1161,43 +1180,132 @@ class LedgerService:
                             },
                         ),
                     )
+                if sell_proposal_id is not None:
+                    proposal = connection.execute(
+                        """
+                        SELECT * FROM sell_proposals
+                        WHERE id = ? AND portfolio_id = ? AND instrument_id = ?
+                        """,
+                        (sell_proposal_id, portfolio_id, instrument["id"]),
+                    ).fetchone()
+                    if proposal is None:
+                        self._rollback_and_raise(
+                            connection,
+                            LedgerError(
+                                "SELL_PROPOSAL_NOT_FOUND",
+                                "matching sell proposal was not found",
+                                http_status=404,
+                            ),
+                        )
+                    if str(proposal["status"]) != "APPROVED":
+                        self._rollback_and_raise(
+                            connection,
+                            LedgerError(
+                                "SELL_PROPOSAL_NOT_APPROVED",
+                                "sell proposal must be approved before recording execution",
+                                http_status=409,
+                            ),
+                        )
+                    linked = connection.execute(
+                        "SELECT id FROM sell_execution_links WHERE sell_proposal_id = ?",
+                        (sell_proposal_id,),
+                    ).fetchone()
+                    if linked is not None:
+                        self._rollback_and_raise(
+                            connection,
+                            LedgerError(
+                                "SELL_PROPOSAL_ALREADY_EXECUTED",
+                                "sell proposal is already linked to a committed SELL",
+                                http_status=409,
+                            ),
+                        )
+                    recommended_amount = proposal["recommended_amount_minor"]
+                    if recommended_amount is not None and amount_minor > int(recommended_amount):
+                        self._rollback_and_raise(
+                            connection,
+                            LedgerError(
+                                "SELL_EXCEEDS_PROPOSAL_AMOUNT",
+                                "recorded SELL exceeds the approved proposal amount",
+                                http_status=409,
+                            ),
+                        )
 
             now = self._now()
             draft_id = str(uuid4())
             token = secrets.token_urlsafe(24)
             expires_at = now + timedelta(minutes=self.settings.confirmation_ttl_minutes)
-            connection.execute(
-                """
+            has_sell_proposal_column = any(
+                str(column["name"]) == "sell_proposal_id"
+                for column in connection.execute("PRAGMA table_info(transaction_drafts)")
+            )
+            if has_sell_proposal_column:
+                connection.execute(
+                    """
                 INSERT INTO transaction_drafts (
                     id, portfolio_id, account_id, instrument_id, action, side, trade_date,
                     amount_minor, nav_micros, shares_micros, platform, note,
                     reversal_of_transaction_id, status, idempotency_key, request_hash,
                     confirmation_digest, expires_at, created_at, actor_ref
+                    , sell_proposal_id
                 ) VALUES (
                     ?, ?, ?, ?, 'TRADE', ?, ?, ?, ?, ?, ?, ?, NULL, 'PENDING',
-                    ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
-                (
-                    draft_id,
-                    portfolio_id,
-                    account_id,
-                    instrument["id"],
-                    normalized_side,
-                    normalized_trade_date,
-                    amount_minor,
-                    nav_micros,
-                    shares_micros,
-                    normalized_platform,
-                    note,
-                    normalized_key,
-                    request_hash,
-                    _token_digest(token),
-                    _iso(expires_at),
-                    _iso(now),
-                    actor_ref,
-                ),
-            )
+                    (
+                        draft_id,
+                        portfolio_id,
+                        account_id,
+                        instrument["id"],
+                        normalized_side,
+                        normalized_trade_date,
+                        amount_minor,
+                        nav_micros,
+                        shares_micros,
+                        normalized_platform,
+                        note,
+                        normalized_key,
+                        request_hash,
+                        _token_digest(token),
+                        _iso(expires_at),
+                        _iso(now),
+                        actor_ref,
+                        sell_proposal_id,
+                    ),
+                )
+            else:
+                connection.execute(
+                    """
+                    INSERT INTO transaction_drafts (
+                        id, portfolio_id, account_id, instrument_id, action, side,
+                        trade_date, amount_minor, nav_micros, shares_micros, platform,
+                        note, reversal_of_transaction_id, status, idempotency_key,
+                        request_hash, confirmation_digest, expires_at, created_at, actor_ref
+                    ) VALUES (
+                        ?, ?, ?, ?, 'TRADE', ?, ?, ?, ?, ?, ?, ?, NULL, 'PENDING',
+                        ?, ?, ?, ?, ?, ?
+                    )
+                    """,
+                    (
+                        draft_id,
+                        portfolio_id,
+                        account_id,
+                        instrument["id"],
+                        normalized_side,
+                        normalized_trade_date,
+                        amount_minor,
+                        nav_micros,
+                        shares_micros,
+                        normalized_platform,
+                        note,
+                        normalized_key,
+                        request_hash,
+                        _token_digest(token),
+                        _iso(expires_at),
+                        _iso(now),
+                        actor_ref,
+                    ),
+                )
             self._audit(
                 connection,
                 actor_type="AGENT",
@@ -1584,6 +1692,7 @@ class LedgerService:
 
     @staticmethod
     def _transaction_data(row: sqlite3.Row) -> JsonDict:
+        row_keys = set(row.keys())
         result = {
             "id": row["id"],
             "draft_id": row["draft_id"],
@@ -1602,6 +1711,9 @@ class LedgerService:
             "note": row["note"],
             "reversal_of_transaction_id": row["reversal_of_transaction_id"],
             "reversed_by_transaction_id": row["reversed_by_transaction_id"],
+            "sell_proposal_id": (
+                row["sell_proposal_id"] if "sell_proposal_id" in row_keys else None
+            ),
             "confirmed_by": row["confirmed_by"],
             "committed_at": row["committed_at"],
             "record_hash": row["record_hash"],
@@ -1622,10 +1734,29 @@ class LedgerService:
         return result
 
     def _transaction_row(self, connection: sqlite3.Connection, transaction_id: str) -> sqlite3.Row:
+        has_execution_links = connection.execute(
+            """
+            SELECT 1 FROM sqlite_master
+            WHERE type = 'table' AND name = 'sell_execution_links'
+            """
+        ).fetchone()
+        sell_link_sql = (
+            """
+            (
+                SELECT l.sell_proposal_id
+                FROM sell_execution_links l
+                WHERE l.transaction_id = t.id
+                LIMIT 1
+            ) AS sell_proposal_id
+            """
+            if has_execution_links
+            else "NULL AS sell_proposal_id"
+        )
         return self._require_row(
             connection.execute(
-                """
-                SELECT t.*, i.code AS instrument_code, i.name AS instrument_name
+                f"""
+                SELECT t.*, i.code AS instrument_code, i.name AS instrument_name,
+                       {sell_link_sql}
                 FROM transactions t
                 JOIN instruments i ON i.id = t.instrument_id
                 WHERE t.id = ?
@@ -1914,6 +2045,10 @@ class LedgerService:
 
             transaction_id = str(uuid4())
             committed_at = _iso(now)
+            draft_keys = set(draft.keys())
+            draft_sell_proposal_id = (
+                draft["sell_proposal_id"] if "sell_proposal_id" in draft_keys else None
+            )
             record_payload = {
                 "id": transaction_id,
                 "draft_id": draft_id,
@@ -1924,6 +2059,7 @@ class LedgerService:
                 "nav_micros": draft["nav_micros"],
                 "shares_micros": draft["shares_micros"],
                 "reversal_of_transaction_id": original_id,
+                "sell_proposal_id": draft_sell_proposal_id,
                 "confirmed_by": confirmed_by.strip(),
                 "committed_at": committed_at,
             }
@@ -1957,6 +2093,74 @@ class LedgerService:
                     record_hash,
                 ),
             )
+            sell_execution_link: JsonDict | None = None
+            sell_followup: JsonDict | None = None
+            if draft["side"] == "SELL" and draft_sell_proposal_id is not None:
+                link_id = str(uuid4())
+                proposal_id = str(draft_sell_proposal_id)
+                connection.execute(
+                    """
+                    INSERT INTO sell_execution_links (
+                        id, sell_proposal_id, transaction_id, linked_at, linked_by
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (link_id, proposal_id, transaction_id, committed_at, confirmed_by.strip()),
+                )
+                connection.execute(
+                    "UPDATE sell_proposals SET status = 'EXECUTED', closed_at = ? WHERE id = ?",
+                    (committed_at, proposal_id),
+                )
+                proposal = connection.execute(
+                    "SELECT trigger_code, trigger_facts_json FROM sell_proposals WHERE id = ?",
+                    (proposal_id,),
+                ).fetchone()
+                assert proposal is not None
+                sold_at = date.fromisoformat(str(draft["trade_date"]))
+                due_at = _add_months(sold_at, 6)
+                followup_id = str(uuid4())
+                expected_metric = {
+                    "trigger_code": str(proposal["trigger_code"]),
+                    "review_after_months": 6,
+                    "comparison": "POST_SELL_TOTAL_RETURN",
+                    "execution_nav": _format_scaled(int(draft["nav_micros"]), 1_000_000, 6),
+                    "execution_amount": _format_scaled(int(draft["amount_minor"]), 100, 2),
+                }
+                connection.execute(
+                    """
+                    INSERT INTO sell_followups (
+                        id, sell_proposal_id, sell_execution_link_id, instrument_id,
+                        transaction_id, sold_at, due_at, status, expected_metric_json,
+                        result_json, evaluated_at, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, NULL, NULL, ?)
+                    """,
+                    (
+                        followup_id,
+                        proposal_id,
+                        link_id,
+                        draft["instrument_id"],
+                        transaction_id,
+                        sold_at.isoformat(),
+                        due_at.isoformat(),
+                        json.dumps(expected_metric, ensure_ascii=False, sort_keys=True),
+                        committed_at,
+                    ),
+                )
+                sell_execution_link = {
+                    "id": link_id,
+                    "sell_proposal_id": proposal_id,
+                    "transaction_id": transaction_id,
+                    "linked_at": committed_at,
+                    "linked_by": confirmed_by.strip(),
+                }
+                sell_followup = {
+                    "id": followup_id,
+                    "sell_proposal_id": proposal_id,
+                    "transaction_id": transaction_id,
+                    "sold_at": sold_at.isoformat(),
+                    "due_at": due_at.isoformat(),
+                    "status": "PENDING",
+                    "expected_metric": expected_metric,
+                }
             if original_id:
                 connection.execute(
                     "UPDATE transactions SET reversed_by_transaction_id = ? WHERE id = ?",
@@ -1998,6 +2202,7 @@ class LedgerService:
                     "draft_id": draft_id,
                     "reversal_of_transaction_id": original_id,
                     "holding_snapshot_id": holding["id"],
+                    "sell_proposal_id": draft_sell_proposal_id,
                 },
                 before_hash=str(draft["request_hash"]),
                 after_hash=record_hash,
@@ -2007,6 +2212,8 @@ class LedgerService:
             return {
                 "transaction": self._transaction_data(transaction),
                 "holding": holding,
+                "sell_execution_link": sell_execution_link,
+                "sell_followup": sell_followup,
                 "idempotent_replay": False,
             }
         finally:
@@ -2157,7 +2364,13 @@ class LedgerService:
         if limit < 1 or limit > 500:
             raise LedgerError("INVALID_LIMIT", "limit must be between 1 and 500")
         query = """
-            SELECT t.*, i.code AS instrument_code, i.name AS instrument_name
+            SELECT t.*, i.code AS instrument_code, i.name AS instrument_name,
+                   (
+                       SELECT l.sell_proposal_id
+                       FROM sell_execution_links l
+                       WHERE l.transaction_id = t.id
+                       LIMIT 1
+                   ) AS sell_proposal_id
             FROM transactions t
             JOIN instruments i ON i.id = t.instrument_id
             WHERE 1 = 1
@@ -2172,5 +2385,39 @@ class LedgerService:
         query += " ORDER BY t.committed_at DESC LIMIT ?"
         parameters.append(limit)
         with self._connect() as connection:
+            has_execution_links = connection.execute(
+                """
+                SELECT 1 FROM sqlite_master
+                WHERE type = 'table' AND name = 'sell_execution_links'
+                """
+            ).fetchone()
+            sell_link_sql = (
+                """
+                (
+                    SELECT l.sell_proposal_id
+                    FROM sell_execution_links l
+                    WHERE l.transaction_id = t.id
+                    LIMIT 1
+                ) AS sell_proposal_id
+                """
+                if has_execution_links
+                else "NULL AS sell_proposal_id"
+            )
+            query = f"""
+                SELECT t.*, i.code AS instrument_code, i.name AS instrument_name,
+                       {sell_link_sql}
+                FROM transactions t
+                JOIN instruments i ON i.id = t.instrument_id
+                WHERE 1 = 1
+            """
+            parameters = []
+            if portfolio_id:
+                query += " AND t.portfolio_id = ?"
+                parameters.append(portfolio_id)
+            if account_id:
+                query += " AND t.account_id = ?"
+                parameters.append(account_id)
+            query += " ORDER BY t.committed_at DESC LIMIT ?"
+            parameters.append(limit)
             rows = connection.execute(query, parameters).fetchall()
             return [self._transaction_data(row) for row in rows]

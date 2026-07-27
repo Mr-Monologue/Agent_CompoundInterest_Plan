@@ -12,6 +12,7 @@ from investor_core.api.schemas import (
     InstrumentCreateRequest,
     InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
+    LifecycleObservationCreateRequest,
     MarketDataCanaryRequest,
     MarketDataSyncRequest,
     MarketNavSnapshotCreateRequest,
@@ -20,6 +21,7 @@ from investor_core.api.schemas import (
     PortfolioCreateRequest,
     RiskScanRequest,
     SellDecisionDraftCreateRequest,
+    SellFollowupEvaluateRequest,
     StrategyInstrumentConfigDraftRequest,
     TransactionDraftCommitRequest,
     TransactionDraftCreateRequest,
@@ -224,6 +226,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             platform=request.platform,
             idempotency_key=request.idempotency_key,
             note=request.note,
+            sell_proposal_id=request.sell_proposal_id,
             actor_ref=request.actor_ref,
         )
         return success(result, warnings=result.pop("warnings"))
@@ -607,6 +610,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             portfolio_id=request.portfolio_id,
             account_id=request.account_id,
             as_of_date=(request.as_of_date.isoformat() if request.as_of_date else None),
+            liquidity_amount=(
+                str(request.liquidity_amount) if request.liquidity_amount is not None else None
+            ),
+            liquidity_destination=request.liquidity_destination,
         )
         return success(
             result,
@@ -616,6 +623,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             data_quality=result["data_quality"],
         )
 
+    @app.post("/v1/lifecycle-observations")
+    def lifecycle_observation_create(
+        request: LifecycleObservationCreateRequest,
+    ) -> dict[str, Any]:
+        result = risk.record_lifecycle_observation(
+            instrument_code=request.instrument_code,
+            observation_type=request.observation_type,
+            observation_date=request.observation_date.isoformat(),
+            facts=request.facts,
+            source_type=request.source_type,
+            source_name=request.source_name,
+            source_ref=request.source_ref,
+            verification_status=request.verification_status,
+            observed_at=request.observed_at.isoformat(),
+            actor_ref=request.actor_ref,
+        )
+        quality = "PASS" if result["verification_status"] == "VERIFIED" else "WARNING"
+        return success(
+            result,
+            warnings=[] if quality == "PASS" else ["Lifecycle evidence is unverified"],
+            data_quality=quality,
+        )
+
+    @app.get("/v1/lifecycle-observations")
+    def lifecycle_observation_list(
+        instrument_code: str | None = None,
+        observation_type: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": risk.list_lifecycle_observations(
+                    instrument_code=instrument_code,
+                    observation_type=observation_type,
+                    limit=limit,
+                )
+            }
+        )
     @app.get("/v1/sell-proposals")
     def sell_proposal_list(
         portfolio_id: str,
@@ -660,6 +705,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 draft_id=draft_id,
                 confirmation_token=request.confirmation_token,
                 confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.get("/v1/sell-followups")
+    def sell_followup_list(
+        portfolio_id: str,
+        status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": risk.list_followups(
+                    portfolio_id=portfolio_id,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.post("/v1/sell-followups/{followup_id}/evaluate")
+    def sell_followup_evaluate(
+        followup_id: str,
+        request: SellFollowupEvaluateRequest,
+    ) -> dict[str, Any]:
+        return success(
+            risk.evaluate_followup(
+                followup_id=followup_id,
+                as_of_date=(request.as_of_date.isoformat() if request.as_of_date else None),
+                actor_ref=request.actor_ref,
             )
         )
 

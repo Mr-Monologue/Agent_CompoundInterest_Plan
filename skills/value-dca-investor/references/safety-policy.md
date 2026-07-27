@@ -33,6 +33,11 @@ Maintain these states separately:
 Only step 4 changes holdings. Always state `未成交` when the context reports
 `execution_status = NOT_EXECUTED`.
 
+Step 4 must link the separately confirmed SELL draft to the exact approved proposal. A proposal
+cannot be linked twice, a BUY cannot carry a sell proposal ID, and a recorded amount cannot exceed
+the approved deterministic amount. The resulting six-month follow-up is read-only evaluation
+evidence; it never authorizes a new trade or silently changes strategy parameters.
+
 ## Weekly plan lifecycle
 
 1. `DRAFT`: deterministic proposal only; no approval and no transaction.

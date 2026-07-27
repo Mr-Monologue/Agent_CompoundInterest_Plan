@@ -21,6 +21,14 @@ from investor_core.strategy import StrategyService
 VALUE_SCALE = 1_000_000
 CALCULATION_VERSION = "valuation-percentile-v1"
 RULE_VERSION = "risk-rules-v1"
+LIFECYCLE_OBSERVATION_TYPES = {
+    "RELATIVE_PERFORMANCE",
+    "REPLACEMENT_CANDIDATE",
+    "OBJECTIVE_STATUS",
+    "TOOL_QUALITY",
+    "REDEMPTION_TERMS",
+    "EXPOSURE_PROFILE",
+}
 
 
 def _utc_now() -> datetime:
@@ -243,6 +251,208 @@ class RiskService:
             "idempotent_replay": False,
         }
 
+    def record_lifecycle_observation(
+        self,
+        *,
+        instrument_code: str,
+        observation_type: str,
+        observation_date: str,
+        facts: JsonDict,
+        source_type: str,
+        source_name: str,
+        observed_at: str,
+        verification_status: str = "UNVERIFIED",
+        source_ref: str | None = None,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        normalized_type = observation_type.strip().upper()
+        normalized_source = source_type.strip().upper()
+        normalized_verification = verification_status.strip().upper()
+        if normalized_type not in LIFECYCLE_OBSERVATION_TYPES:
+            raise LedgerError("INVALID_OBSERVATION_TYPE", "unsupported lifecycle observation")
+        if normalized_source not in {
+            "OFFICIAL",
+            "PROFESSIONAL",
+            "AGGREGATOR",
+            "PLATFORM",
+            "USER",
+        }:
+            raise LedgerError("INVALID_SOURCE_TYPE", "unsupported lifecycle source")
+        if normalized_verification not in {"VERIFIED", "UNVERIFIED"}:
+            raise LedgerError("INVALID_VERIFICATION_STATUS", "unsupported verification status")
+        try:
+            normalized_date = date.fromisoformat(observation_date).isoformat()
+            normalized_observed_at = _iso(_parse_iso(observed_at))
+        except ValueError as exc:
+            raise LedgerError("INVALID_DATE", "invalid lifecycle evidence date") from exc
+        self._validate_lifecycle_facts(normalized_type, facts)
+        code = instrument_code.strip().upper()
+        payload = {
+            "instrument_code": code,
+            "observation_type": normalized_type,
+            "observation_date": normalized_date,
+            "facts": facts,
+            "source_type": normalized_source,
+            "source_name": source_name.strip(),
+            "source_ref": source_ref,
+            "verification_status": normalized_verification,
+            "observed_at": normalized_observed_at,
+        }
+        record_hash = _hash(payload)
+        with self._connect() as connection:
+            instrument = connection.execute(
+                "SELECT id FROM instruments WHERE code = ? AND status = 'ACTIVE'",
+                (code,),
+            ).fetchone()
+            if instrument is None:
+                raise LedgerError(
+                    "INSTRUMENT_NOT_FOUND",
+                    "active instrument was not found",
+                    http_status=404,
+                )
+            existing = connection.execute(
+                "SELECT id FROM instrument_lifecycle_observations WHERE record_hash = ?",
+                (record_hash,),
+            ).fetchone()
+            if existing is not None:
+                return {
+                    "id": str(existing["id"]),
+                    **payload,
+                    "record_hash": record_hash,
+                    "idempotent_replay": True,
+                }
+            observation_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO instrument_lifecycle_observations (
+                    id, instrument_id, observation_type, observation_date, facts_json,
+                    source_type, source_name, source_ref, verification_status,
+                    observed_at, record_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    observation_id,
+                    instrument["id"],
+                    normalized_type,
+                    normalized_date,
+                    _json(facts),
+                    normalized_source,
+                    source_name.strip(),
+                    source_ref,
+                    normalized_verification,
+                    normalized_observed_at,
+                    record_hash,
+                    _iso(self._now()),
+                ),
+            )
+            self._audit(
+                connection,
+                action="LIFECYCLE_OBSERVATION_RECORDED",
+                entity_type="instrument_lifecycle_observation",
+                entity_id=observation_id,
+                actor_ref=actor_ref,
+                details=payload,
+            )
+        return {
+            "id": observation_id,
+            **payload,
+            "record_hash": record_hash,
+            "idempotent_replay": False,
+        }
+
+    @staticmethod
+    def _validate_lifecycle_facts(observation_type: str, facts: JsonDict) -> None:
+        required = {
+            "RELATIVE_PERFORMANCE": ("relative_return_bps", "window_days"),
+            "REPLACEMENT_CANDIDATE": (
+                "candidate_code",
+                "score_delta_bps",
+                "consecutive_periods",
+            ),
+            "OBJECTIVE_STATUS": ("status",),
+            "TOOL_QUALITY": (),
+            "REDEMPTION_TERMS": ("fee_bps",),
+            "EXPOSURE_PROFILE": ("profile",),
+        }[observation_type]
+        missing = [key for key in required if key not in facts]
+        if missing:
+            raise LedgerError(
+                "INVALID_OBSERVATION_FACTS",
+                f"missing lifecycle facts: {', '.join(missing)}",
+            )
+        numeric_keys = {
+            "RELATIVE_PERFORMANCE": ("relative_return_bps", "window_days"),
+            "REPLACEMENT_CANDIDATE": ("score_delta_bps", "consecutive_periods"),
+            "OBJECTIVE_STATUS": (),
+            "TOOL_QUALITY": ("tracking_error_bps", "expense_ratio_bps"),
+            "REDEMPTION_TERMS": ("fee_bps",),
+            "EXPOSURE_PROFILE": (),
+        }[observation_type]
+        try:
+            for key in numeric_keys:
+                if key in facts:
+                    int(facts[key])
+        except (TypeError, ValueError) as exc:
+            raise LedgerError(
+                "INVALID_OBSERVATION_FACTS",
+                "lifecycle numeric facts must be integers",
+            ) from exc
+        if observation_type == "OBJECTIVE_STATUS" and str(facts["status"]).upper() not in {
+            "ACTIVE",
+            "ACHIEVED",
+            "FAILED",
+        }:
+            raise LedgerError("INVALID_OBSERVATION_FACTS", "unsupported objective status")
+        if observation_type == "TOOL_QUALITY" and not {
+            "tracking_error_bps",
+            "expense_ratio_bps",
+        }.intersection(facts):
+            raise LedgerError(
+                "INVALID_OBSERVATION_FACTS",
+                "tool quality requires tracking error or expense ratio",
+            )
+
+    def list_lifecycle_observations(
+        self,
+        *,
+        instrument_code: str | None = None,
+        observation_type: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = """
+            SELECT o.*, i.code AS instrument_code
+            FROM instrument_lifecycle_observations o
+            JOIN instruments i ON i.id = o.instrument_id
+            WHERE 1 = 1
+        """
+        params: list[object] = []
+        if instrument_code:
+            query += " AND i.code = ?"
+            params.append(instrument_code.strip().upper())
+        if observation_type:
+            query += " AND o.observation_type = ?"
+            params.append(observation_type.strip().upper())
+        query += " ORDER BY o.observation_date DESC, o.observed_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "instrument_code": str(row["instrument_code"]),
+                "observation_type": str(row["observation_type"]),
+                "observation_date": str(row["observation_date"]),
+                "facts": json.loads(str(row["facts_json"])),
+                "source_type": str(row["source_type"]),
+                "source_name": str(row["source_name"]),
+                "source_ref": row["source_ref"],
+                "verification_status": str(row["verification_status"]),
+                "observed_at": str(row["observed_at"]),
+                "record_hash": str(row["record_hash"]),
+            }
+            for row in rows
+        ]
+
     def valuation_snapshot(
         self,
         *,
@@ -417,6 +627,8 @@ class RiskService:
         portfolio_id: str,
         account_id: str,
         as_of_date: str | None = None,
+        liquidity_amount: str | None = None,
+        liquidity_destination: str | None = None,
     ) -> JsonDict:
         """Evaluate only explicitly configured deterministic rules."""
         valuation = self._market.portfolio_valuation(
@@ -454,6 +666,43 @@ class RiskService:
             account_id=account_id,
             as_of_date_value=as_of_date,
         )["allocation_assessment"]
+        liquidity_allocations: dict[str, int] = {}
+        if liquidity_amount is not None:
+            requested_minor = int(
+                (Decimal(liquidity_amount) * Decimal(100)).to_integral_value(
+                    rounding=ROUND_HALF_UP
+                )
+            )
+            if requested_minor <= 0 or not liquidity_destination:
+                raise LedgerError(
+                    "INVALID_LIQUIDITY_REQUEST",
+                    "liquidity amount must be positive and include a destination",
+                )
+            candidates = sorted(
+                valuation["positions"],
+                key=lambda item: int(
+                    configs.get(
+                        str(item["holding"]["instrument_code"]), {}
+                    ).get("lifecycle_rules", {}).get("liquidity_priority", 2_147_483_647)
+                ),
+            )
+            remaining = requested_minor
+            for item in candidates:
+                code = str(item["holding"]["instrument_code"])
+                config = configs.get(code)
+                if config is None or "liquidity_priority" not in config["lifecycle_rules"]:
+                    continue
+                available = int(
+                    (Decimal(str(item["market_value"])) * Decimal(100)).to_integral_value(
+                        rounding=ROUND_HALF_UP
+                    )
+                )
+                amount = min(remaining, available)
+                if amount > 0:
+                    liquidity_allocations[code] = amount
+                    remaining -= amount
+                if remaining == 0:
+                    break
         for position in valuation["positions"]:
             holding = position["holding"]
             code = str(holding["instrument_code"])
@@ -471,6 +720,169 @@ class RiskService:
                     {"thesis_status": thesis},
                 )
             )
+            return_bps = (
+                int(
+                    (Decimal(str(position["return_pct"])) * Decimal(100)).to_integral_value(
+                        rounding=ROUND_HALF_UP
+                    )
+                )
+                if position["return_pct"] is not None
+                else None
+            )
+            rules = config["lifecycle_rules"]
+            replacement = self._latest_lifecycle_observation(
+                str(config["instrument_id"]), "REPLACEMENT_CANDIDATE"
+            )
+            replacement_facts = replacement["facts"] if replacement else {}
+            replacement_hit = (
+                replacement is not None
+                and "replacement_min_score_delta_bps" in rules
+                and "replacement_min_consecutive_periods" in rules
+                and int(replacement_facts["score_delta_bps"])
+                >= int(rules["replacement_min_score_delta_bps"])
+                and int(replacement_facts["consecutive_periods"])
+                >= int(rules["replacement_min_consecutive_periods"])
+            )
+            evaluations.append(
+                (
+                    "SELL_04_REPLACE",
+                    replacement_hit,
+                    "HIGH",
+                    "HIT" if replacement_hit else "NOT_HIT",
+                    {
+                        "configured_rules": {
+                            key: rules.get(key)
+                            for key in (
+                                "replacement_min_score_delta_bps",
+                                "replacement_min_consecutive_periods",
+                            )
+                        },
+                        "observation": replacement,
+                    },
+                )
+            )
+            relative = self._latest_lifecycle_observation(
+                str(config["instrument_id"]), "RELATIVE_PERFORMANCE"
+            )
+            relative_facts = relative["facts"] if relative else {}
+            underperformance_hit = (
+                relative is not None
+                and "underperformance_threshold_bps" in rules
+                and "underperformance_min_days" in rules
+                and int(relative_facts["relative_return_bps"])
+                <= int(rules["underperformance_threshold_bps"])
+                and int(relative_facts["window_days"])
+                >= int(rules["underperformance_min_days"])
+            )
+            evaluations.append(
+                (
+                    "SELL_05_UNDERPERFORMANCE",
+                    underperformance_hit,
+                    "HIGH",
+                    "HIT" if underperformance_hit else "NOT_HIT",
+                    {
+                        "configured_rules": {
+                            key: rules.get(key)
+                            for key in (
+                                "underperformance_threshold_bps",
+                                "underperformance_min_days",
+                            )
+                        },
+                        "observation": relative,
+                    },
+                )
+            )
+            holding_days = (
+                date.fromisoformat(valuation["as_of_date"])
+                - date.fromisoformat(str(holding["as_of"]))
+            ).days
+            take_profit_hit = (
+                return_bps is not None
+                and "take_profit_return_bps" in rules
+                and "take_profit_min_holding_days" in rules
+                and return_bps >= int(rules["take_profit_return_bps"])
+                and holding_days >= int(rules["take_profit_min_holding_days"])
+            )
+            evaluations.append(
+                (
+                    "SELL_06_TAKE_PROFIT",
+                    take_profit_hit,
+                    "WARNING",
+                    "HIT" if take_profit_hit else "NOT_HIT",
+                    {
+                        "configured_return_bps": rules.get("take_profit_return_bps"),
+                        "configured_min_holding_days": rules.get(
+                            "take_profit_min_holding_days"
+                        ),
+                        "configured_fraction_bps": rules.get("take_profit_fraction_bps"),
+                        "actual_return_bps": return_bps,
+                        "holding_days": holding_days,
+                    },
+                )
+            )
+            objective = self._latest_lifecycle_observation(
+                str(config["instrument_id"]), "OBJECTIVE_STATUS"
+            )
+            objective_hit = (
+                objective is not None
+                and str(objective["facts"]["status"]).upper() == "ACHIEVED"
+                and "objective_sell_fraction_bps" in rules
+            )
+            evaluations.append(
+                (
+                    "SELL_07_OBJECTIVE_COMPLETE",
+                    objective_hit,
+                    "WARNING",
+                    "HIT" if objective_hit else "NOT_HIT",
+                    {
+                        "configured_fraction_bps": rules.get(
+                            "objective_sell_fraction_bps"
+                        ),
+                        "observation": objective,
+                    },
+                )
+            )
+            tool_quality = self._latest_lifecycle_observation(
+                str(config["instrument_id"]), "TOOL_QUALITY"
+            )
+            tool_facts = tool_quality["facts"] if tool_quality else {}
+            tool_quality_hit = tool_quality is not None and (
+                (
+                    "max_tracking_error_bps" in rules
+                    and "tracking_error_bps" in tool_facts
+                    and int(tool_facts["tracking_error_bps"])
+                    > int(rules["max_tracking_error_bps"])
+                )
+                or (
+                    "max_expense_ratio_bps" in rules
+                    and "expense_ratio_bps" in tool_facts
+                    and int(tool_facts["expense_ratio_bps"])
+                    > int(rules["max_expense_ratio_bps"])
+                )
+            )
+            evaluations.append(
+                (
+                    "CORE_TOOL_QUALITY",
+                    tool_quality_hit,
+                    "HIGH",
+                    "HIT" if tool_quality_hit else "NOT_HIT",
+                    {"configured_rules": rules, "observation": tool_quality},
+                )
+            )
+            liquidity_minor = liquidity_allocations.get(code)
+            evaluations.append(
+                (
+                    "SELL_08_LIQUIDITY",
+                    liquidity_minor is not None,
+                    "WARNING",
+                    "HIT" if liquidity_minor is not None else "NOT_HIT",
+                    {
+                        "requested_amount_minor": liquidity_minor,
+                        "fund_destination": liquidity_destination,
+                        "liquidity_priority": rules.get("liquidity_priority"),
+                    },
+                )
+            )
             evaluations.append(
                 (
                     "SELL_02_THESIS_INVALID",
@@ -481,15 +893,6 @@ class RiskService:
                 )
             )
             hard_stop = config["hard_stop_return_bps"]
-            return_bps = (
-                int(
-                    (Decimal(str(position["return_pct"])) * Decimal(100)).to_integral_value(
-                        rounding=ROUND_HALF_UP
-                    )
-                )
-                if position["return_pct"] is not None
-                else None
-            )
             evaluations.append(
                 (
                     "SELL_01_HARD_STOP",
@@ -563,7 +966,9 @@ class RiskService:
                     },
                 )
                 hits.append(hit)
-                if triggered and rule_code.startswith("SELL_"):
+                if triggered and (
+                    rule_code.startswith("SELL_") or rule_code == "CORE_TOOL_QUALITY"
+                ):
                     proposals.append(
                         self._proposal_for_hit(
                             portfolio_id=portfolio_id,
@@ -582,6 +987,33 @@ class RiskService:
             "sell_proposals": proposals,
             "data_quality": valuation["data_quality"],
             "execution_status": "NOT_EXECUTED",
+        }
+
+    def _latest_lifecycle_observation(
+        self, instrument_id: str, observation_type: str
+    ) -> JsonDict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM instrument_lifecycle_observations
+                WHERE instrument_id = ? AND observation_type = ?
+                  AND verification_status = 'VERIFIED'
+                ORDER BY observation_date DESC, observed_at DESC LIMIT 1
+                """,
+                (instrument_id, observation_type),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": str(row["id"]),
+            "observation_date": str(row["observation_date"]),
+            "facts": json.loads(str(row["facts_json"])),
+            "source_type": str(row["source_type"]),
+            "source_name": str(row["source_name"]),
+            "source_ref": row["source_ref"],
+            "verification_status": str(row["verification_status"]),
+            "observed_at": str(row["observed_at"]),
+            "record_hash": str(row["record_hash"]),
         }
 
     def _record_hit(
@@ -662,7 +1094,63 @@ class RiskService:
         hit: JsonDict,
     ) -> JsonDict:
         trigger = str(hit["rule_code"])
-        action = "FULL_SELL" if trigger == "SELL_02_THESIS_INVALID" else "MANUAL_REVIEW"
+        rules = config["lifecycle_rules"]
+        fraction_bps: int | None = None
+        target_weight_bps: int | None = None
+        recommended_amount_minor: int | None = None
+        action = "MANUAL_REVIEW"
+        if trigger in {"SELL_02_THESIS_INVALID", "SELL_04_REPLACE"}:
+            action, fraction_bps = "FULL_SELL", 10000
+        elif trigger == "SELL_03_REBALANCE":
+            action = "REDUCE_TO_WEIGHT"
+            target_weight_bps = config["maximum_position_weight_bps"]
+        elif trigger == "SELL_06_TAKE_PROFIT":
+            action = "PARTIAL_SELL"
+            fraction_bps = int(rules["take_profit_fraction_bps"])
+        elif trigger == "SELL_07_OBJECTIVE_COMPLETE":
+            fraction_bps = int(rules["objective_sell_fraction_bps"])
+            action = "FULL_SELL" if fraction_bps == 10000 else "PARTIAL_SELL"
+        elif trigger == "SELL_08_LIQUIDITY":
+            action = "PARTIAL_SELL"
+            recommended_amount_minor = int(
+                hit["inputs"]["requested_amount_minor"]
+            )
+            market_minor = int(
+                (Decimal(str(position["market_value"])) * Decimal(100)).to_integral_value(
+                    rounding=ROUND_HALF_UP
+                )
+            )
+            fraction_bps = min(
+                10000,
+                int(
+                    (
+                        Decimal(recommended_amount_minor)
+                        / Decimal(market_minor)
+                        * Decimal(10000)
+                    ).to_integral_value(rounding=ROUND_HALF_UP)
+                ),
+            )
+        if recommended_amount_minor is None and fraction_bps is not None:
+            market_minor = int(
+                (Decimal(str(position["market_value"])) * Decimal(100)).to_integral_value(
+                    rounding=ROUND_HALF_UP
+                )
+            )
+            recommended_amount_minor = max(
+                1,
+                int(
+                    (
+                        Decimal(market_minor)
+                        * Decimal(fraction_bps)
+                        / Decimal(10000)
+                    ).to_integral_value(rounding=ROUND_HALF_UP)
+                ),
+            )
+        engine = "REALIZATION" if trigger in {
+            "SELL_06_TAKE_PROFIT",
+            "SELL_07_OBJECTIVE_COMPLETE",
+            "SELL_08_LIQUIDITY",
+        } else "RISK"
         facts = {
             "instrument_code": config["instrument_code"],
             "instrument_name": config["instrument_name"],
@@ -672,6 +1160,9 @@ class RiskService:
             "proxy_suitability": config["proxy_suitability"],
             "automatic_selling_allowed": False,
             "execution_status": "NOT_EXECUTED",
+            "fund_destination": (
+                hit["inputs"].get("fund_destination") or config["fund_destination"]
+            ),
         }
         with self._connect() as connection:
             existing = connection.execute(
@@ -697,9 +1188,10 @@ class RiskService:
                 INSERT INTO sell_proposals (
                     id, portfolio_id, instrument_id, strategy_version_id,
                     rule_hit_id, trigger_code, engine, recommended_action,
-                    recommended_fraction_bps, target_weight_bps, status,
+                    recommended_fraction_bps, target_weight_bps,
+                    recommended_amount_minor, status,
                     trigger_facts_json, trigger_input_hash, proposed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'RISK', ?, ?, ?, 'REVIEW_REQUIRED',
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'REVIEW_REQUIRED',
                           ?, ?, ?)
                 """,
                 (
@@ -711,9 +1203,11 @@ class RiskService:
                     else self._strategy_version_id(connection, assignment["id"]),
                     hit["id"],
                     trigger,
+                    engine,
                     action,
-                    10000 if action == "FULL_SELL" else None,
-                    config["target_weight_bps"] if trigger == "SELL_03_REBALANCE" else None,
+                    fraction_bps,
+                    target_weight_bps,
+                    recommended_amount_minor,
                     _json(facts),
                     hit["input_hash"],
                     _iso(self._now()),
@@ -723,7 +1217,52 @@ class RiskService:
                 "market_value": position["market_value"],
                 "weight_pct": position["weight_pct"],
                 "role": config["role"],
+                "exposure_profile": config["exposure_profile"],
             }
+            policy = config["redemption_policy"]
+            holding_days_value = hit["inputs"].get("holding_days")
+            if holding_days_value is None:
+                holding_days_value = (
+                    date.fromisoformat(str(position["nav_snapshot"]["nav_date"]))
+                    - date.fromisoformat(str(position["holding"]["as_of"]))
+                ).days
+            holding_days = int(holding_days_value)
+            fee_bps = int(policy.get("fee_bps", 0))
+            if holding_days >= int(policy.get("fee_waiver_holding_days", 10**9)):
+                fee_bps = 0
+            elif "short_term_penalty_bps" in policy:
+                fee_bps += int(policy["short_term_penalty_bps"])
+            estimated_fee_minor = (
+                int(
+                    (
+                        Decimal(recommended_amount_minor)
+                        * Decimal(fee_bps)
+                        / Decimal(10000)
+                    ).to_integral_value(rounding=ROUND_HALF_UP)
+                )
+                if recommended_amount_minor is not None
+                else None
+            )
+            destination = facts["fund_destination"]
+            after = {
+                "status": (
+                    "DETERMINISTIC_PREVIEW"
+                    if recommended_amount_minor is not None
+                    else "REQUIRES_EXECUTION_AMOUNT"
+                ),
+                "estimated_sale_amount_minor": recommended_amount_minor,
+                "estimated_fee_minor": estimated_fee_minor,
+                "fund_destination": destination,
+                "instrument_exposure_after_bps": (
+                    max(0, 10000 - fraction_bps) if fraction_bps is not None else None
+                ),
+                "automatic_trade": False,
+            }
+            diagnostic_result = (
+                "PASS"
+                if recommended_amount_minor is not None and destination and policy
+                else "WARNING"
+            )
             connection.execute(
                 """
                 INSERT INTO sell_diagnostics (
@@ -738,20 +1277,17 @@ class RiskService:
                     _json(
                         {
                             "rule_evidence_present": True,
-                            "fees_estimated": False,
-                            "fund_destination_configured": False,
+                            "fees_estimated": estimated_fee_minor is not None,
+                            "redemption_policy": policy,
+                            "estimated_fee_bps": fee_bps,
+                            "fund_destination_configured": bool(destination),
                             "automatic_trade": False,
                         }
                     ),
                     _json(before),
-                    _json(
-                        {
-                            "status": "NOT_CALCULATED",
-                            "reason_code": "EXECUTION_AMOUNT_NOT_APPROVED",
-                        }
-                    ),
+                    _json(after),
                     _json({"review_after_months": 6}),
-                    "WARNING",
+                    diagnostic_result,
                     _iso(self._now()),
                 ),
             )
@@ -832,6 +1368,19 @@ class RiskService:
             "SELECT * FROM sell_diagnostics WHERE sell_proposal_id = ?",
             (row["id"],),
         ).fetchone()
+        execution = connection.execute(
+            """
+            SELECT l.*, t.trade_date, t.amount_minor, t.nav_micros, t.shares_micros
+            FROM sell_execution_links l
+            JOIN transactions t ON t.id = l.transaction_id
+            WHERE l.sell_proposal_id = ?
+            """,
+            (row["id"],),
+        ).fetchone()
+        followup = connection.execute(
+            "SELECT * FROM sell_followups WHERE sell_proposal_id = ?",
+            (row["id"],),
+        ).fetchone()
         return {
             "id": str(row["id"]),
             "portfolio_id": str(row["portfolio_id"]),
@@ -842,6 +1391,11 @@ class RiskService:
             "recommended_action": str(row["recommended_action"]),
             "recommended_fraction_bps": row["recommended_fraction_bps"],
             "target_weight_bps": row["target_weight_bps"],
+            "recommended_amount": (
+                f"{Decimal(int(row['recommended_amount_minor'])) / 100:.2f}"
+                if row["recommended_amount_minor"] is not None
+                else None
+            ),
             "status": str(row["status"]),
             "trigger_facts": json.loads(str(row["trigger_facts_json"])),
             "trigger_input_hash": str(row["trigger_input_hash"]),
@@ -858,9 +1412,155 @@ class RiskService:
                 if diagnostic is not None
                 else None
             ),
-            "execution_status": "NOT_EXECUTED",
-            "holdings_changed": False,
+            "execution_status": "EXECUTED" if execution is not None else "NOT_EXECUTED",
+            "execution_link": (
+                {
+                    "id": str(execution["id"]),
+                    "transaction_id": str(execution["transaction_id"]),
+                    "trade_date": str(execution["trade_date"]),
+                    "amount": f"{Decimal(int(execution['amount_minor'])) / 100:.2f}",
+                    "nav": f"{Decimal(int(execution['nav_micros'])) / VALUE_SCALE:.6f}",
+                    "shares": f"{Decimal(int(execution['shares_micros'])) / VALUE_SCALE:.6f}",
+                    "linked_at": str(execution["linked_at"]),
+                    "linked_by": str(execution["linked_by"]),
+                }
+                if execution is not None
+                else None
+            ),
+            "followup": RiskService._followup_data(followup) if followup else None,
+            "holdings_changed": execution is not None,
         }
+
+    @staticmethod
+    def _followup_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "sell_proposal_id": str(row["sell_proposal_id"]),
+            "transaction_id": str(row["transaction_id"]),
+            "sold_at": str(row["sold_at"]),
+            "due_at": str(row["due_at"]),
+            "status": str(row["status"]),
+            "expected_metric": json.loads(str(row["expected_metric_json"])),
+            "result": (
+                json.loads(str(row["result_json"])) if row["result_json"] is not None else None
+            ),
+            "evaluated_at": row["evaluated_at"],
+        }
+
+    def list_followups(
+        self,
+        *,
+        portfolio_id: str,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = """
+            SELECT f.*
+            FROM sell_followups f
+            JOIN sell_proposals p ON p.id = f.sell_proposal_id
+            WHERE p.portfolio_id = ?
+        """
+        params: list[object] = [portfolio_id]
+        if status:
+            query += " AND f.status = ?"
+            params.append(status.strip().upper())
+        query += " ORDER BY f.due_at, f.created_at LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._followup_data(row) for row in rows]
+
+    def evaluate_followup(
+        self,
+        *,
+        followup_id: str,
+        as_of_date: str | None = None,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        end = date.fromisoformat(as_of_date) if as_of_date else self._now().date()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM sell_followups WHERE id = ?",
+                (followup_id,),
+            ).fetchone()
+            if row is None:
+                raise LedgerError(
+                    "SELL_FOLLOWUP_NOT_FOUND",
+                    "sell follow-up was not found",
+                    http_status=404,
+                )
+            if end < date.fromisoformat(str(row["due_at"])):
+                return {
+                    **self._followup_data(row),
+                    "reason_code": "FOLLOWUP_NOT_DUE",
+                }
+            expected = json.loads(str(row["expected_metric_json"]))
+            nav = connection.execute(
+                """
+                SELECT nav_micros, nav_date, source_type, source_name,
+                       verification_status, record_hash
+                FROM market_nav_snapshots
+                WHERE instrument_id = ? AND nav_date <= ?
+                ORDER BY nav_date DESC, observed_at DESC LIMIT 1
+                """,
+                (row["instrument_id"], end.isoformat()),
+            ).fetchone()
+            timestamp = _iso(self._now())
+            if nav is None:
+                result: JsonDict = {
+                    "reason_code": "NAV_MISSING",
+                    "as_of_date": end.isoformat(),
+                    "data_quality": "SOURCE_ERROR",
+                }
+                status = "DATA_BLOCKED"
+            else:
+                execution_nav = Decimal(str(expected["execution_nav"]))
+                current_nav = Decimal(int(nav["nav_micros"])) / VALUE_SCALE
+                return_bps = int(
+                    (
+                        (current_nav / execution_nav - Decimal(1)) * Decimal(10000)
+                    ).to_integral_value(rounding=ROUND_HALF_UP)
+                )
+                result = {
+                    "reason_code": "FOLLOWUP_EVALUATED",
+                    "as_of_date": str(nav["nav_date"]),
+                    "execution_nav": f"{execution_nav:.6f}",
+                    "current_nav": f"{current_nav:.6f}",
+                    "post_sell_return_bps": return_bps,
+                    "assessment": (
+                        "SELL_AVOIDED_DECLINE" if return_bps < 0 else "ASSET_ROSE_AFTER_SELL"
+                    ),
+                    "source": {
+                        "type": str(nav["source_type"]),
+                        "name": str(nav["source_name"]),
+                        "verification_status": str(nav["verification_status"]),
+                        "record_hash": str(nav["record_hash"]),
+                    },
+                    "strategy_parameters_changed": False,
+                }
+                status = "COMPLETED"
+            connection.execute(
+                """
+                UPDATE sell_followups
+                SET status = ?, result_json = ?, evaluated_at = ?
+                WHERE id = ?
+                """,
+                (status, _json(result), timestamp, followup_id),
+            )
+            self._audit(
+                connection,
+                action="SELL_FOLLOWUP_EVALUATED",
+                entity_type="sell_followup",
+                entity_id=followup_id,
+                actor_ref=actor_ref,
+                details=result,
+            )
+            updated = connection.execute(
+                "SELECT * FROM sell_followups WHERE id = ?",
+                (followup_id,),
+            ).fetchone()
+            assert updated is not None
+            return self._followup_data(updated)
 
     def create_decision_draft(
         self,
