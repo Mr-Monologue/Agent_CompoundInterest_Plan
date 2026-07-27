@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "name": "daily-market-sync",
+  "schedule": "35 16 * * 1-5",
+  "timezone": "Asia/Shanghai",
+  "no_agent": true,
+  "script": "uv --directory C:\\investor\\value-dca-agent run investor operations run DAILY_MARKET_SYNC --scheduled-for ${BUSINESS_DATE}",
+  "note": "Enable only after committing an enabled DAILY_MARKET_SYNC policy and validating the pinned Hermes Cron schema."
+}

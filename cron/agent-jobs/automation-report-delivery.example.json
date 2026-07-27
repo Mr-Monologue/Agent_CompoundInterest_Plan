@@ -1,0 +1,10 @@
+{
+  "enabled": false,
+  "name": "automation-report-delivery",
+  "schedule": "every 10m",
+  "timezone": "Asia/Shanghai",
+  "skills": ["value-dca-investor"],
+  "prompt": "Read the newest committed automation report bundle through read-only Investor MCP tools. If delivery_action is SILENT or no new NOTIFY bundle exists, return exactly [SILENT]. Otherwise explain only the bundle facts, data date, quality, reason code and one permitted user action. Never call a write tool and never claim delivery has already succeeded.",
+  "delivery": "origin",
+  "note": "Enable only after the target Hermes Cron schema and delivery channel are verified."
+}

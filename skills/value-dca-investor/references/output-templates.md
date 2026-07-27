@@ -44,3 +44,5 @@
 
 Return `[SILENT]` when the job contract says to remain silent and no qualifying change exists.
 Otherwise provide conclusion, changed facts, warnings, and the one next action the user may take.
+Treat `delivery_action` literally. A `NOTIFY` bundle is pending content, not proof that Weixin or
+another channel received it. Never call a write tool from the scheduled report turn.
