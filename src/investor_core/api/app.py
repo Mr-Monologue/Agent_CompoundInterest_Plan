@@ -9,6 +9,8 @@ from fastapi.responses import JSONResponse
 
 from investor_core.api.schemas import (
     AccountCreateRequest,
+    AutomationJobRunRequest,
+    AutomationPolicyDraftCreateRequest,
     InstrumentCreateRequest,
     InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
@@ -38,6 +40,7 @@ from investor_core.ledger import LedgerError, LedgerService
 from investor_core.logging_config import build_uvicorn_log_config
 from investor_core.market_data import MarketDataService
 from investor_core.market_sync import MarketSyncService
+from investor_core.operations import OperationsService
 from investor_core.planning import PlanningService
 from investor_core.risk import RiskService
 from investor_core.strategy import StrategyService
@@ -66,6 +69,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     strategies = StrategyService(runtime_settings)
     planning = PlanningService(runtime_settings)
     risk = RiskService(runtime_settings)
+    operations = OperationsService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -100,6 +104,120 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if report.status == "FAIL":
             raise HTTPException(status_code=503, detail=report.model_dump(mode="json"))
         return report.model_dump(mode="json")
+
+    @app.post("/v1/automation-policy-drafts")
+    def automation_policy_draft_create(
+        request: AutomationPolicyDraftCreateRequest,
+    ) -> dict[str, Any]:
+        return success(operations.create_policy_draft(**request.model_dump()))
+
+    @app.get("/v1/automation-policy-drafts/{draft_id}")
+    def automation_policy_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(operations.get_policy_draft(draft_id=draft_id))
+
+    @app.post("/v1/automation-policy-drafts/{draft_id}/commit")
+    def automation_policy_draft_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            operations.commit_policy_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.get("/v1/automation-policies")
+    def automation_policy_list(
+        portfolio_id: str | None = None,
+        active_only: bool = True,
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": operations.list_policies(
+                    portfolio_id=portfolio_id,
+                    active_only=active_only,
+                )
+            }
+        )
+
+    @app.post("/v1/automation-runs")
+    def automation_run(request: AutomationJobRunRequest) -> dict[str, Any]:
+        result = operations.run_job(**request.model_dump())
+        quality = (
+            "SOURCE_ERROR"
+            if result["job_run"]["status"] == "FAILED"
+            else ("WARNING" if result["job_run"]["status"] == "DEGRADED" else "PASS")
+        )
+        return success(
+            result,
+            warnings=(
+                ["Automation run failed or produced degraded facts"] if quality != "PASS" else []
+            ),
+            data_quality=quality,
+        )
+
+    @app.get("/v1/automation-runs")
+    def automation_run_list(
+        job_name: str | None = None,
+        status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": operations.list_runs(
+                    job_name=job_name,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/automation-status")
+    def automation_status() -> dict[str, Any]:
+        return success(operations.status_summary())
+
+    @app.get("/v1/report-bundles")
+    def report_bundle_list(
+        portfolio_id: str | None = None,
+        bundle_type: str | None = None,
+        delivery_action: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": operations.list_report_bundles(
+                    portfolio_id=portfolio_id,
+                    bundle_type=bundle_type,
+                    delivery_action=delivery_action,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/alerts")
+    def alert_list(
+        portfolio_id: str | None = None,
+        status: str | None = "OPEN",
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": operations.list_alerts(
+                    portfolio_id=portfolio_id,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/notification-outbox")
+    def notification_outbox_list(
+        status: str | None = "PENDING",
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success({"items": operations.list_outbox(status=status, limit=limit)})
 
     @app.post("/v1/portfolios")
     def portfolio_create(request: PortfolioCreateRequest) -> dict[str, Any]:
@@ -661,6 +779,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             }
         )
+
     @app.get("/v1/sell-proposals")
     def sell_proposal_list(
         portfolio_id: str,
