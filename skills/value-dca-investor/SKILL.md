@@ -142,12 +142,30 @@ reviews. Follow-up results describe post-sale evidence and never alter strategy 
 
 Use `automation_policy_list`, `automation_run_list`, `automation_report_bundle_list`, and
 `automation_alert_list` to inspect unattended operations. Never claim a job is scheduled merely
-because a Cron example exists; require an active Core policy with `enabled=true`. Creating or
+because a Cron example exists; require an active Core policy with `enabled=true` and a current
+Hermes scheduler snapshot whose reconciliation status is `IN_SYNC`. Creating or
 pausing an automation policy requires `automation_policy_draft_create` followed by explicit
 confirmation through `automation_policy_draft_commit`. Never infer a contribution amount,
 delivery target, schedule, or enabled state. `WEEKLY_PLAN_PREPARE` requires a user-approved fixed
 contribution amount in that local policy and may create only a `DRAFT`; it cannot freeze a plan or
 create a transaction.
+
+When the user asks to install, repair, reconcile, or verify automation scheduling, call
+`automation_scheduler_manifest_get` first. Reconcile only jobs whose names begin with the returned
+managed prefix, using the Hermes Cron tool and the manifest's exact name, five-field schedule,
+script filename, `no_agent` flag, and delivery target. Never edit or delete an unmanaged Cron job.
+Stop on duplicate managed names instead of guessing. The manifest is generic and policy-derived:
+never insert a fund code, account ID, portfolio ID, contribution amount, or channel destination
+that is absent from it. Confirm the active Hermes profile timezone matches `expected_timezone`;
+timezone conflict or a stopped Gateway blocks an `IN_SYNC` conclusion. After reading the final
+Cron state, call `automation_scheduler_snapshot_record` with the sanitized managed-job fields and
+the observed Gateway state. This records evidence only; it does not install a job or prove that a
+future delivery succeeded.
+
+Hermes no-agent scripts run through the installed profile's `scripts` directory. Empty stdout is
+intentional silence. A non-zero script exit is an operational failure and must remain visible in
+Hermes Cron history. Never substitute `${BUSINESS_DATE}` or another shell placeholder: Core
+derives the business date from the approved policy timezone and preserves idempotency itself.
 
 Scheduled Agent reports are read-only. Read the committed report bundle, preserve its dates,
 quality, reason code and facts, and return exactly `[SILENT]` when `delivery_action=SILENT`.
@@ -173,6 +191,9 @@ transaction, alter strategy configuration, or replay a user mutation after resta
   Core supplied only holdings, roles, market values, or returns.
 - Never let a scheduled Agent call a mutation tool; deterministic writes belong only to the
   pre-approved Core job and every run must have a stable idempotency key.
+- Never mark an outbox record as delivered from script stdout, a pending bundle, or a successful
+  Core run. Delivery requires separate Hermes channel evidence; until then describe it as pending
+  or handed to the scheduler.
 
 Read [safety-policy.md](references/safety-policy.md) before any mutation, sell, rebalance, or transition request.
 

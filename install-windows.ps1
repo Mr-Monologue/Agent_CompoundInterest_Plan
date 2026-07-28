@@ -320,6 +320,11 @@ try {
         New-Item -ItemType Directory -Force $SkillTarget | Out-Null
         Copy-Item (Join-Path $SkillSource "*") $SkillTarget -Recurse -Force
 
+        $HermesScriptSource = Join-Path $ProjectRoot "runtime\hermes"
+        $HermesScriptTarget = Join-Path $ProfilePath "scripts"
+        New-Item -ItemType Directory -Force $HermesScriptTarget | Out-Null
+        Copy-Item (Join-Path $HermesScriptSource "*.py") $HermesScriptTarget -Force
+
         $SoulTarget = Join-Path $ProfilePath "SOUL.md"
         if ($CreatedProfile -or -not (Test-Path $SoulTarget)) {
             Copy-Item (Join-Path $ProjectRoot "SOUL.md") $SoulTarget
@@ -385,7 +390,11 @@ try {
         Write-Host "Updater task: $UpdateTaskName (stable GitHub releases, daily at 04:00)"
     }
     Write-Host "Core readiness: $CoreUrl/ready"
-    Write-Host "Cron, Weixin and broker connections remain disabled."
+    Write-Host (
+        "Hermes Cron bridge scripts installed. Approved policies still require " +
+        "scheduler reconciliation through the investor Agent."
+    )
+    Write-Host "Broker connections and automatic trading remain disabled."
 }
 catch {
     if ($null -ne $DatabaseBackup -and (Test-Path $DatabaseBackup)) {

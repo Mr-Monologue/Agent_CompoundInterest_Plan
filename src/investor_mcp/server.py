@@ -243,6 +243,37 @@ async def automation_status_get() -> dict[str, Any]:
 
 
 @mcp.tool()
+async def automation_scheduler_manifest_get(
+    profile: str = "investor",
+) -> dict[str, Any]:
+    """Get the exact managed Hermes Cron jobs required by approved Core policies."""
+    return await core_request(
+        "GET",
+        "/v1/automation-scheduler-manifest",
+        params={"profile": profile},
+    )
+
+
+@mcp.tool()
+async def automation_scheduler_snapshot_record(
+    profile: str,
+    gateway_status: Literal["RUNNING", "STOPPED", "UNKNOWN"],
+    jobs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Record observed Hermes Cron state after reconciliation; this never edits Cron itself."""
+    return await core_request(
+        "POST",
+        "/v1/automation-scheduler-snapshots",
+        payload={
+            "profile": profile,
+            "gateway_status": gateway_status,
+            "jobs": jobs,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
 async def automation_run_list(
     job_name: str = "",
     status: str = "",

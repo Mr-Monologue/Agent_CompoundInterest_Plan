@@ -4,6 +4,6 @@
   "schedule": "30 9 * * 6",
   "timezone": "Asia/Shanghai",
   "no_agent": true,
-  "script": "uv --directory C:\\investor\\value-dca-agent run investor operations run WEEKLY_PLAN_PREPARE --scheduled-for ${BUSINESS_DATE}",
+  "script": "value_dca_weekly_plan_prepare.py",
   "note": "Requires an explicitly confirmed policy contribution amount. Creates only a DRAFT plan."
 }
