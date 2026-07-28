@@ -4,6 +4,6 @@
   "schedule": "50 22 * * 1-5",
   "timezone": "Asia/Shanghai",
   "no_agent": true,
-  "script": "uv --directory C:\\investor\\value-dca-agent run investor operations run DAILY_RISK_SCAN --scheduled-for ${BUSINESS_DATE}",
+  "script": "value_dca_daily_risk_scan.py",
   "note": "Enable only after committing an enabled DAILY_RISK_SCAN policy. It may create review proposals but never trades."
 }

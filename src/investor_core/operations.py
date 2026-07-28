@@ -29,6 +29,8 @@ SUPPORTED_JOBS = {
     "SYSTEM_DOCTOR",
 }
 PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
+MANAGED_JOB_PREFIX = "value-dca-"
+RETRY_JOB_NAME = f"{MANAGED_JOB_PREFIX}retry-due"
 
 
 def _iso(value: datetime) -> str:
@@ -184,6 +186,17 @@ class OperationsService:
             normalized["contribution_amount"] = f"{amount:.2f}"
         return normalized
 
+    @staticmethod
+    def _validate_cron_schedule(schedule: str) -> str:
+        normalized = " ".join(schedule.strip().split())
+        if len(normalized.split(" ")) != 5:
+            raise LedgerError(
+                "AUTOMATION_SCHEDULE_UNSUPPORTED",
+                "Hermes scheduler policies require a five-field cron expression",
+                details={"schedule": schedule},
+            )
+        return normalized
+
     def create_policy_draft(
         self,
         *,
@@ -203,7 +216,7 @@ class OperationsService:
             normalized_portfolio = str(context["portfolio"]["id"])
         if job == "SYSTEM_DOCTOR":
             normalized_portfolio = None
-        normalized_schedule = schedule.strip()
+        normalized_schedule = self._validate_cron_schedule(schedule)
         if not normalized_schedule or len(normalized_schedule) > 120:
             raise LedgerError(
                 "AUTOMATION_SCHEDULE_INVALID",
@@ -483,6 +496,213 @@ class OperationsService:
             rows = connection.execute(query, params).fetchall()
         return [self._policy_data(row) for row in rows]
 
+    @staticmethod
+    def _managed_job_name(job_name: str) -> str:
+        return f"{MANAGED_JOB_PREFIX}{job_name.lower().replace('_', '-')}"
+
+    def scheduler_manifest(self, *, profile: str = "investor") -> JsonDict:
+        """Return the desired Hermes jobs without installing or mutating the scheduler."""
+        normalized_profile = profile.strip()
+        if not normalized_profile or len(normalized_profile) > 80:
+            raise LedgerError(
+                "AUTOMATION_PROFILE_INVALID",
+                "Hermes profile must be between 1 and 80 characters",
+            )
+        desired_jobs: list[JsonDict] = []
+        timezones: set[str] = set()
+        for policy in self.list_policies(active_only=True):
+            if not bool(policy["enabled"]):
+                continue
+            job_name = str(policy["job_name"])
+            timezone = str(policy["timezone"])
+            config = dict(policy["config"])
+            timezones.add(timezone)
+            desired_jobs.append(
+                {
+                    "managed_name": self._managed_job_name(job_name),
+                    "job_name": job_name,
+                    "schedule": self._validate_cron_schedule(str(policy["schedule"])),
+                    "timezone": timezone,
+                    "script": f"value_dca_{job_name.lower()}.py",
+                    "no_agent": True,
+                    "delivery_target": str(config["delivery_target"]),
+                    "policy_id": str(policy["id"]),
+                    "policy_version": int(policy["version"]),
+                    "policy_content_hash": str(policy["content_hash"]),
+                }
+            )
+        retry_timezone = next(iter(timezones), self.settings.timezone)
+        if desired_jobs:
+            desired_jobs.append(
+                {
+                    "managed_name": RETRY_JOB_NAME,
+                    "job_name": "AUTOMATION_RETRY_DUE",
+                    "schedule": "*/5 * * * *",
+                    "timezone": retry_timezone,
+                    "script": "value_dca_retry_due.py",
+                    "no_agent": True,
+                    "delivery_target": "origin",
+                    "policy_id": None,
+                    "policy_version": None,
+                    "policy_content_hash": None,
+                }
+            )
+        timezone_status = "PASS" if len(timezones) <= 1 else "CONFLICT"
+        return {
+            "profile": normalized_profile,
+            "managed_prefix": MANAGED_JOB_PREFIX,
+            "timezone_status": timezone_status,
+            "expected_timezone": retry_timezone,
+            "jobs": sorted(desired_jobs, key=lambda item: str(item["managed_name"])),
+            "automatic_trade": False,
+            "reconcile_contract": {
+                "create_or_update_managed_jobs_only": True,
+                "never_delete_unmanaged_jobs": True,
+                "duplicate_managed_name": "STOP",
+                "record_snapshot_after_reconcile": True,
+            },
+        }
+
+    def _scheduler_drift(self, *, jobs: list[JsonDict], gateway_status: str) -> JsonDict:
+        desired = {
+            str(item["managed_name"]): item
+            for item in self.scheduler_manifest(profile="snapshot")["jobs"]
+        }
+        actual: dict[str, JsonDict] = {}
+        duplicates: list[str] = []
+        for job in jobs:
+            name = str(job["managed_name"])
+            if not name.startswith(MANAGED_JOB_PREFIX):
+                continue
+            if name in actual:
+                duplicates.append(name)
+            actual[name] = job
+        missing = sorted(set(desired) - set(actual))
+        unexpected = sorted(set(actual) - set(desired))
+        mismatches: list[JsonDict] = []
+        compared_fields = ("schedule", "no_agent", "script", "delivery_target")
+        for name in sorted(set(desired) & set(actual)):
+            differences = {
+                field: {"expected": desired[name][field], "actual": actual[name].get(field)}
+                for field in compared_fields
+                if desired[name][field] != actual[name].get(field)
+            }
+            if not bool(actual[name].get("enabled")):
+                differences["enabled"] = {"expected": True, "actual": False}
+            if differences:
+                mismatches.append({"managed_name": name, "fields": differences})
+        if gateway_status != "RUNNING":
+            status = "BLOCKED"
+        elif missing or unexpected or mismatches or duplicates:
+            status = "DRIFT"
+        else:
+            status = "IN_SYNC"
+        return {
+            "status": status,
+            "missing": missing,
+            "unexpected": unexpected,
+            "mismatches": mismatches,
+            "duplicates": sorted(set(duplicates)),
+        }
+
+    def record_scheduler_snapshot(
+        self,
+        *,
+        profile: str,
+        gateway_status: str,
+        jobs: list[JsonDict],
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Record observed Hermes state; this never creates, edits or removes a Cron job."""
+        normalized_profile = profile.strip()
+        normalized_gateway = gateway_status.strip().upper()
+        if normalized_gateway not in {"RUNNING", "STOPPED", "UNKNOWN"}:
+            raise LedgerError(
+                "AUTOMATION_GATEWAY_STATUS_INVALID",
+                "gateway_status must be RUNNING, STOPPED or UNKNOWN",
+            )
+        normalized_jobs = sorted(
+            [dict(item) for item in jobs],
+            key=lambda item: str(item["managed_name"]),
+        )
+        drift = self._scheduler_drift(
+            jobs=normalized_jobs,
+            gateway_status=normalized_gateway,
+        )
+        snapshot_id = str(uuid4())
+        timestamp = _iso(self._now())
+        content = {
+            "profile": normalized_profile,
+            "gateway_status": normalized_gateway,
+            "jobs": normalized_jobs,
+        }
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO automation_scheduler_snapshots (
+                    id, profile, gateway_status, jobs_json, content_hash,
+                    reconciliation_status, drift_json, recorded_by, recorded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    normalized_profile,
+                    normalized_gateway,
+                    _json(normalized_jobs),
+                    _hash(content),
+                    str(drift["status"]),
+                    _json(drift),
+                    actor_ref,
+                    timestamp,
+                ),
+            )
+            self._audit(
+                connection,
+                action="AUTOMATION_SCHEDULER_SNAPSHOT_RECORDED",
+                entity_type="automation_scheduler_snapshot",
+                entity_id=snapshot_id,
+                actor_ref=actor_ref,
+                details={
+                    "profile": normalized_profile,
+                    "gateway_status": normalized_gateway,
+                    "reconciliation_status": drift["status"],
+                },
+            )
+        return {
+            "id": snapshot_id,
+            **content,
+            "content_hash": _hash(content),
+            "reconciliation_status": drift["status"],
+            "drift": drift,
+            "recorded_by": actor_ref,
+            "recorded_at": timestamp,
+            "holdings_changed": False,
+            "transactions_created": False,
+        }
+
+    def latest_scheduler_snapshot(self, *, profile: str | None = None) -> JsonDict | None:
+        query = "SELECT * FROM automation_scheduler_snapshots"
+        params: list[object] = []
+        if profile:
+            query += " WHERE profile=?"
+            params.append(profile.strip())
+        query += " ORDER BY recorded_at DESC, rowid DESC LIMIT 1"
+        with self._connect() as connection:
+            row = connection.execute(query, params).fetchone()
+        if row is None:
+            return None
+        return {
+            "id": str(row["id"]),
+            "profile": str(row["profile"]),
+            "gateway_status": str(row["gateway_status"]),
+            "jobs": json.loads(str(row["jobs_json"])),
+            "content_hash": str(row["content_hash"]),
+            "reconciliation_status": str(row["reconciliation_status"]),
+            "drift": json.loads(str(row["drift_json"])),
+            "recorded_by": str(row["recorded_by"]),
+            "recorded_at": str(row["recorded_at"]),
+        }
+
     def _resolve_policy(
         self, *, job_name: str, portfolio_id: str | None
     ) -> tuple[sqlite3.Row | None, str | None, str | None]:
@@ -517,20 +737,25 @@ class OperationsService:
         self,
         *,
         job_name: str,
-        scheduled_for: str,
+        scheduled_for: str | None = None,
         portfolio_id: str | None = None,
         actor_ref: str = "operations-runner",
     ) -> JsonDict:
         job = self._normalize_job(job_name)
-        scheduled = scheduled_for.strip()
+        policy, resolved_portfolio, account_id = self._resolve_policy(
+            job_name=job, portfolio_id=portfolio_id
+        )
+        timezone = str(policy["timezone"]) if policy is not None else self.settings.timezone
+        scheduled = (
+            scheduled_for.strip()
+            if scheduled_for is not None
+            else self._now().astimezone(ZoneInfo(timezone)).date().isoformat()
+        )
         if not scheduled or len(scheduled) > 80:
             raise LedgerError(
                 "AUTOMATION_SCHEDULED_FOR_INVALID",
                 "scheduled_for must be a stable date or timestamp",
             )
-        policy, resolved_portfolio, account_id = self._resolve_policy(
-            job_name=job, portfolio_id=portfolio_id
-        )
         if policy is None:
             return self._record_skip(
                 job_name=job,
@@ -1262,6 +1487,7 @@ class OperationsService:
                     (_iso(self._now()),),
                 ).fetchone()[0]
             )
+        scheduler_snapshot = self.latest_scheduler_snapshot()
         return {
             "policies": [
                 {
@@ -1280,6 +1506,13 @@ class OperationsService:
             "open_alert_count": open_alerts,
             "pending_outbox_count": pending_outbox,
             "due_retry_count": due_retries,
+            "scheduler_manifest": self.scheduler_manifest(),
+            "scheduler_snapshot": scheduler_snapshot,
+            "scheduler_status": (
+                str(scheduler_snapshot["reconciliation_status"])
+                if scheduler_snapshot is not None
+                else "NOT_RECONCILED"
+            ),
             "automatic_trade": False,
         }
 

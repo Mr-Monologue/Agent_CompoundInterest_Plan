@@ -378,7 +378,7 @@ def operations_run(
     scheduled_for: Annotated[
         str,
         typer.Option(help="Stable market date or scheduled timestamp used for idempotency."),
-    ],
+    ] = "",
     portfolio_id: Annotated[
         str,
         typer.Option(help="Optional portfolio; default investment context is used when omitted."),
@@ -388,7 +388,7 @@ def operations_run(
     try:
         result = OperationsService(get_settings()).run_job(
             job_name=job_name,
-            scheduled_for=scheduled_for,
+            scheduled_for=scheduled_for or None,
             portfolio_id=portfolio_id or None,
             actor_ref="operations-runner",
         )
@@ -418,6 +418,20 @@ def operations_status(
             "alerts": service.list_alerts(status="OPEN", limit=limit),
             "outbox": service.list_outbox(status="PENDING", limit=limit),
         }
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, **result})
+
+
+@operations_app.command("scheduler-manifest")
+def operations_scheduler_manifest(
+    profile: Annotated[
+        str, typer.Option(help="Hermes profile receiving managed jobs.")
+    ] = "investor",
+) -> None:
+    """Print the desired managed Hermes job set without changing the scheduler."""
+    try:
+        result = OperationsService(get_settings()).scheduler_manifest(profile=profile)
     except LedgerError as error:
         emit_ledger_error(error)
     emit_ledger_result({"ok": True, **result})

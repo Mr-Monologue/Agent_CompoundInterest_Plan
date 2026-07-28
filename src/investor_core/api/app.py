@@ -11,6 +11,7 @@ from investor_core.api.schemas import (
     AccountCreateRequest,
     AutomationJobRunRequest,
     AutomationPolicyDraftCreateRequest,
+    AutomationSchedulerSnapshotRequest,
     InstrumentCreateRequest,
     InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
@@ -177,6 +178,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/automation-status")
     def automation_status() -> dict[str, Any]:
         return success(operations.status_summary())
+
+    @app.get("/v1/automation-scheduler-manifest")
+    def automation_scheduler_manifest(profile: str = "investor") -> dict[str, Any]:
+        return success(operations.scheduler_manifest(profile=profile))
+
+    @app.post("/v1/automation-scheduler-snapshots")
+    def automation_scheduler_snapshot_record(
+        request: AutomationSchedulerSnapshotRequest,
+    ) -> dict[str, Any]:
+        return success(
+            operations.record_scheduler_snapshot(
+                **request.model_dump(),
+            )
+        )
+
+    @app.post("/v1/automation-retries/run")
+    def automation_retries_run(
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        return success(operations.retry_due(limit=limit))
 
     @app.get("/v1/report-bundles")
     def report_bundle_list(
