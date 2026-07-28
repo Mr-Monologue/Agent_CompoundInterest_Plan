@@ -242,8 +242,27 @@ class AutomationJobRunRequest(RequestModel):
         "SELL_FOLLOWUP_DUE",
         "SYSTEM_DOCTOR",
     ]
-    scheduled_for: str = Field(min_length=1, max_length=80)
+    scheduled_for: str | None = Field(default=None, min_length=1, max_length=80)
     actor_ref: str = Field(default="operations-runner", min_length=1, max_length=120)
+
+
+class AutomationSchedulerJobSnapshot(RequestModel):
+    managed_name: str = Field(min_length=1, max_length=120)
+    schedule: str = Field(min_length=1, max_length=120)
+    enabled: bool
+    no_agent: bool
+    script: str = Field(min_length=1, max_length=240)
+    delivery_target: str = Field(min_length=1, max_length=200)
+    last_status: str | None = Field(default=None, max_length=80)
+    last_run_at: str | None = Field(default=None, max_length=80)
+    next_run_at: str | None = Field(default=None, max_length=80)
+
+
+class AutomationSchedulerSnapshotRequest(RequestModel):
+    profile: str = Field(min_length=1, max_length=80)
+    gateway_status: Literal["RUNNING", "STOPPED", "UNKNOWN"]
+    jobs: list[AutomationSchedulerJobSnapshot] = Field(max_length=100)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
 class WeeklyPlanDraftCreateRequest(RequestModel):

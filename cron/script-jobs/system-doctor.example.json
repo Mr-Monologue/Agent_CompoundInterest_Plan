@@ -4,7 +4,6 @@
   "schedule": "*/15 * * * *",
   "timezone": "Asia/Shanghai",
   "no_agent": true,
-  "script": "uv --directory /ABSOLUTE/PATH/value-dca-agent run investor doctor --json",
-  "note": "Enable only after validating this schema against the pinned Hermes version."
+  "script": "value_dca_system_doctor.py",
+  "note": "Runs only through the approved SYSTEM_DOCTOR policy; healthy results produce empty stdout."
 }
-
