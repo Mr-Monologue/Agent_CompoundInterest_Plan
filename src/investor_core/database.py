@@ -21,6 +21,7 @@ REQUIRED_TABLES = {
     "audit_events",
     "automation_policies",
     "automation_policy_drafts",
+    "automation_scheduler_snapshots",
     "backups",
     "holding_snapshots",
     "instruments",
@@ -44,7 +45,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0012_operations_automation"
+EXPECTED_ALEMBIC_REVISION = "0013_hermes_scheduler_bridge"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -120,7 +121,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Governed automation operations schema is current"
+            schema_message = "Hermes scheduler bridge schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",

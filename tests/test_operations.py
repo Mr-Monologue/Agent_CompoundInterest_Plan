@@ -243,4 +243,79 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0012_operations_automation",)
+    assert revision == ("0013_hermes_scheduler_bridge",)
+
+
+def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    settings, portfolio_id, _account_id = create_context(database_path)
+    service = OperationsService(settings, now=fixed_now)
+    commit_policy(
+        service,
+        job_name="DAILY_RISK_SCAN",
+        config={"delivery_target": "origin"},
+        portfolio_id=portfolio_id,
+    )
+
+    manifest = service.scheduler_manifest(profile="investor")
+    assert manifest["automatic_trade"] is False
+    desired = {item["managed_name"]: item for item in manifest["jobs"]}
+    assert set(desired) == {"value-dca-daily-risk-scan", "value-dca-retry-due"}
+    assert desired["value-dca-daily-risk-scan"]["script"] == "value_dca_daily_risk_scan.py"
+
+    drifted = service.record_scheduler_snapshot(
+        profile="investor",
+        gateway_status="RUNNING",
+        jobs=[],
+    )
+    assert drifted["reconciliation_status"] == "DRIFT"
+    assert drifted["drift"]["missing"] == [
+        "value-dca-daily-risk-scan",
+        "value-dca-retry-due",
+    ]
+
+    actual = [
+        {
+            "managed_name": item["managed_name"],
+            "schedule": item["schedule"],
+            "enabled": True,
+            "no_agent": item["no_agent"],
+            "script": item["script"],
+            "delivery_target": item["delivery_target"],
+            "last_status": None,
+            "last_run_at": None,
+            "next_run_at": None,
+        }
+        for item in manifest["jobs"]
+    ]
+    reconciled = service.record_scheduler_snapshot(
+        profile="investor",
+        gateway_status="RUNNING",
+        jobs=actual,
+    )
+    assert reconciled["reconciliation_status"] == "IN_SYNC"
+    assert service.status_summary()["scheduler_status"] == "IN_SYNC"
+
+
+def test_scheduler_manifest_has_no_public_default_jobs(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    service = OperationsService(settings_for(database_path), now=fixed_now)
+
+    manifest = service.scheduler_manifest(profile="investor")
+
+    assert manifest["jobs"] == []
+    assert manifest["automatic_trade"] is False
+
+
+def test_job_uses_policy_timezone_date_when_schedule_value_is_omitted(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    settings = settings_for(database_path)
+    service = OperationsService(settings, now=fixed_now)
+    commit_policy(service, job_name="SYSTEM_DOCTOR")
+
+    result = service.run_job(job_name="SYSTEM_DOCTOR")
+
+    assert result["job_run"]["scheduled_for"] == "2026-07-27"

@@ -181,6 +181,17 @@ stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止
 周计划任务必须使用用户在自动化策略中明确批准的固定新增资金，且只创建 `DRAFT`，不会冻结
 计划或创建交易。风险任务命中规则最多生成待复核建议，不会自动批准或卖出。
 
+0.15.0 补齐 Core 策略与 Hermes Cron 之间的调度桥。Core 根据当前活动策略生成唯一的
+受管任务清单，Hermes 只对 `value-dca-` 前缀任务执行创建或更新，并在完成后回写实际任务
+快照。状态接口会明确区分 `NOT_RECONCILED`、`DRIFT`、`BLOCKED` 和 `IN_SYNC`，因此
+“策略已批准”不再被误报成“定时任务已安装”。安装器只把无窗口 Python 桥接脚本复制到当前
+Hermes Profile；它不会擅自启用任务、选择基金或填写个人渠道。
+
+脚本不再依赖 `${BUSINESS_DATE}` 或绝对项目路径。Core 会依据已批准策略的时区生成稳定业务
+日期；健康检查、行情同步、风险扫描、周计划草稿、卖出复盘和到期重试都走同一受治理入口。
+无事件时脚本输出为空，非零退出会保留在 Hermes Cron 历史中。调度快照只证明任务定义和
+Gateway 状态一致，不证明渠道消息已经送达。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
@@ -207,12 +218,12 @@ uv run investor strategy instrument-configure --portfolio-id <PORTFOLIO_ID> --in
 - 周计划只能使用当前组合策略实例中显式批准且 `contribution_eligible=true` 的标的。
 - 估值分位只来自已保存的指数 PE/PB 证据；`NOT_APPLICABLE` 不计算，`WEAK` 不能单独触发卖出。
 - 风险扫描和卖出建议不执行交易；批准建议也不改变持仓。
-- Windows 计划任务只管理 Core 进程，不调用任何投决或交易写入工具。
+- Windows 计划任务只管理 Core 进程和版本更新，不调用任何投决或交易写入工具。
 - Hermes Cron 不是 Core 的唯一 supervisor；`core-health-watch` 模板仅用于后续异常通知。
 - `skills/value-dca-investor` 是 Hermes Profile 的项目源文件，不是独立交易系统。
-- `cron/` 中的任务默认禁用，必须先在目标 Hermes 版本上验证字段契约。
-- 自动化策略、Cron 定义和渠道投递是三层状态；只有 Core 返回活动策略
-  `enabled=true` 才能声称业务任务已启用。
+- `cron/` 中的示例任务默认禁用；实际定义必须来自当前组合活动策略生成的调度清单。
+- 自动化策略、Cron 定义和渠道投递是三层状态；只有活动策略与当前 Hermes 快照均为
+  `IN_SYNC` 才能声称业务任务已调度。渠道送达仍需独立回执。
 
 ## 后续开发顺序
 

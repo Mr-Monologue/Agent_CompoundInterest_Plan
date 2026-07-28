@@ -4,6 +4,6 @@
   "schedule": "*/5 * * * *",
   "timezone": "Asia/Shanghai",
   "no_agent": true,
-  "script": "uv --directory C:\\investor\\value-dca-agent run investor operations retry-due",
+  "script": "value_dca_retry_due.py",
   "note": "Retries only persisted failed runs whose backoff elapsed; no due retry produces empty stdout."
 }

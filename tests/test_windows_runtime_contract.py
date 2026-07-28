@@ -66,7 +66,20 @@ def test_release_manifest_matches_project_version() -> None:
     assert manifest["schema_version"] == 1
     assert manifest["channel"] == "stable"
     assert manifest["version"] == project["project"]["version"]
-    assert manifest["database_revision"] == "0012_operations_automation"
+    assert manifest["database_revision"] == "0013_hermes_scheduler_bridge"
+
+
+def test_windows_installer_copies_console_free_hermes_cron_scripts() -> None:
+    installer = (PROJECT_ROOT / "install-windows.ps1").read_text(encoding="utf-8-sig")
+    runner = (PROJECT_ROOT / "runtime/hermes/_value_dca_runner.py").read_text()
+
+    assert 'Join-Path $ProfilePath "scripts"' in installer
+    assert 'Join-Path $ProjectRoot "runtime\\hermes"' in installer
+    assert "${BUSINESS_DATE}" not in "\n".join(
+        path.read_text() for path in (PROJECT_ROOT / "cron/script-jobs").glob("*.json")
+    )
+    assert "http://127.0.0.1:8710" in runner
+    assert 'display_text != "[SILENT]"' in runner
 
 
 def test_release_workflow_publishes_only_from_the_long_lived_release_branch() -> None:

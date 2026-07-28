@@ -60,7 +60,8 @@ def test_skill_uses_saved_context_instead_of_asking_users_for_uuids() -> None:
 def test_windows_installer_keeps_external_actions_disabled() -> None:
     installer = (PROJECT_ROOT / "install-windows.ps1").read_text(encoding="utf-8")
 
-    assert "Cron, Weixin and broker connections remain disabled" in installer
+    assert "scheduler reconciliation through the investor Agent" in installer
+    assert "Broker connections and automatic trading remain disabled" in installer
     assert "investor db migrate" in installer
     assert "hermes mcp test investor_core" in installer
 

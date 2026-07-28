@@ -17,6 +17,8 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "automation_policy_draft_commit",
         "automation_policy_list",
         "automation_status_get",
+        "automation_scheduler_manifest_get",
+        "automation_scheduler_snapshot_record",
         "automation_run_list",
         "automation_report_bundle_list",
         "automation_alert_list",
