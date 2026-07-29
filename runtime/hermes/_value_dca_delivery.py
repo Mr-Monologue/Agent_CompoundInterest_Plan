@@ -1,4 +1,9 @@
-"""Hermes CLI delivery adapter with conservative provider-acceptance receipts."""
+"""Self-contained Hermes delivery helpers for copied profile scripts.
+
+This module intentionally imports no ``investor_core`` package code. Hermes
+Cron copies runtime scripts into the active profile and executes them outside
+the Value DCA virtual environment.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +14,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from investor_core.ledger import JsonDict, LedgerError
-
 HOME_CHANNELS = (
     ("WEIXIN_HOME_CHANNEL", "weixin"),
     ("TELEGRAM_HOME_CHANNEL", "telegram"),
@@ -20,6 +23,15 @@ HOME_CHANNELS = (
     ("GOOGLE_CHAT_HOME_CHANNEL", "google_chat"),
     ("EMAIL_HOME_ADDRESS", "email"),
 )
+
+
+class DeliveryError(RuntimeError):
+    """Structured failure returned to the Core receipt endpoint."""
+
+    def __init__(self, code: str, message: str, *, details: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.details = details or {}
 
 
 def _digest(value: str) -> str:
@@ -45,7 +57,7 @@ def resolve_delivery_target(
     profile: str,
     environment: Mapping[str, str] | None = None,
 ) -> str:
-    """Resolve Core's portable `origin` target to one configured Hermes home channel."""
+    """Resolve portable ``origin`` to a Hermes platform home target."""
     target = requested_target.strip()
     if target and target.lower() != "origin":
         return target
@@ -55,7 +67,7 @@ def resolve_delivery_target(
         return override
     local_app_data = env.get("LOCALAPPDATA", "").strip()
     if not local_app_data:
-        raise LedgerError(
+        raise DeliveryError(
             "DELIVERY_TARGET_UNRESOLVED",
             "LOCALAPPDATA is unavailable and no Hermes delivery target override is configured",
         )
@@ -63,12 +75,8 @@ def resolve_delivery_target(
     for variable, platform in HOME_CHANNELS:
         value = (env.get(variable) or profile_env.get(variable) or "").strip()
         if value:
-            # Let Hermes resolve the configured home channel itself. In
-            # particular, Weixin's iLink chat IDs are not address-book aliases
-            # and `hermes send --to weixin:<chat_id>` may reject them during
-            # directory resolution even though WEIXIN_HOME_CHANNEL is valid.
             return platform
-    raise LedgerError(
+    raise DeliveryError(
         "DELIVERY_TARGET_UNRESOLVED",
         "origin cannot be resolved because the Hermes profile has no configured home channel",
         details={"profile": profile},
@@ -82,10 +90,10 @@ def send_with_hermes(
     message: str,
     command: Sequence[str] | None = None,
     timeout_seconds: int = 90,
-) -> JsonDict:
-    """Send once and return receipt evidence without claiming a human read receipt."""
+) -> dict[str, Any]:
+    """Send once and return provider-acceptance evidence, never a read receipt."""
     if not message.strip():
-        raise LedgerError("DELIVERY_PAYLOAD_EMPTY", "notification message is empty")
+        raise DeliveryError("DELIVERY_PAYLOAD_EMPTY", "notification message is empty")
     executable = list(command or ("hermes",))
     args = [*executable, "-p", profile, "send", "--to", target, message]
     try:
@@ -98,12 +106,12 @@ def send_with_hermes(
             shell=False,
         )
     except FileNotFoundError as exc:
-        raise LedgerError(
+        raise DeliveryError(
             "HERMES_CLI_NOT_FOUND",
             "Hermes CLI executable was not found",
         ) from exc
     except subprocess.TimeoutExpired as exc:
-        raise LedgerError(
+        raise DeliveryError(
             "HERMES_SEND_TIMEOUT",
             "Hermes CLI delivery timed out",
         ) from exc
@@ -119,7 +127,7 @@ def send_with_hermes(
         "stderr_sha256": _digest(result.stderr),
     }
     if result.returncode != 0:
-        raise LedgerError(
+        raise DeliveryError(
             "HERMES_SEND_FAILED",
             "Hermes CLI did not accept the outbound message",
             details=evidence,

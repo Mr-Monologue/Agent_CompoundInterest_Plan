@@ -226,6 +226,10 @@ Investor MCP 只暴露 `automation_delivery_status_list` 与
 Hermes 平台适配器接受消息，不代表用户已经阅读；目标无法解析、命令失败或超时都会进入既有
 退避重试，不会误报送达，也不会让 Cron stdout 再投递一次。
 
+0.18.1 修复 Windows Hermes Profile 中复制脚本的隔离运行：通知消费者不再依赖项目
+虚拟环境中的 `investor_core` 包；便携目标 `origin` 交由 Hermes 使用已配置的平台 home
+channel 解析，避免将 Weixin iLink chat ID 误当作地址簿别名。
+
 本版同时增加确定性绩效与周期复盘。`portfolio_performance_get` 从已提交交易和保存的 NAV
 计算 Modified Dietz、XIRR，以及满足数据条件时的 TWR；使用策略实例中明确配置的
 `benchmark_instrument_id` 计算基准收益和逐标的基准贡献。系统没有闲置现金账本，因此期间
