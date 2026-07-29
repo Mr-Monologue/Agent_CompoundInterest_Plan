@@ -21,6 +21,7 @@ from investor_core.config import Settings
 from investor_core.health import build_doctor_report
 from investor_core.ledger import JsonDict, LedgerError, LedgerService, utc_now
 from investor_core.market_sync import MarketSyncService
+from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.risk import RiskService
 
@@ -30,10 +31,14 @@ SUPPORTED_JOBS = {
     "WEEKLY_PLAN_PREPARE",
     "SELL_FOLLOWUP_DUE",
     "SYSTEM_DOCTOR",
+    "MONTHLY_REVIEW",
+    "QUARTERLY_REVIEW",
+    "ANNUAL_REVIEW",
 }
 PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
 MANAGED_JOB_PREFIX = "value-dca-"
 RETRY_JOB_NAME = f"{MANAGED_JOB_PREFIX}retry-due"
+DELIVERY_JOB_NAME = f"{MANAGED_JOB_PREFIX}notification-delivery"
 MISSED_RUN_GRACE_MINUTES = 10
 MISSED_RUN_LOOKBACK_DAYS = 7
 DELIVERY_RECEIPT_TIMEOUT_MINUTES = 15
@@ -68,6 +73,7 @@ class OperationsService:
         market_sync: MarketSyncService | None = None,
         risk: RiskService | None = None,
         planning: PlanningService | None = None,
+        performance: PerformanceService | None = None,
     ) -> None:
         self.settings = settings
         self._now = now
@@ -75,6 +81,7 @@ class OperationsService:
         self._market_sync = market_sync or MarketSyncService(settings, now=now)
         self._risk = risk or RiskService(settings, now=now)
         self._planning = planning or PlanningService(settings, now=now)
+        self._performance = performance or PerformanceService(settings, now=now)
 
     def _connect(self) -> sqlite3.Connection:
         path = (
@@ -145,6 +152,9 @@ class OperationsService:
             "WEEKLY_PLAN_PREPARE": {"contribution_amount"},
             "SELL_FOLLOWUP_DUE": set(),
             "SYSTEM_DOCTOR": set(),
+            "MONTHLY_REVIEW": set(),
+            "QUARTERLY_REVIEW": set(),
+            "ANNUAL_REVIEW": set(),
         }
         unknown = set(config) - allowed_common - allowed_by_job[job_name]
         if unknown:
@@ -625,6 +635,20 @@ class OperationsService:
                     "policy_content_hash": None,
                 }
             )
+            desired_jobs.append(
+                {
+                    "managed_name": DELIVERY_JOB_NAME,
+                    "job_name": "NOTIFICATION_DELIVERY",
+                    "schedule": "* * * * *",
+                    "timezone": retry_timezone,
+                    "script": "value_dca_notification_delivery.py",
+                    "no_agent": True,
+                    "delivery_target": "local",
+                    "policy_id": None,
+                    "policy_version": None,
+                    "policy_content_hash": None,
+                }
+            )
         timezone_status = "PASS" if len(timezones) <= 1 else "CONFLICT"
         return {
             "profile": normalized_profile,
@@ -1096,6 +1120,21 @@ class OperationsService:
                 "SOURCE_ERROR" if blocked else "PASS",
                 bool(items),
                 "SELL_FOLLOWUPS_DUE" if items else "NO_SELL_FOLLOWUP_DUE",
+            )
+        if job_name in {"MONTHLY_REVIEW", "QUARTERLY_REVIEW", "ANNUAL_REVIEW"}:
+            review_type = job_name.removesuffix("_REVIEW")
+            # Scheduled review jobs always close the immediately completed period.
+            result = self._performance.prepare_review(
+                portfolio_id=portfolio_id,
+                review_type=review_type,
+                anchor_date=datetime.fromisoformat(business_date).date() - timedelta(days=1),
+            )
+            quality = str(result["data_quality"])
+            return (
+                result,
+                quality,
+                True,
+                str(result["reason_code"]),
             )
         raise AssertionError(f"unsupported job dispatch: {job_name}")
 
@@ -2113,7 +2152,8 @@ class OperationsService:
                 SELECT * FROM job_runs
                 WHERE job_name IN (
                     'DAILY_MARKET_SYNC','DAILY_RISK_SCAN','WEEKLY_PLAN_PREPARE',
-                    'SELL_FOLLOWUP_DUE','SYSTEM_DOCTOR'
+                    'SELL_FOLLOWUP_DUE','SYSTEM_DOCTOR','MONTHLY_REVIEW',
+                    'QUARTERLY_REVIEW','ANNUAL_REVIEW'
                 )
                 ORDER BY started_at DESC LIMIT 20
                 """

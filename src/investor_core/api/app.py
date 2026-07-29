@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -43,6 +44,7 @@ from investor_core.logging_config import build_uvicorn_log_config
 from investor_core.market_data import MarketDataService
 from investor_core.market_sync import MarketSyncService
 from investor_core.operations import OperationsService
+from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.risk import RiskService
 from investor_core.strategy import StrategyService
@@ -72,6 +74,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     planning = PlanningService(runtime_settings)
     risk = RiskService(runtime_settings)
     operations = OperationsService(runtime_settings)
+    performance = PerformanceService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -296,6 +299,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "items": operations.list_delivery_attempts(
                     outbox_id=outbox_id,
                     status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/portfolio-performance")
+    def portfolio_performance_get(
+        portfolio_id: str,
+        period_start: date,
+        period_end: date,
+        period_type: str = "CUSTOM",
+    ) -> dict[str, Any]:
+        result = performance.calculate(
+            portfolio_id=portfolio_id,
+            period_start=period_start,
+            period_end=period_end,
+            period_type=period_type,
+            persist=False,
+        )
+        quality = str(result["data_quality"])
+        return success(
+            result,
+            warnings=list(result["warnings"]),
+            data_quality=quality,
+        )
+
+    @app.get("/v1/periodic-reviews")
+    def periodic_review_list(
+        portfolio_id: str,
+        review_type: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": performance.list_reviews(
+                    portfolio_id=portfolio_id,
+                    review_type=review_type,
                     limit=limit,
                 )
             }

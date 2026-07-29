@@ -23,6 +23,8 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "automation_missed_run_list",
         "automation_report_bundle_list",
         "automation_alert_list",
+        "portfolio_performance_get",
+        "periodic_review_list",
         "automation_delivery_status_list",
         "automation_delivery_attempt_list",
         "portfolio_create",

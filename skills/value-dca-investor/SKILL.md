@@ -153,6 +153,21 @@ delivery target, schedule, or enabled state. `WEEKLY_PLAN_PREPARE` requires a us
 contribution amount in that local policy and may create only a `DRAFT`; it cannot freeze a plan or
 create a transaction.
 
+Use `portfolio_performance_get` for Modified Dietz, XIRR, TWR, benchmark return, excess return and
+instrument-to-benchmark attribution. Return only metrics and limitations supplied by Core. Never
+calculate, annualize, interpolate, rank, or label performance in prose. The local ledger does not
+represent idle cash: when Core reports `buy_sell_cash_convention=EXTERNAL_FLOW`, describe BUY as
+an external inflow and SELL as an external outflow for performance purposes, not as a full
+custodial-account return. A null metric is unavailable, not zero. Never replace incomplete
+benchmark coverage with a model-selected index.
+
+Use `periodic_review_list` to read finalized monthly, quarterly and annual fact reviews. Review
+action items are deterministic follow-up facts, not buy, sell, rotation or rebalance instructions.
+`DATA_BLOCKED` prevents performance conclusions. A new revision supersedes earlier facts for the
+same period without mutating the earlier immutable record. Periodic review automation may create
+snapshots and action items; it may never approve a proposal, freeze a plan, change strategy or
+create a transaction.
+
 When the user asks to install, repair, reconcile, or verify automation scheduling, call
 `automation_scheduler_manifest_get` first. Reconcile only jobs whose names begin with the returned
 managed prefix, using the Hermes Cron tool and the manifest's exact name, five-field schedule,
@@ -176,8 +191,9 @@ Scheduled Agent reports are read-only. Read the committed report bundle, preserv
 quality, reason code and facts, and return exactly `[SILENT]` when `delivery_action=SILENT`.
 `NOTIFY` means a fact bundle is eligible for delivery, not that it was delivered. `PENDING` means
 the outbox has not been claimed. `DISPATCHED` means a channel adapter claimed it, not that the user
-received it. Only `DELIVERED` plus a provider message ID and a matching immutable attempt proves
-channel delivery. Core script jobs
+received it. Only `DELIVERED` plus matching immutable adapter evidence proves channel acceptance.
+For the Hermes CLI adapter, `PROVIDER_ACCEPTED_NOT_HUMAN_READ` means the platform adapter accepted
+the message; it does not prove that the human opened or read it. Core script jobs
 may sync sourced NAVs, run configured risk rules, prepare a DRAFT weekly plan, or evaluate due
 sell follow-ups. They may never confirm a policy, freeze a plan, approve a proposal, commit a
 transaction, alter strategy configuration, or replay a user mutation after restart.
@@ -201,7 +217,7 @@ transaction, alter strategy configuration, or replay a user mutation after resta
   pre-approved Core job and every run must have a stable idempotency key.
 - Never mark an outbox record as delivered from script stdout, a pending bundle, or a successful
   Core run. Delivery requires separate Hermes channel evidence; until then describe it as pending
-  or handed to the scheduler.
+  or handed to the scheduler. Never translate provider acceptance into a human read receipt.
 - Never call delivery claim or receipt endpoints through terminal tools. They are reserved for a
   trusted channel adapter and are intentionally absent from Investor MCP.
 - When explaining allocation transition exit, read every item in

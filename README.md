@@ -220,6 +220,22 @@ Gateway 状态一致，不证明渠道消息已经送达。
 Investor MCP 只暴露 `automation_delivery_status_list` 与
 `automation_delivery_attempt_list` 两个只读工具，Agent 不能领取通知或回写渠道结果。
 
+0.18.0 增加实际 Hermes 渠道执行器。受管的 `value-dca-notification-delivery` 每分钟静默
+领取 Core outbox，通过官方 `hermes send` 向明确目标或 Profile 的 home channel 发送，
+并把 CLI 退出状态、目标和输出摘要哈希回写为不可变证据。`DELIVERED` 的严格含义是
+Hermes 平台适配器接受消息，不代表用户已经阅读；目标无法解析、命令失败或超时都会进入既有
+退避重试，不会误报送达，也不会让 Cron stdout 再投递一次。
+
+本版同时增加确定性绩效与周期复盘。`portfolio_performance_get` 从已提交交易和保存的 NAV
+计算 Modified Dietz、XIRR，以及满足数据条件时的 TWR；使用策略实例中明确配置的
+`benchmark_instrument_id` 计算基准收益和逐标的基准贡献。系统没有闲置现金账本，因此期间
+BUY/SELL 明确按外部流入/流出处理，TWR 或基准覆盖不足时返回空值和原因，不做插值或模型补全。
+
+月、季、年复盘作为显式批准的 `MONTHLY_REVIEW`、`QUARTERLY_REVIEW`、`ANNUAL_REVIEW`
+自动化策略运行。每次生成不可变绩效快照、带修订号的复盘事实和开放行动项；数据不足时进入
+`DATA_BLOCKED`。复盘只记录事实、质量缺口和待人工检查事项，不选择基金、不轮换、不冻结计划、
+不批准卖出建议，也不创建交易。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
@@ -251,9 +267,11 @@ uv run investor strategy instrument-configure --portfolio-id <PORTFOLIO_ID> --in
 - `skills/value-dca-investor` 是 Hermes Profile 的项目源文件，不是独立交易系统。
 - `cron/` 中的示例任务默认禁用；实际定义必须来自当前组合活动策略生成的调度清单。
 - 自动化策略、Cron 定义和渠道投递是三层状态；只有活动策略与当前 Hermes 快照均为
-  `IN_SYNC` 才能声称业务任务已调度。渠道送达仍需独立回执。
+  `IN_SYNC` 才能声称业务任务已调度。渠道送达仍需独立回执，适配器接受不等于用户已读。
+- 绩效使用当前无现金账本边界下的外部资金流约定；不可用指标保持为空，不能由 Agent 补算。
+- 周期复盘及其行动项不属于交易建议，也不会改变策略、计划、提案或持仓。
 
 ## 后续开发顺序
 
-1. 大阶段三后续：渠道投递回执、绩效归因、周期复盘、官方数据回填和 L0–L3 降级。
-2. 大阶段四：通用初始化、恢复工具、连续运行验收和公共分发收口。
+1. 大阶段三后续：官方数据回填、完整现金账本、跨期 TWR 和 L0–L3 降级。
+2. 大阶段四：通用初始化、恢复工具、14 天连续运行验收和公共分发收口。
