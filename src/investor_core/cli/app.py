@@ -481,6 +481,59 @@ def operations_recover_due(
         emit_ledger_result({"ok": True, **result})
 
 
+@operations_app.command("delivery-claim")
+def operations_delivery_claim(
+    delivery_target: Annotated[
+        str,
+        typer.Option(help="Optional exact Hermes delivery target."),
+    ] = "",
+    limit: Annotated[int, typer.Option(min=1, max=100)] = 20,
+) -> None:
+    """Claim due notification facts for an external Hermes delivery adapter."""
+    try:
+        result = OperationsService(get_settings()).claim_delivery_attempts(
+            delivery_target=delivery_target or None,
+            limit=limit,
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    if result["display_text"] != "[SILENT]":
+        emit_ledger_result({"ok": True, **result})
+
+
+@operations_app.command("delivery-receipt")
+def operations_delivery_receipt(
+    outbox_id: Annotated[str, typer.Option(help="Claimed notification outbox ID.")],
+    attempt_id: Annotated[str, typer.Option(help="Claimed delivery attempt ID.")],
+    receipt_token: Annotated[str, typer.Option(help="One-time receipt token from claim.")],
+    outcome: Annotated[str, typer.Option(help="DELIVERED or FAILED.")],
+    provider: Annotated[str, typer.Option(help="Hermes channel provider name.")],
+    provider_message_id: Annotated[
+        str,
+        typer.Option(help="Provider message ID; required for DELIVERED."),
+    ] = "",
+    error_code: Annotated[
+        str,
+        typer.Option(help="Failure code; required for FAILED."),
+    ] = "",
+) -> None:
+    """Record provider evidence after the channel reports its actual result."""
+    try:
+        result = OperationsService(get_settings()).record_delivery_receipt(
+            outbox_id=outbox_id,
+            attempt_id=attempt_id,
+            receipt_token=receipt_token,
+            outcome=outcome,
+            provider=provider,
+            provider_message_id=provider_message_id or None,
+            evidence={},
+            error_code=error_code or None,
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, **result})
+
+
 @app.command()
 def doctor(
     json_output: Annotated[

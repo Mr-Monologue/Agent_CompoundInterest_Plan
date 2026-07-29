@@ -30,6 +30,7 @@ REQUIRED_TABLES = {
     "market_data_source_health",
     "market_sync_runs",
     "market_nav_verifications",
+    "notification_delivery_attempts",
     "notification_outbox",
     "portfolios",
     "report_bundles",
@@ -45,7 +46,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0013_hermes_scheduler_bridge"
+EXPECTED_ALEMBIC_REVISION = "0014_notification_delivery_receipts"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -121,7 +122,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Hermes scheduler bridge schema is current"
+            schema_message = "Notification delivery receipt schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",

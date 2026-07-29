@@ -142,6 +142,11 @@ def _allocation_assessment(
             }
         )
 
+    core_exit_min = Decimal(str(policy["transition_exit_core_min_pct"]))
+    satellite_exit_max = Decimal(str(policy["transition_exit_satellite_max_pct"]))
+    core_exit_met = core_actual >= core_exit_min
+    satellite_exit_met = satellite_actual <= satellite_exit_max
+    no_unassigned_met = unassigned_count == 0
     return {
         "available": True,
         "state": state,
@@ -158,10 +163,26 @@ def _allocation_assessment(
         },
         "transition_required": state == "TRANSITION_REQUIRED",
         "transition_exit_condition_met": (
-            unassigned_count == 0
-            and core_actual >= Decimal(str(policy["transition_exit_core_min_pct"]))
-            and satellite_actual <= Decimal(str(policy["transition_exit_satellite_max_pct"]))
+            no_unassigned_met and core_exit_met and satellite_exit_met
         ),
+        "transition_exit_requirements": {
+            "all_required": True,
+            "no_unassigned": {
+                "required": True,
+                "actual_count": unassigned_count,
+                "met": no_unassigned_met,
+            },
+            "core_min_pct": {
+                "required": f"{core_exit_min:.2f}",
+                "actual": f"{core_actual:.2f}",
+                "met": core_exit_met,
+            },
+            "satellite_max_pct": {
+                "required": f"{satellite_exit_max:.2f}",
+                "actual": f"{satellite_actual:.2f}",
+                "met": satellite_exit_met,
+            },
+        },
         "transition_principle": policy["transition_principle"],
         "automatic_selling_allowed": policy["automatic_selling_allowed"],
     }

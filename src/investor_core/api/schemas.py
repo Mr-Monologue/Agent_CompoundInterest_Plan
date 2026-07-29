@@ -265,6 +265,22 @@ class AutomationSchedulerSnapshotRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
+class NotificationDeliveryReceiptRequest(RequestModel):
+    outbox_id: str = Field(min_length=1, max_length=80)
+    attempt_id: str = Field(min_length=1, max_length=80)
+    receipt_token: str = Field(min_length=20, max_length=200)
+    outcome: Literal["DELIVERED", "FAILED"]
+    provider: str = Field(min_length=1, max_length=120)
+    provider_message_id: str | None = Field(default=None, max_length=240)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    error_code: str | None = Field(default=None, max_length=120)
+    actor_ref: str = Field(
+        default="hermes-delivery-adapter",
+        min_length=1,
+        max_length=120,
+    )
+
+
 class WeeklyPlanDraftCreateRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     account_id: str = Field(min_length=1, max_length=80)

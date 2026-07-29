@@ -127,6 +127,9 @@ def test_sell_rule_creates_proposal_but_approval_never_changes_holding(
     )
 
     assert scan["state"] == "REVIEW_REQUIRED"
+    assert scan["evaluation_summary"]["evaluated_rule_count"] > 0
+    assert scan["evaluation_summary"]["triggered_rule_count"] > 0
+    assert scan["evaluation_summary"]["sell_proposal_count"] > 0
     proposal = scan["sell_proposals"][0]
     assert proposal["trigger_code"] == "SELL_01_HARD_STOP"
     assert proposal["status"] == "REVIEW_REQUIRED"

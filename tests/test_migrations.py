@@ -47,6 +47,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "market_data_source_health",
         "market_sync_runs",
         "market_nav_verifications",
+        "notification_delivery_attempts",
         "notification_outbox",
         "portfolios",
         "report_bundles",
@@ -63,7 +64,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0013_hermes_scheduler_bridge",)
+    assert revision == ("0014_notification_delivery_receipts",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -153,7 +154,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0013_hermes_scheduler_bridge",
+            "0014_notification_delivery_receipts",
         )
 
 
@@ -188,6 +189,30 @@ def test_source_lineage_migration_backfills_eastmoney_aliases(tmp_path: Path) ->
         assert connection.execute(
             "SELECT source_lineage FROM market_nav_snapshots WHERE id='snapshot-1'"
         ).fetchone() == ("EASTMONEY",)
+
+
+def test_delivery_receipt_migration_upgrades_existing_operations_schema(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0013_hermes_scheduler_bridge")
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        outbox_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(notification_outbox)")
+        }
+        attempt_table = connection.execute(
+            """
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='notification_delivery_attempts'
+            """
+        ).fetchone()
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+    assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
+    assert attempt_table == ("notification_delivery_attempts",)
+    assert revision == ("0014_notification_delivery_receipts",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(
