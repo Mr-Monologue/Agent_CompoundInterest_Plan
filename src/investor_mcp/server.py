@@ -292,6 +292,24 @@ async def automation_run_list(
 
 
 @mcp.tool()
+async def automation_missed_run_list(
+    grace_minutes: int = 10,
+    lookback_days: int = 7,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List approved schedule windows that are due but have no durable Core run."""
+    return await core_request(
+        "GET",
+        "/v1/automation-missed-runs",
+        params={
+            "grace_minutes": grace_minutes,
+            "lookback_days": lookback_days,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
 async def automation_report_bundle_list(
     portfolio_id: str = "",
     bundle_type: str = "",

@@ -56,7 +56,7 @@ def run_job(job_name: str) -> int:
 
 def retry_due() -> int:
     try:
-        result = _request("/v1/automation-retries/run")
+        result = _request("/v1/automation-recovery/run")
         display_text = str(result.get("display_text", "[SILENT]"))
         if display_text != "[SILENT]":
             print(display_text)
