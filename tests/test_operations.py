@@ -313,9 +313,94 @@ def test_job_uses_policy_timezone_date_when_schedule_value_is_omitted(tmp_path: 
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
     settings = settings_for(database_path)
-    service = OperationsService(settings, now=fixed_now)
+    current = [fixed_now()]
+
+    def mutable_now() -> datetime:
+        return current[0]
+
+    service = OperationsService(settings, now=mutable_now)
     commit_policy(service, job_name="SYSTEM_DOCTOR")
+    current[0] = datetime(2026, 7, 28, 0, 1, tzinfo=UTC)
 
     result = service.run_job(job_name="SYSTEM_DOCTOR")
 
-    assert result["job_run"]["scheduled_for"] == "2026-07-27"
+    assert result["job_run"]["scheduled_for"] == "2026-07-28T00:00:00Z"
+
+
+def test_missed_run_waits_for_grace_then_recovers_once(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    current = [datetime(2026, 7, 27, 2, 0, tzinfo=UTC)]
+
+    def mutable_now() -> datetime:
+        return current[0]
+
+    service = OperationsService(settings_for(database_path), now=mutable_now)
+    commit_policy(service, job_name="SYSTEM_DOCTOR")
+
+    current[0] = datetime(2026, 7, 28, 0, 5, tzinfo=UTC)
+    assert service.list_missed_runs() == []
+
+    current[0] = datetime(2026, 7, 28, 0, 11, tzinfo=UTC)
+    missed = service.list_missed_runs()
+    assert len(missed) == 1
+    assert missed[0]["job_name"] == "SYSTEM_DOCTOR"
+    assert missed[0]["scheduled_for"] == "2026-07-28T00:00:00Z"
+    assert missed[0]["recovery_state"] == "DUE"
+
+    recovered = service.catch_up_due()
+    assert recovered["recovered_count"] == 1
+    assert recovered["items"][0]["job_run"]["input"]["actor_ref"] == "operations-catch-up"
+    assert recovered["automatic_trade"] is False
+    assert service.list_missed_runs() == []
+    assert service.catch_up_due()["recovered_count"] == 0
+
+
+def test_legacy_business_date_run_prevents_duplicate_catch_up(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    current = [datetime(2026, 7, 27, 2, 0, tzinfo=UTC)]
+
+    def mutable_now() -> datetime:
+        return current[0]
+
+    service = OperationsService(settings_for(database_path), now=mutable_now)
+    commit_policy(service, job_name="SYSTEM_DOCTOR")
+    current[0] = datetime(2026, 7, 28, 0, 1, tzinfo=UTC)
+    legacy = service.run_job(
+        job_name="SYSTEM_DOCTOR",
+        scheduled_for="2026-07-28",
+    )
+    current[0] = datetime(2026, 7, 28, 0, 20, tzinfo=UTC)
+
+    assert legacy["job_run"]["status"] == "SUCCESS"
+    assert service.list_missed_runs() == []
+
+
+def test_recover_due_catches_up_before_processing_retries(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    current = [datetime(2026, 7, 27, 2, 0, tzinfo=UTC)]
+
+    def mutable_now() -> datetime:
+        return current[0]
+
+    service = OperationsService(settings_for(database_path), now=mutable_now)
+    commit_policy(service, job_name="SYSTEM_DOCTOR")
+    current[0] = datetime(2026, 7, 28, 0, 20, tzinfo=UTC)
+
+    result = service.recover_due()
+
+    assert result["catch_up"]["recovered_count"] == 1
+    assert result["retries"]["retried_count"] == 0
+    assert result["automatic_trade"] is False
+
+
+def test_recovered_timestamp_uses_policy_timezone_for_business_date() -> None:
+    assert (
+        OperationsService._business_date(
+            "2026-07-27T17:00:00Z",
+            timezone="Asia/Shanghai",
+        )
+        == "2026-07-28"
+    )

@@ -199,6 +199,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         return success(operations.retry_due(limit=limit))
 
+    @app.get("/v1/automation-missed-runs")
+    def automation_missed_run_list(
+        grace_minutes: int = Query(default=10, ge=1, le=1440),
+        lookback_days: int = Query(default=7, ge=1, le=31),
+        limit: int = Query(default=100, ge=1, le=100),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": operations.list_missed_runs(
+                    grace_minutes=grace_minutes,
+                    lookback_days=lookback_days,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.post("/v1/automation-recovery/run")
+    def automation_recovery_run(
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        return success(operations.recover_due(limit=limit))
+
     @app.get("/v1/report-bundles")
     def report_bundle_list(
         portfolio_id: str | None = None,
