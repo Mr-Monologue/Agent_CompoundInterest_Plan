@@ -978,11 +978,17 @@ class RiskService:
                             hit=hit,
                         )
                     )
+        triggered_count = sum(
+            1 for hit in hits if bool(hit["output"].get("triggered"))
+        )
         return {
             "state": "REVIEW_REQUIRED" if proposals else "PASS",
-            "reason_code": (
-                "SELL_PROPOSALS_CREATED" if proposals else "NO_CONFIGURED_SELL_RULE_HIT"
-            ),
+            "reason_code": "SELL_PROPOSALS_CREATED" if proposals else "NO_SELL_RULE_HIT",
+            "evaluation_summary": {
+                "evaluated_rule_count": len(hits),
+                "triggered_rule_count": triggered_count,
+                "sell_proposal_count": len(proposals),
+            },
             "rule_hits": hits,
             "sell_proposals": proposals,
             "data_quality": valuation["data_quality"],

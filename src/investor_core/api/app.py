@@ -20,6 +20,7 @@ from investor_core.api.schemas import (
     MarketDataSyncRequest,
     MarketNavSnapshotCreateRequest,
     MarketNavVerificationCreateRequest,
+    NotificationDeliveryReceiptRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     RiskScanRequest,
@@ -261,6 +262,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=100, ge=1, le=500),
     ) -> dict[str, Any]:
         return success({"items": operations.list_outbox(status=status, limit=limit)})
+
+    @app.post("/v1/notification-deliveries/claim")
+    def notification_delivery_claim(
+        delivery_target: str | None = None,
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> dict[str, Any]:
+        return success(
+            operations.claim_delivery_attempts(
+                delivery_target=delivery_target,
+                limit=limit,
+            )
+        )
+
+    @app.post("/v1/notification-deliveries/receipt")
+    def notification_delivery_receipt(
+        request: NotificationDeliveryReceiptRequest,
+    ) -> dict[str, Any]:
+        return success(
+            operations.record_delivery_receipt(
+                **request.model_dump(),
+            )
+        )
+
+    @app.get("/v1/notification-delivery-attempts")
+    def notification_delivery_attempt_list(
+        outbox_id: str | None = None,
+        status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": operations.list_delivery_attempts(
+                    outbox_id=outbox_id,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
 
     @app.post("/v1/portfolios")
     def portfolio_create(request: PortfolioCreateRequest) -> dict[str, Any]:
