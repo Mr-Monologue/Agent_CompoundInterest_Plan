@@ -5,10 +5,8 @@ from __future__ import annotations
 import os
 import sys
 
+from _value_dca_delivery import DeliveryError, resolve_delivery_target, send_with_hermes
 from _value_dca_runner import _request
-
-from investor_core.hermes_delivery import resolve_delivery_target, send_with_hermes
-from investor_core.ledger import LedgerError
 
 
 def main() -> int:
@@ -30,7 +28,7 @@ def main() -> int:
                 outcome = "DELIVERED"
                 error_code = None
                 provider_message_id = f"hermes-send:{item['attempt_id']}"
-            except LedgerError as exc:
+            except DeliveryError as exc:
                 evidence = {
                     "adapter": "value-dca-hermes-send",
                     "adapter_version": "1",
