@@ -140,10 +140,12 @@ committed transaction may change holdings and mark the proposal `EXECUTED`. Neve
 from approval alone. Use `sell_followup_list` and `sell_followup_evaluate` for due six-month
 reviews. Follow-up results describe post-sale evidence and never alter strategy parameters.
 
-Use `automation_policy_list`, `automation_run_list`, `automation_report_bundle_list`, and
-`automation_alert_list` to inspect unattended operations. Never claim a job is scheduled merely
-because a Cron example exists; require an active Core policy with `enabled=true` and a current
-Hermes scheduler snapshot whose reconciliation status is `IN_SYNC`. Creating or
+Use `automation_policy_list`, `automation_run_list`, `automation_missed_run_list`,
+`automation_report_bundle_list`, and `automation_alert_list` to inspect unattended operations.
+Never claim a job is scheduled merely because a Cron example exists; require an active Core policy with `enabled=true`
+and a current Hermes scheduler snapshot whose reconciliation status is
+`IN_SYNC`. A missed window is a Core fact only when `automation_missed_run_list` returns it; never
+infer one from the current time or a missing chat message. Creating or
 pausing an automation policy requires `automation_policy_draft_create` followed by explicit
 confirmation through `automation_policy_draft_commit`. Never infer a contribution amount,
 delivery target, schedule, or enabled state. `WEEKLY_PLAN_PREPARE` requires a user-approved fixed
@@ -165,7 +167,9 @@ future delivery succeeded.
 Hermes no-agent scripts run through the installed profile's `scripts` directory. Empty stdout is
 intentional silence. A non-zero script exit is an operational failure and must remain visible in
 Hermes Cron history. Never substitute `${BUSINESS_DATE}` or another shell placeholder: Core
-derives the business date from the approved policy timezone and preserves idempotency itself.
+derives the canonical schedule occurrence from the approved policy Cron and timezone. The managed
+five-minute retry script first recovers Core-confirmed missed windows and then retries failed runs.
+It preserves the original schedule and idempotency identity; it never replays a confirmation.
 
 Scheduled Agent reports are read-only. Read the committed report bundle, preserve its dates,
 quality, reason code and facts, and return exactly `[SILENT]` when `delivery_action=SILENT`.
