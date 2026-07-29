@@ -167,6 +167,9 @@ async def automation_policy_draft_create(
         "WEEKLY_PLAN_PREPARE",
         "SELL_FOLLOWUP_DUE",
         "SYSTEM_DOCTOR",
+        "MONTHLY_REVIEW",
+        "QUARTERLY_REVIEW",
+        "ANNUAL_REVIEW",
     ],
     enabled: bool,
     schedule: str,
@@ -342,6 +345,56 @@ async def automation_alert_list(
         params={
             "portfolio_id": portfolio_id or None,
             "status": status or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def portfolio_performance_get(
+    period_start: str,
+    period_end: str,
+    period_type: Literal[
+        "CUSTOM", "MONTHLY", "QUARTERLY", "ANNUAL", "SINCE_INCEPTION"
+    ] = "CUSTOM",
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Calculate ledger-backed performance and benchmark attribution without trading."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/portfolio-performance",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "period_start": period_start,
+            "period_end": period_end,
+            "period_type": period_type,
+        },
+    )
+
+
+@mcp.tool()
+async def periodic_review_list(
+    review_type: Literal["", "MONTHLY", "QUARTERLY", "ANNUAL"] = "",
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List immutable periodic review facts and open review actions without trading."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/periodic-reviews",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "review_type": review_type or None,
             "limit": limit,
         },
     )

@@ -224,6 +224,9 @@ class AutomationPolicyDraftCreateRequest(RequestModel):
         "WEEKLY_PLAN_PREPARE",
         "SELL_FOLLOWUP_DUE",
         "SYSTEM_DOCTOR",
+        "MONTHLY_REVIEW",
+        "QUARTERLY_REVIEW",
+        "ANNUAL_REVIEW",
     ]
     enabled: bool
     schedule: str = Field(min_length=1, max_length=120)
@@ -241,6 +244,9 @@ class AutomationJobRunRequest(RequestModel):
         "WEEKLY_PLAN_PREPARE",
         "SELL_FOLLOWUP_DUE",
         "SYSTEM_DOCTOR",
+        "MONTHLY_REVIEW",
+        "QUARTERLY_REVIEW",
+        "ANNUAL_REVIEW",
     ]
     scheduled_for: str | None = Field(default=None, min_length=1, max_length=80)
     actor_ref: str = Field(default="operations-runner", min_length=1, max_length=120)

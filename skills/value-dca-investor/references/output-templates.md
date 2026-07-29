@@ -51,8 +51,15 @@ Treat delivery lifecycle literally:
 
 - `PENDING`: waiting for an adapter claim.
 - `DISPATCHED`: claimed by an adapter; delivery is not proven.
-- `DELIVERED`: provider receipt evidence is recorded.
+- `DELIVERED`: provider-acceptance evidence is recorded; this is not necessarily a human read.
 - `FAILED`: maximum attempts exhausted.
 - `SUPPRESSED`: intentionally not sent.
 
 Never translate `DISPATCHED`, Cron `ok`, stdout, or an origin handoff as “已送达”.
+
+## Performance and periodic review
+
+Present Core's period, calculation version, Modified Dietz, XIRR, TWR, benchmark return, excess
+return, data quality and warnings exactly. A null metric is `不可用`, never `0`. State the
+`EXTERNAL_FLOW` cash convention whenever Core returns it. Periodic review action items are
+follow-up facts only; do not convert them into trade advice.
