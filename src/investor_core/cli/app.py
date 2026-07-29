@@ -450,6 +450,37 @@ def operations_retry_due(
         emit_ledger_result({"ok": True, **result})
 
 
+@operations_app.command("missed-runs")
+def operations_missed_runs(
+    grace_minutes: Annotated[int, typer.Option(min=1, max=1440)] = 10,
+    lookback_days: Annotated[int, typer.Option(min=1, max=31)] = 7,
+    limit: Annotated[int, typer.Option(min=1, max=100)] = 100,
+) -> None:
+    """List approved schedule occurrences that are due but have no run record."""
+    try:
+        result = OperationsService(get_settings()).list_missed_runs(
+            grace_minutes=grace_minutes,
+            lookback_days=lookback_days,
+            limit=limit,
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, "items": result})
+
+
+@operations_app.command("recover-due")
+def operations_recover_due(
+    limit: Annotated[int, typer.Option(min=1, max=100)] = 20,
+) -> None:
+    """Catch up missed schedule windows, then retry failed deterministic runs."""
+    try:
+        result = OperationsService(get_settings()).recover_due(limit=limit)
+    except LedgerError as error:
+        emit_ledger_error(error)
+    if result["display_text"] != "[SILENT]":
+        emit_ledger_result({"ok": True, **result})
+
+
 @app.command()
 def doctor(
     json_output: Annotated[
