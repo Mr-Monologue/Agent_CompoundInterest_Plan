@@ -32,8 +32,11 @@ REQUIRED_TABLES = {
     "market_nav_verifications",
     "notification_delivery_attempts",
     "notification_outbox",
+    "performance_snapshots",
+    "periodic_reviews",
     "portfolios",
     "report_bundles",
+    "review_action_items",
     "schema_meta",
     "settings",
     "strategy_assignments",
@@ -46,7 +49,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0014_notification_delivery_receipts"
+EXPECTED_ALEMBIC_REVISION = "0015_performance_reviews"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -122,7 +125,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Notification delivery receipt schema is current"
+            schema_message = "Performance and periodic review schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",

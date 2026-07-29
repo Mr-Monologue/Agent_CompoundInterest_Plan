@@ -385,7 +385,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0014_notification_delivery_receipts",)
+    assert revision == ("0015_performance_reviews",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:
@@ -403,7 +403,11 @@ def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:
     manifest = service.scheduler_manifest(profile="investor")
     assert manifest["automatic_trade"] is False
     desired = {item["managed_name"]: item for item in manifest["jobs"]}
-    assert set(desired) == {"value-dca-daily-risk-scan", "value-dca-retry-due"}
+    assert set(desired) == {
+        "value-dca-daily-risk-scan",
+        "value-dca-notification-delivery",
+        "value-dca-retry-due",
+    }
     assert desired["value-dca-daily-risk-scan"]["script"] == "value_dca_daily_risk_scan.py"
 
     drifted = service.record_scheduler_snapshot(
@@ -414,6 +418,7 @@ def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:
     assert drifted["reconciliation_status"] == "DRIFT"
     assert drifted["drift"]["missing"] == [
         "value-dca-daily-risk-scan",
+        "value-dca-notification-delivery",
         "value-dca-retry-due",
     ]
 
