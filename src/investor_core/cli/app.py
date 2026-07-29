@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 from contextlib import closing
+from datetime import date
 from pathlib import Path
 from typing import Annotated, NoReturn
 from uuid import uuid4
@@ -19,6 +20,7 @@ from investor_core.database import ensure_database_parent
 from investor_core.health import build_doctor_report
 from investor_core.ledger import LedgerError, LedgerService
 from investor_core.operations import OperationsService
+from investor_core.performance import PerformanceService
 from investor_core.strategy import StrategyService
 from investor_core.version import __version__
 
@@ -36,6 +38,10 @@ operations_app = typer.Typer(
     no_args_is_help=True,
     help="Run and inspect explicitly approved deterministic automation.",
 )
+performance_app = typer.Typer(
+    no_args_is_help=True,
+    help="Calculate deterministic portfolio performance and inspect periodic reviews.",
+)
 app.add_typer(db_app, name="db")
 app.add_typer(setup_app, name="setup")
 app.add_typer(instrument_app, name="instrument")
@@ -43,6 +49,52 @@ app.add_typer(ledger_app, name="ledger")
 app.add_typer(opening_app, name="opening")
 app.add_typer(strategy_app, name="strategy")
 app.add_typer(operations_app, name="operations")
+app.add_typer(performance_app, name="performance")
+
+
+@performance_app.command("calculate")
+def performance_calculate(
+    portfolio_id: Annotated[str, typer.Option(help="Portfolio identifier.")],
+    period_start: Annotated[str, typer.Option(help="Inclusive period start (YYYY-MM-DD).")],
+    period_end: Annotated[str, typer.Option(help="Inclusive period end (YYYY-MM-DD).")],
+    period_type: Annotated[
+        str,
+        typer.Option(help="CUSTOM, MONTHLY, QUARTERLY, ANNUAL or SINCE_INCEPTION."),
+    ] = "CUSTOM",
+) -> None:
+    """Calculate and persist one auditable performance snapshot."""
+    try:
+        result = PerformanceService(get_settings()).calculate(
+            portfolio_id=portfolio_id,
+            period_start=date.fromisoformat(period_start),
+            period_end=date.fromisoformat(period_end),
+            period_type=period_type,
+            persist=True,
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, **result})
+
+
+@performance_app.command("reviews")
+def performance_reviews(
+    portfolio_id: Annotated[str, typer.Option(help="Portfolio identifier.")],
+    review_type: Annotated[
+        str,
+        typer.Option(help="Optional MONTHLY, QUARTERLY or ANNUAL filter."),
+    ] = "",
+    limit: Annotated[int, typer.Option(min=1, max=500)] = 100,
+) -> None:
+    """List immutable periodic review facts and action items."""
+    try:
+        items = PerformanceService(get_settings()).list_reviews(
+            portfolio_id=portfolio_id,
+            review_type=review_type or None,
+            limit=limit,
+        )
+    except LedgerError as error:
+        emit_ledger_error(error)
+    emit_ledger_result({"ok": True, "items": items})
 
 
 def project_root() -> Path:
@@ -371,7 +423,8 @@ def operations_run(
         typer.Argument(
             help=(
                 "DAILY_MARKET_SYNC, DAILY_RISK_SCAN, WEEKLY_PLAN_PREPARE, "
-                "SELL_FOLLOWUP_DUE or SYSTEM_DOCTOR."
+                "SELL_FOLLOWUP_DUE, SYSTEM_DOCTOR, MONTHLY_REVIEW, "
+                "QUARTERLY_REVIEW or ANNUAL_REVIEW."
             )
         ),
     ],
