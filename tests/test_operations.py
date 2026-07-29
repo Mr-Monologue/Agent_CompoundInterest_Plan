@@ -196,6 +196,148 @@ def test_failed_system_doctor_creates_notify_bundle_and_outbox(tmp_path: Path) -
     assert outbox[0]["report_bundle_id"] == result["report_bundle"]["id"]
 
 
+def test_delivery_requires_verified_provider_receipt(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    settings = settings_for(database_path, production=True)
+    service = OperationsService(settings, now=fixed_now)
+    commit_policy(
+        service,
+        job_name="SYSTEM_DOCTOR",
+        config={"delivery_target": "origin"},
+    )
+    service.run_job(
+        job_name="SYSTEM_DOCTOR",
+        scheduled_for="2026-07-27T10:15:00+08:00",
+    )
+
+    claimed = service.claim_delivery_attempts(delivery_target="origin")
+
+    assert claimed["claimed_count"] == 1
+    assert claimed["delivered_count"] == 0
+    item = claimed["items"][0]
+    outbox = service.list_outbox(status=None)
+    assert outbox[0]["status"] == "DISPATCHED"
+    assert outbox[0]["delivered_at"] is None
+    assert service.status_summary()["outbox_counts"]["DISPATCHED"] == 1
+
+    with pytest.raises(LedgerError, match="receipt token"):
+        service.record_delivery_receipt(
+            outbox_id=str(item["outbox_id"]),
+            attempt_id=str(item["attempt_id"]),
+            receipt_token="invalid-receipt-token",
+            outcome="DELIVERED",
+            provider="hermes-origin",
+            provider_message_id="message-1",
+            evidence={"channel_status": "accepted"},
+            error_code=None,
+        )
+
+    delivered = service.record_delivery_receipt(
+        outbox_id=str(item["outbox_id"]),
+        attempt_id=str(item["attempt_id"]),
+        receipt_token=str(item["receipt_token"]),
+        outcome="DELIVERED",
+        provider="hermes-origin",
+        provider_message_id="message-1",
+        evidence={"channel_status": "accepted"},
+        error_code=None,
+    )
+
+    assert delivered["delivered"] is True
+    assert delivered["outbox"]["status"] == "DELIVERED"
+    assert delivered["outbox"]["delivered_at"] is not None
+    assert delivered["attempt"]["provider_message_id"] == "message-1"
+    replay = service.record_delivery_receipt(
+        outbox_id=str(item["outbox_id"]),
+        attempt_id=str(item["attempt_id"]),
+        receipt_token=str(item["receipt_token"]),
+        outcome="DELIVERED",
+        provider="hermes-origin",
+        provider_message_id="message-1",
+        evidence={"channel_status": "accepted"},
+        error_code=None,
+    )
+    assert replay["idempotent_replay"] is True
+
+
+def test_failed_delivery_is_retried_after_backoff(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    current = [fixed_now()]
+
+    def mutable_now() -> datetime:
+        return current[0]
+
+    settings = settings_for(database_path, production=True)
+    service = OperationsService(settings, now=mutable_now)
+    commit_policy(
+        service,
+        job_name="SYSTEM_DOCTOR",
+        config={"delivery_target": "origin"},
+    )
+    service.run_job(
+        job_name="SYSTEM_DOCTOR",
+        scheduled_for="2026-07-27T10:15:00+08:00",
+    )
+    first = service.claim_delivery_attempts()["items"][0]
+    failed = service.record_delivery_receipt(
+        outbox_id=str(first["outbox_id"]),
+        attempt_id=str(first["attempt_id"]),
+        receipt_token=str(first["receipt_token"]),
+        outcome="FAILED",
+        provider="hermes-origin",
+        provider_message_id=None,
+        evidence={"channel_status": "rate_limited"},
+        error_code="RATE_LIMITED",
+    )
+
+    assert failed["delivered"] is False
+    assert failed["outbox"]["status"] == "PENDING"
+    assert failed["outbox"]["next_attempt_at"] == "2026-07-27T02:05:00Z"
+    assert service.claim_delivery_attempts()["claimed_count"] == 0
+
+    current[0] = datetime(2026, 7, 27, 2, 5, tzinfo=UTC)
+    second = service.claim_delivery_attempts()
+    assert second["claimed_count"] == 1
+    assert second["items"][0]["attempt_number"] == 2
+    attempts = service.list_delivery_attempts(outbox_id=str(first["outbox_id"]))
+    assert [item["status"] for item in attempts] == ["DISPATCHED", "FAILED"]
+
+
+def test_dispatch_without_receipt_times_out_before_reclaim(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    current = [fixed_now()]
+
+    def mutable_now() -> datetime:
+        return current[0]
+
+    service = OperationsService(
+        settings_for(database_path, production=True),
+        now=mutable_now,
+    )
+    commit_policy(
+        service,
+        job_name="SYSTEM_DOCTOR",
+        config={"delivery_target": "origin"},
+    )
+    service.run_job(
+        job_name="SYSTEM_DOCTOR",
+        scheduled_for="2026-07-27T10:15:00+08:00",
+    )
+    first = service.claim_delivery_attempts()["items"][0]
+
+    current[0] = datetime(2026, 7, 27, 2, 15, tzinfo=UTC)
+    reclaimed = service.claim_delivery_attempts()
+
+    assert reclaimed["claimed_count"] == 1
+    assert reclaimed["items"][0]["outbox_id"] == first["outbox_id"]
+    assert reclaimed["items"][0]["attempt_number"] == 2
+    attempts = service.list_delivery_attempts(outbox_id=str(first["outbox_id"]))
+    assert [item["status"] for item in attempts] == ["DISPATCHED", "TIMED_OUT"]
+
+
 def test_weekly_plan_policy_requires_explicit_contribution_amount(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
@@ -243,7 +385,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0013_hermes_scheduler_bridge",)
+    assert revision == ("0014_notification_delivery_receipts",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:

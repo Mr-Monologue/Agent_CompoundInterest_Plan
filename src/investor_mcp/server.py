@@ -348,6 +348,40 @@ async def automation_alert_list(
 
 
 @mcp.tool()
+async def automation_delivery_status_list(
+    status: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Read notification outbox state; DISPATCHED is not proof of delivery."""
+    return await core_request(
+        "GET",
+        "/v1/notification-outbox",
+        params={
+            "status": status or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def automation_delivery_attempt_list(
+    outbox_id: str = "",
+    status: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """Read immutable delivery attempts and verified channel receipt evidence."""
+    return await core_request(
+        "GET",
+        "/v1/notification-delivery-attempts",
+        params={
+            "outbox_id": outbox_id or None,
+            "status": status or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
 async def portfolio_create(name: str, base_currency: str = "CNY") -> dict[str, Any]:
     """Idempotently create a portfolio configuration; this does not change holdings."""
     return await core_request(

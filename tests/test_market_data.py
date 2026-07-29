@@ -497,6 +497,25 @@ def test_portfolio_brief_deterministically_flags_transition_and_formats_losses(
     assert data["role_summary"]["CORE"]["assessment"] == "UNDER_TARGET"
     assert data["role_summary"]["SATELLITE"]["assessment"] == "OVER_TARGET"
     assert data["allocation_assessment"]["automatic_selling_allowed"] is False
+    assert data["allocation_assessment"]["transition_exit_condition_met"] is False
+    assert data["allocation_assessment"]["transition_exit_requirements"] == {
+        "all_required": True,
+        "no_unassigned": {
+            "required": True,
+            "actual_count": 0,
+            "met": True,
+        },
+        "core_min_pct": {
+            "required": "55.00",
+            "actual": "10.00",
+            "met": False,
+        },
+        "satellite_max_pct": {
+            "required": "45.00",
+            "actual": "90.00",
+            "met": False,
+        },
+    }
     assert "TRANSITION_REQUIRED" in data["display_text"]
     assert "优先使用新增资金，不自动卖出" in data["display_text"]  # noqa: RUF001
     assert "未实现盈亏 -¥115.00" in data["display_text"]
