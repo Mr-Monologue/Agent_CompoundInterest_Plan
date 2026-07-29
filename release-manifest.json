@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.18.0",
+  "version": "0.18.1",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
   "database_revision": "0015_performance_reviews",
   "minimum_current_version": "0.5.3",
-  "notes": "Add a Hermes channel adapter with provider-acceptance receipts, deterministic Modified Dietz/XIRR/TWR performance facts, benchmark attribution, and auditable monthly, quarterly and annual review automation."
+  "notes": "Fix the Hermes notification worker for copied-profile isolation and resolve portable origin delivery through the configured platform home channel."
 }
