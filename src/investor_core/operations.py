@@ -11,8 +11,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from croniter import croniter
 
 from investor_core.config import Settings
 from investor_core.health import build_doctor_report
@@ -31,6 +34,8 @@ SUPPORTED_JOBS = {
 PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
 MANAGED_JOB_PREFIX = "value-dca-"
 RETRY_JOB_NAME = f"{MANAGED_JOB_PREFIX}retry-due"
+MISSED_RUN_GRACE_MINUTES = 10
+MISSED_RUN_LOOKBACK_DAYS = 7
 
 
 def _iso(value: datetime) -> str:
@@ -101,7 +106,13 @@ class OperationsService:
             (
                 str(uuid4()),
                 _iso(self._now()),
-                "CRON" if actor_ref in {"cron", "operations-runner"} else "USER",
+                (
+                    "CRON"
+                    if actor_ref == "cron"
+                    or actor_ref.startswith("hermes-cron")
+                    or actor_ref.startswith("operations-")
+                    else "USER"
+                ),
                 actor_ref,
                 action,
                 entity_type,
@@ -189,13 +200,78 @@ class OperationsService:
     @staticmethod
     def _validate_cron_schedule(schedule: str) -> str:
         normalized = " ".join(schedule.strip().split())
-        if len(normalized.split(" ")) != 5:
+        if len(normalized.split(" ")) != 5 or not croniter.is_valid(normalized):
             raise LedgerError(
                 "AUTOMATION_SCHEDULE_UNSUPPORTED",
-                "Hermes scheduler policies require a five-field cron expression",
+                "Hermes scheduler policies require a valid five-field cron expression",
                 details={"schedule": schedule},
             )
         return normalized
+
+    @staticmethod
+    def _scheduled_occurrence(
+        policy: sqlite3.Row | JsonDict,
+        *,
+        before: datetime,
+    ) -> datetime:
+        timezone = ZoneInfo(str(policy["timezone"]))
+        localized = before.astimezone(timezone)
+        occurrence = croniter(
+            str(policy["schedule"]),
+            localized + timedelta(microseconds=1),
+            ret_type=datetime,
+        ).get_prev(datetime)
+        if occurrence.tzinfo is None:
+            occurrence = occurrence.replace(tzinfo=timezone)
+        return occurrence.astimezone(UTC)
+
+    @staticmethod
+    def _legacy_scheduled_date(scheduled_for: str, *, timezone: str) -> str | None:
+        if "T" not in scheduled_for:
+            return None
+        try:
+            scheduled = datetime.fromisoformat(scheduled_for.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if scheduled.tzinfo is None:
+            return None
+        return scheduled.astimezone(ZoneInfo(timezone)).date().isoformat()
+
+    @staticmethod
+    def _business_date(scheduled_for: str, *, timezone: str) -> str:
+        if "T" not in scheduled_for:
+            return scheduled_for[:10]
+        scheduled = datetime.fromisoformat(scheduled_for.replace("Z", "+00:00"))
+        return scheduled.astimezone(ZoneInfo(timezone)).date().isoformat()
+
+    def _find_existing_run(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        job_name: str,
+        portfolio_id: str | None,
+        scheduled_for: str,
+        policy_version: int,
+        timezone: str,
+    ) -> sqlite3.Row | None:
+        idempotency_key = f"{job_name}:{portfolio_id or 'global'}:{scheduled_for}:v{policy_version}"
+        existing = connection.execute(
+            "SELECT * FROM job_runs WHERE idempotency_key = ?",
+            (idempotency_key,),
+        ).fetchone()
+        if existing is not None:
+            return cast(sqlite3.Row, existing)
+        legacy_date = self._legacy_scheduled_date(scheduled_for, timezone=timezone)
+        if legacy_date is None:
+            return None
+        legacy_key = f"{job_name}:{portfolio_id or 'global'}:{legacy_date}:v{policy_version}"
+        return cast(
+            sqlite3.Row | None,
+            connection.execute(
+                "SELECT * FROM job_runs WHERE idempotency_key = ?",
+                (legacy_key,),
+            ).fetchone(),
+        )
 
     def create_policy_draft(
         self,
@@ -560,6 +636,9 @@ class OperationsService:
                 "never_delete_unmanaged_jobs": True,
                 "duplicate_managed_name": "STOP",
                 "record_snapshot_after_reconcile": True,
+                "retry_job_also_recovers_missed_runs": True,
+                "missed_run_grace_minutes": MISSED_RUN_GRACE_MINUTES,
+                "missed_run_lookback_days": MISSED_RUN_LOOKBACK_DAYS,
             },
         }
 
@@ -746,11 +825,12 @@ class OperationsService:
             job_name=job, portfolio_id=portfolio_id
         )
         timezone = str(policy["timezone"]) if policy is not None else self.settings.timezone
-        scheduled = (
-            scheduled_for.strip()
-            if scheduled_for is not None
-            else self._now().astimezone(ZoneInfo(timezone)).date().isoformat()
-        )
+        derived_schedule = scheduled_for is None
+        scheduled = scheduled_for.strip() if scheduled_for is not None else None
+        if scheduled is None and policy is not None:
+            scheduled = _iso(self._scheduled_occurrence(policy, before=self._now()))
+        if scheduled is None:
+            scheduled = self._now().astimezone(ZoneInfo(timezone)).date().isoformat()
         if not scheduled or len(scheduled) > 80:
             raise LedgerError(
                 "AUTOMATION_SCHEDULED_FOR_INVALID",
@@ -772,15 +852,31 @@ class OperationsService:
                 reason_code="AUTOMATION_PAUSED",
                 policy=policy_data,
             )
+        if derived_schedule:
+            occurrence = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
+            approved_at = datetime.fromisoformat(str(policy["approved_at"]).replace("Z", "+00:00"))
+            if occurrence < approved_at:
+                return self._record_skip(
+                    job_name=job,
+                    scheduled_for=scheduled,
+                    portfolio_id=resolved_portfolio,
+                    reason_code="AUTOMATION_NOT_DUE",
+                    policy=policy_data,
+                )
         config = json.loads(str(policy["config_json"]))
-        idempotency_key = (
-            f"{job}:{resolved_portfolio or 'global'}:{scheduled}:v{int(policy['version'])}"
-        )
+        policy_version = int(policy["version"])
+        idempotency_key = f"{job}:{resolved_portfolio or 'global'}:{scheduled}:v{policy_version}"
         with self._connect() as connection:
-            existing = connection.execute(
-                "SELECT * FROM job_runs WHERE idempotency_key = ?", (idempotency_key,)
-            ).fetchone()
+            existing = self._find_existing_run(
+                connection,
+                job_name=job,
+                portfolio_id=resolved_portfolio,
+                scheduled_for=scheduled,
+                policy_version=policy_version,
+                timezone=timezone,
+            )
             if existing is not None and str(existing["status"]) in {
+                "RUNNING",
                 "SUCCESS",
                 "DEGRADED",
                 "SKIPPED",
@@ -823,7 +919,8 @@ class OperationsService:
                                 "portfolio_id": resolved_portfolio,
                                 "account_id": account_id,
                                 "policy_id": str(policy["id"]),
-                                "policy_version": int(policy["version"]),
+                                "policy_version": policy_version,
+                                "actor_ref": actor_ref,
                             }
                         ),
                         str(uuid4()),
@@ -848,6 +945,7 @@ class OperationsService:
             facts, quality, notify, reason_code = self._execute(
                 job_name=job,
                 scheduled_for=scheduled,
+                timezone=timezone,
                 portfolio_id=resolved_portfolio,
                 account_id=account_id,
                 config=config,
@@ -904,11 +1002,12 @@ class OperationsService:
         *,
         job_name: str,
         scheduled_for: str,
+        timezone: str,
         portfolio_id: str | None,
         account_id: str | None,
         config: JsonDict,
     ) -> tuple[JsonDict, str, bool, str]:
-        business_date = scheduled_for[:10]
+        business_date = self._business_date(scheduled_for, timezone=timezone)
         if job_name == "SYSTEM_DOCTOR":
             report = build_doctor_report(self.settings).model_dump(mode="json")
             notify = report["status"] != "PASS"
@@ -1444,6 +1543,116 @@ class OperationsService:
             for row in rows
         ]
 
+    def list_missed_runs(
+        self,
+        *,
+        grace_minutes: int = MISSED_RUN_GRACE_MINUTES,
+        lookback_days: int = MISSED_RUN_LOOKBACK_DAYS,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        """List latest approved schedule occurrences with no durable run record."""
+        if grace_minutes < 1 or grace_minutes > 1440:
+            raise LedgerError(
+                "AUTOMATION_RECOVERY_WINDOW_INVALID",
+                "grace_minutes must be between 1 and 1440",
+            )
+        if lookback_days < 1 or lookback_days > 31:
+            raise LedgerError(
+                "AUTOMATION_RECOVERY_WINDOW_INVALID",
+                "lookback_days must be between 1 and 31",
+            )
+        if limit < 1 or limit > 100:
+            raise LedgerError("INVALID_LIMIT", "limit must be between 1 and 100")
+        now = self._now()
+        cutoff = now - timedelta(minutes=grace_minutes)
+        earliest = now - timedelta(days=lookback_days)
+        with self._connect() as connection:
+            policies = connection.execute(
+                """
+                SELECT * FROM automation_policies
+                WHERE status='ACTIVE' AND enabled=1
+                ORDER BY approved_at, job_name, portfolio_id
+                """
+            ).fetchall()
+            missed: list[JsonDict] = []
+            for policy in policies:
+                occurrence = self._scheduled_occurrence(policy, before=cutoff)
+                approved_at = datetime.fromisoformat(
+                    str(policy["approved_at"]).replace("Z", "+00:00")
+                )
+                if occurrence < approved_at or occurrence < earliest:
+                    continue
+                scheduled_for = _iso(occurrence)
+                existing = self._find_existing_run(
+                    connection,
+                    job_name=str(policy["job_name"]),
+                    portfolio_id=(
+                        str(policy["portfolio_id"]) if policy["portfolio_id"] is not None else None
+                    ),
+                    scheduled_for=scheduled_for,
+                    policy_version=int(policy["version"]),
+                    timezone=str(policy["timezone"]),
+                )
+                if existing is not None:
+                    continue
+                missed.append(
+                    {
+                        "policy_id": str(policy["id"]),
+                        "policy_version": int(policy["version"]),
+                        "portfolio_id": policy["portfolio_id"],
+                        "job_name": str(policy["job_name"]),
+                        "scheduled_for": scheduled_for,
+                        "timezone": str(policy["timezone"]),
+                        "detected_at": _iso(now),
+                        "grace_minutes": grace_minutes,
+                        "lookback_days": lookback_days,
+                        "recovery_state": "DUE",
+                    }
+                )
+        return sorted(
+            missed,
+            key=lambda item: (str(item["scheduled_for"]), str(item["job_name"])),
+        )[:limit]
+
+    def catch_up_due(
+        self,
+        *,
+        grace_minutes: int = MISSED_RUN_GRACE_MINUTES,
+        lookback_days: int = MISSED_RUN_LOOKBACK_DAYS,
+        limit: int = 20,
+    ) -> JsonDict:
+        """Run the latest missed occurrence per active policy after a safety grace period."""
+        missed = self.list_missed_runs(
+            grace_minutes=grace_minutes,
+            lookback_days=lookback_days,
+            limit=limit,
+        )
+        results: list[JsonDict] = []
+        for item in missed:
+            results.append(
+                self.run_job(
+                    job_name=str(item["job_name"]),
+                    scheduled_for=str(item["scheduled_for"]),
+                    portfolio_id=(
+                        str(item["portfolio_id"]) if item["portfolio_id"] is not None else None
+                    ),
+                    actor_ref="operations-catch-up",
+                )
+            )
+        displays = [
+            str(item["display_text"])
+            for item in results
+            if str(item.get("display_text", "[SILENT]")) != "[SILENT]"
+        ]
+        return {
+            "recovered_count": len(results),
+            "items": results,
+            "grace_minutes": grace_minutes,
+            "lookback_days": lookback_days,
+            "display_text": "\n".join(displays) if displays else "[SILENT]",
+            "automatic_trade": False,
+        }
+
     def status_summary(self) -> JsonDict:
         """Return deterministic automation state without running or delivering anything."""
         with self._connect() as connection:
@@ -1488,6 +1697,7 @@ class OperationsService:
                 ).fetchone()[0]
             )
         scheduler_snapshot = self.latest_scheduler_snapshot()
+        missed_runs = self.list_missed_runs()
         return {
             "policies": [
                 {
@@ -1506,6 +1716,8 @@ class OperationsService:
             "open_alert_count": open_alerts,
             "pending_outbox_count": pending_outbox,
             "due_retry_count": due_retries,
+            "missed_run_count": len(missed_runs),
+            "missed_runs": missed_runs,
             "scheduler_manifest": self.scheduler_manifest(),
             "scheduler_snapshot": scheduler_snapshot,
             "scheduler_status": (
@@ -1547,6 +1759,22 @@ class OperationsService:
             "retried_count": len(results),
             "items": results,
             "display_text": "[SILENT]" if not results else "AUTOMATION_RETRIES_COMPLETED",
+        }
+
+    def recover_due(self, *, limit: int = 20) -> JsonDict:
+        """Catch up missed schedules, then retry previously failed deterministic runs."""
+        catch_up = self.catch_up_due(limit=limit)
+        retries = self.retry_due(limit=limit)
+        displays = [
+            str(item["display_text"])
+            for item in (catch_up, retries)
+            if str(item["display_text"]) != "[SILENT]"
+        ]
+        return {
+            "catch_up": catch_up,
+            "retries": retries,
+            "display_text": "\n".join(displays) if displays else "[SILENT]",
+            "automatic_trade": False,
         }
 
     @staticmethod
