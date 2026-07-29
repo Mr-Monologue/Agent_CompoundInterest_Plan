@@ -141,7 +141,8 @@ from approval alone. Use `sell_followup_list` and `sell_followup_evaluate` for d
 reviews. Follow-up results describe post-sale evidence and never alter strategy parameters.
 
 Use `automation_policy_list`, `automation_run_list`, `automation_missed_run_list`,
-`automation_report_bundle_list`, and `automation_alert_list` to inspect unattended operations.
+`automation_report_bundle_list`, `automation_alert_list`, `automation_delivery_status_list`, and
+`automation_delivery_attempt_list` to inspect unattended operations.
 Never claim a job is scheduled merely because a Cron example exists; require an active Core policy with `enabled=true`
 and a current Hermes scheduler snapshot whose reconciliation status is
 `IN_SYNC`. A missed window is a Core fact only when `automation_missed_run_list` returns it; never
@@ -173,7 +174,10 @@ It preserves the original schedule and idempotency identity; it never replays a 
 
 Scheduled Agent reports are read-only. Read the committed report bundle, preserve its dates,
 quality, reason code and facts, and return exactly `[SILENT]` when `delivery_action=SILENT`.
-`NOTIFY` means a fact bundle is eligible for delivery, not that it was delivered. Core script jobs
+`NOTIFY` means a fact bundle is eligible for delivery, not that it was delivered. `PENDING` means
+the outbox has not been claimed. `DISPATCHED` means a channel adapter claimed it, not that the user
+received it. Only `DELIVERED` plus a provider message ID and a matching immutable attempt proves
+channel delivery. Core script jobs
 may sync sourced NAVs, run configured risk rules, prepare a DRAFT weekly plan, or evaluate due
 sell follow-ups. They may never confirm a policy, freeze a plan, approve a proposal, commit a
 transaction, alter strategy configuration, or replay a user mutation after restart.
@@ -198,6 +202,13 @@ transaction, alter strategy configuration, or replay a user mutation after resta
 - Never mark an outbox record as delivered from script stdout, a pending bundle, or a successful
   Core run. Delivery requires separate Hermes channel evidence; until then describe it as pending
   or handed to the scheduler.
+- Never call delivery claim or receipt endpoints through terminal tools. They are reserved for a
+  trusted channel adapter and are intentionally absent from Investor MCP.
+- When explaining allocation transition exit, read every item in
+  `transition_exit_requirements`. The exit requires all reported conditions; do not invert the
+  comparisons or infer them from target deviation.
+- For risk scans, report `evaluation_summary` literally. `NO_SELL_RULE_HIT` means no evaluated
+  rule triggered; it does not prove that no rule was configured.
 
 Read [safety-policy.md](references/safety-policy.md) before any mutation, sell, rebalance, or transition request.
 

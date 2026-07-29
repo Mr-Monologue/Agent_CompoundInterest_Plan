@@ -203,6 +203,23 @@ Gateway 状态一致，不证明渠道消息已经送达。
 补跑漏掉的最近窗口。补跑只调用既有确定性任务：不会确认草稿、冻结计划、批准卖出建议、提交
 交易或启用自动交易。
 
+0.17.0 补齐通知 outbox 的事实边界。待通知内容必须先由外部 Hermes 渠道适配器领取，
+领取后状态仅为 `DISPATCHED`，不能称为已送达。每次领取都会生成不可变 attempt 和一次性
+回执令牌；只有渠道返回 provider、provider message ID 和匹配令牌后，Core 才记录
+`DELIVERED`。失败回执进入 5/15/30/60/120 分钟退避，15 分钟没有回执会记录
+`TIMED_OUT` 后重新排队，达到最大次数才进入 `FAILED`。当前 Hermes Cron 的脚本成功和
+`origin` stdout 都只属于调度证据；没有渠道回执的 Hermes 版本会保持 `DISPATCHED`，
+不会伪造送达。
+
+外部适配器通过以下本地 API 完成严格的两阶段协议：
+
+- `POST /v1/notification-deliveries/claim`：原子领取到期通知并获得 receipt token。
+- `POST /v1/notification-deliveries/receipt`：凭渠道证据记录 `DELIVERED` 或 `FAILED`。
+- `GET /v1/notification-delivery-attempts`：查看不可变尝试、超时和回执证据。
+
+Investor MCP 只暴露 `automation_delivery_status_list` 与
+`automation_delivery_attempt_list` 两个只读工具，Agent 不能领取通知或回写渠道结果。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash

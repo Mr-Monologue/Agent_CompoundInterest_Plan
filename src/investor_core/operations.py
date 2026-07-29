@@ -36,6 +36,8 @@ MANAGED_JOB_PREFIX = "value-dca-"
 RETRY_JOB_NAME = f"{MANAGED_JOB_PREFIX}retry-due"
 MISSED_RUN_GRACE_MINUTES = 10
 MISSED_RUN_LOOKBACK_DAYS = 7
+DELIVERY_RECEIPT_TIMEOUT_MINUTES = 15
+DELIVERY_RETRY_MINUTES = (5, 15, 30, 60, 120)
 
 
 def _iso(value: datetime) -> str:
@@ -1538,10 +1540,448 @@ class OperationsService:
                 "next_attempt_at": row["next_attempt_at"],
                 "last_error_code": row["last_error_code"],
                 "created_at": str(row["created_at"]),
+                "dispatched_at": row["dispatched_at"],
+                "delivered_at": row["delivered_at"],
+                "provider_message_id": row["provider_message_id"],
                 "sent_at": row["sent_at"],
             }
             for row in rows
         ]
+
+    @staticmethod
+    def _delivery_payload(
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> JsonDict:
+        if row["report_bundle_id"] is not None:
+            bundle = connection.execute(
+                "SELECT * FROM report_bundles WHERE id=?",
+                (row["report_bundle_id"],),
+            ).fetchone()
+            assert bundle is not None
+            return {
+                "source_type": "REPORT_BUNDLE",
+                "source_id": str(bundle["id"]),
+                "display_text": (
+                    f"{bundle['bundle_type']} 自动化事实包\n"
+                    f"计划时间: {bundle['scheduled_for']}\n"
+                    f"数据质量: {bundle['data_quality']}\n"
+                    f"原因码: {bundle['reason_code']}"
+                ),
+                "facts": json.loads(str(bundle["facts_json"])),
+                "facts_hash": str(bundle["facts_hash"]),
+            }
+        alert = connection.execute(
+            "SELECT * FROM alerts WHERE id=?",
+            (row["alert_id"],),
+        ).fetchone()
+        assert alert is not None
+        return {
+            "source_type": "ALERT",
+            "source_id": str(alert["id"]),
+            "display_text": (
+                f"Value DCA 自动化告警\n"
+                f"严重度: {alert['severity']}\n"
+                f"错误码: {alert['code']}"
+            ),
+            "facts": json.loads(str(alert["context_json"])),
+            "facts_hash": _hash(json.loads(str(alert["context_json"]))),
+        }
+
+    def claim_delivery_attempts(
+        self,
+        *,
+        delivery_target: str | None = None,
+        limit: int = 20,
+        actor_ref: str = "hermes-delivery-adapter",
+    ) -> JsonDict:
+        """Claim due outbox records without treating dispatch as channel delivery."""
+        if limit < 1 or limit > 100:
+            raise LedgerError("INVALID_LIMIT", "limit must be between 1 and 100")
+        normalized_target = delivery_target.strip() if delivery_target else None
+        if normalized_target is not None and (
+            not normalized_target or len(normalized_target) > 200
+        ):
+            raise LedgerError(
+                "DELIVERY_TARGET_INVALID",
+                "delivery_target must be between 1 and 200 characters",
+            )
+        now = self._now()
+        timestamp = _iso(now)
+        receipt_deadline = _iso(now + timedelta(minutes=DELIVERY_RECEIPT_TIMEOUT_MINUTES))
+        claimed: list[JsonDict] = []
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                stale = connection.execute(
+                    """
+                    SELECT * FROM notification_outbox
+                    WHERE status='DISPATCHED' AND next_attempt_at IS NOT NULL
+                      AND next_attempt_at <= ?
+                    ORDER BY next_attempt_at, created_at
+                    """,
+                    (timestamp,),
+                ).fetchall()
+                for row in stale:
+                    attempt = connection.execute(
+                        """
+                        SELECT * FROM notification_delivery_attempts
+                        WHERE outbox_id=? AND status='DISPATCHED'
+                        ORDER BY attempt_number DESC LIMIT 1
+                        """,
+                        (row["id"],),
+                    ).fetchone()
+                    if attempt is not None:
+                        connection.execute(
+                            """
+                            UPDATE notification_delivery_attempts
+                            SET status='TIMED_OUT', error_code='DELIVERY_RECEIPT_TIMEOUT',
+                                receipt_at=?
+                            WHERE id=?
+                            """,
+                            (timestamp, attempt["id"]),
+                        )
+                    exhausted = int(row["attempt_count"]) >= int(row["max_attempts"])
+                    connection.execute(
+                        """
+                        UPDATE notification_outbox
+                        SET status=?, next_attempt_at=?, last_error_code=?
+                        WHERE id=?
+                        """,
+                        (
+                            "FAILED" if exhausted else "PENDING",
+                            None if exhausted else timestamp,
+                            "DELIVERY_RECEIPT_TIMEOUT",
+                            row["id"],
+                        ),
+                    )
+
+                query = """
+                    SELECT * FROM notification_outbox
+                    WHERE status='PENDING' AND attempt_count < max_attempts
+                      AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                """
+                params: list[object] = [timestamp]
+                if normalized_target is not None:
+                    query += " AND delivery_target=?"
+                    params.append(normalized_target)
+                query += " ORDER BY created_at LIMIT ?"
+                params.append(limit)
+                rows = connection.execute(query, params).fetchall()
+                for row in rows:
+                    token = secrets.token_urlsafe(32)
+                    attempt_id = str(uuid4())
+                    attempt_number = int(row["attempt_count"]) + 1
+                    connection.execute(
+                        """
+                        UPDATE notification_outbox
+                        SET status='DISPATCHED', attempt_count=?, next_attempt_at=?,
+                            last_error_code=NULL, dispatched_at=?
+                        WHERE id=?
+                        """,
+                        (
+                            attempt_number,
+                            receipt_deadline,
+                            timestamp,
+                            row["id"],
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO notification_delivery_attempts (
+                            id, outbox_id, attempt_number, status, receipt_digest,
+                            delivery_target, provider, provider_message_id,
+                            evidence_json, error_code, claimed_at, receipt_at
+                        ) VALUES (?, ?, ?, 'DISPATCHED', ?, ?, NULL, NULL,
+                                  '{}', NULL, ?, NULL)
+                        """,
+                        (
+                            attempt_id,
+                            row["id"],
+                            attempt_number,
+                            _token_digest(token),
+                            row["delivery_target"],
+                            timestamp,
+                        ),
+                    )
+                    claimed.append(
+                        {
+                            "outbox_id": str(row["id"]),
+                            "attempt_id": attempt_id,
+                            "attempt_number": attempt_number,
+                            "receipt_token": token,
+                            "delivery_target": str(row["delivery_target"]),
+                            "receipt_deadline": receipt_deadline,
+                            "payload": self._delivery_payload(connection, row),
+                        }
+                    )
+                    self._audit(
+                        connection,
+                        action="NOTIFICATION_DISPATCH_CLAIMED",
+                        entity_type="notification_delivery_attempt",
+                        entity_id=attempt_id,
+                        actor_ref=actor_ref,
+                        details={
+                            "outbox_id": str(row["id"]),
+                            "attempt_number": attempt_number,
+                            "delivery_target": str(row["delivery_target"]),
+                            "receipt_deadline": receipt_deadline,
+                        },
+                    )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return {
+            "claimed_count": len(claimed),
+            "items": claimed,
+            "delivery_state": "DISPATCHED" if claimed else "EMPTY",
+            "delivered_count": 0,
+            "display_text": "[SILENT]" if not claimed else "NOTIFICATION_DISPATCH_CLAIMED",
+        }
+
+    def record_delivery_receipt(
+        self,
+        *,
+        outbox_id: str,
+        attempt_id: str,
+        receipt_token: str,
+        outcome: str,
+        provider: str,
+        provider_message_id: str | None,
+        evidence: JsonDict,
+        error_code: str | None,
+        actor_ref: str = "hermes-delivery-adapter",
+    ) -> JsonDict:
+        """Record channel evidence; only a verified DELIVERED receipt means delivered."""
+        normalized_outcome = outcome.strip().upper()
+        if normalized_outcome not in {"DELIVERED", "FAILED"}:
+            raise LedgerError(
+                "DELIVERY_OUTCOME_INVALID",
+                "outcome must be DELIVERED or FAILED",
+            )
+        normalized_provider = provider.strip()
+        if not normalized_provider or len(normalized_provider) > 120:
+            raise LedgerError(
+                "DELIVERY_PROVIDER_INVALID",
+                "provider must be between 1 and 120 characters",
+            )
+        normalized_message_id = provider_message_id.strip() if provider_message_id else None
+        if normalized_outcome == "DELIVERED" and not normalized_message_id:
+            raise LedgerError(
+                "DELIVERY_EVIDENCE_REQUIRED",
+                "DELIVERED requires a provider_message_id",
+            )
+        normalized_error = error_code.strip().upper() if error_code else None
+        if normalized_outcome == "FAILED" and not normalized_error:
+            raise LedgerError(
+                "DELIVERY_ERROR_REQUIRED",
+                "FAILED requires an error_code",
+            )
+        timestamp = _iso(self._now())
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                attempt = connection.execute(
+                    """
+                    SELECT * FROM notification_delivery_attempts
+                    WHERE id=? AND outbox_id=?
+                    """,
+                    (attempt_id, outbox_id),
+                ).fetchone()
+                if attempt is None:
+                    raise LedgerError(
+                        "DELIVERY_ATTEMPT_NOT_FOUND",
+                        "delivery attempt was not found",
+                    )
+                if not hmac.compare_digest(
+                    str(attempt["receipt_digest"]),
+                    _token_digest(receipt_token),
+                ):
+                    raise LedgerError(
+                        "DELIVERY_RECEIPT_TOKEN_INVALID",
+                        "delivery receipt token does not match",
+                    )
+                current_attempt_status = str(attempt["status"])
+                if current_attempt_status in {"DELIVERED", "FAILED"}:
+                    if current_attempt_status != normalized_outcome:
+                        raise LedgerError(
+                            "DELIVERY_RECEIPT_CONFLICT",
+                            "delivery attempt already has a different terminal outcome",
+                        )
+                    outbox = connection.execute(
+                        "SELECT * FROM notification_outbox WHERE id=?",
+                        (outbox_id,),
+                    ).fetchone()
+                    assert outbox is not None
+                    connection.commit()
+                    return {
+                        "outbox": self._outbox_data(outbox),
+                        "attempt": self._delivery_attempt_data(attempt),
+                        "idempotent_replay": True,
+                        "delivered": normalized_outcome == "DELIVERED",
+                    }
+                if current_attempt_status != "DISPATCHED":
+                    raise LedgerError(
+                        "DELIVERY_ATTEMPT_NOT_RECEIPTABLE",
+                        "delivery attempt is not awaiting a receipt",
+                    )
+                outbox = connection.execute(
+                    "SELECT * FROM notification_outbox WHERE id=?",
+                    (outbox_id,),
+                ).fetchone()
+                assert outbox is not None
+                connection.execute(
+                    """
+                    UPDATE notification_delivery_attempts
+                    SET status=?, provider=?, provider_message_id=?,
+                        evidence_json=?, error_code=?, receipt_at=?
+                    WHERE id=?
+                    """,
+                    (
+                        normalized_outcome,
+                        normalized_provider,
+                        normalized_message_id,
+                        _json(evidence),
+                        normalized_error,
+                        timestamp,
+                        attempt_id,
+                    ),
+                )
+                if normalized_outcome == "DELIVERED":
+                    connection.execute(
+                        """
+                        UPDATE notification_outbox
+                        SET status='DELIVERED', next_attempt_at=NULL,
+                            last_error_code=NULL, delivered_at=?,
+                            provider_message_id=?, sent_at=?
+                        WHERE id=?
+                        """,
+                        (
+                            timestamp,
+                            normalized_message_id,
+                            timestamp,
+                            outbox_id,
+                        ),
+                    )
+                else:
+                    exhausted = int(outbox["attempt_count"]) >= int(outbox["max_attempts"])
+                    retry_index = min(
+                        max(int(outbox["attempt_count"]) - 1, 0),
+                        len(DELIVERY_RETRY_MINUTES) - 1,
+                    )
+                    next_attempt = (
+                        None
+                        if exhausted
+                        else _iso(
+                            self._now()
+                            + timedelta(minutes=DELIVERY_RETRY_MINUTES[retry_index])
+                        )
+                    )
+                    connection.execute(
+                        """
+                        UPDATE notification_outbox
+                        SET status=?, next_attempt_at=?, last_error_code=?
+                        WHERE id=?
+                        """,
+                        (
+                            "FAILED" if exhausted else "PENDING",
+                            next_attempt,
+                            normalized_error,
+                            outbox_id,
+                        ),
+                    )
+                self._audit(
+                    connection,
+                    action=f"NOTIFICATION_DELIVERY_{normalized_outcome}",
+                    entity_type="notification_delivery_attempt",
+                    entity_id=attempt_id,
+                    actor_ref=actor_ref,
+                    details={
+                        "outbox_id": outbox_id,
+                        "provider": normalized_provider,
+                        "provider_message_id": normalized_message_id,
+                        "error_code": normalized_error,
+                        "evidence_hash": _hash(evidence),
+                    },
+                )
+                updated_outbox = connection.execute(
+                    "SELECT * FROM notification_outbox WHERE id=?",
+                    (outbox_id,),
+                ).fetchone()
+                updated_attempt = connection.execute(
+                    "SELECT * FROM notification_delivery_attempts WHERE id=?",
+                    (attempt_id,),
+                ).fetchone()
+                assert updated_outbox is not None and updated_attempt is not None
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return {
+            "outbox": self._outbox_data(updated_outbox),
+            "attempt": self._delivery_attempt_data(updated_attempt),
+            "idempotent_replay": False,
+            "delivered": normalized_outcome == "DELIVERED",
+        }
+
+    @staticmethod
+    def _outbox_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "report_bundle_id": row["report_bundle_id"],
+            "alert_id": row["alert_id"],
+            "delivery_target": str(row["delivery_target"]),
+            "status": str(row["status"]),
+            "attempt_count": int(row["attempt_count"]),
+            "max_attempts": int(row["max_attempts"]),
+            "next_attempt_at": row["next_attempt_at"],
+            "last_error_code": row["last_error_code"],
+            "created_at": str(row["created_at"]),
+            "dispatched_at": row["dispatched_at"],
+            "delivered_at": row["delivered_at"],
+            "provider_message_id": row["provider_message_id"],
+            "sent_at": row["sent_at"],
+        }
+
+    @staticmethod
+    def _delivery_attempt_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "outbox_id": str(row["outbox_id"]),
+            "attempt_number": int(row["attempt_number"]),
+            "status": str(row["status"]),
+            "delivery_target": str(row["delivery_target"]),
+            "provider": row["provider"],
+            "provider_message_id": row["provider_message_id"],
+            "evidence": json.loads(str(row["evidence_json"])),
+            "error_code": row["error_code"],
+            "claimed_at": str(row["claimed_at"]),
+            "receipt_at": row["receipt_at"],
+        }
+
+    def list_delivery_attempts(
+        self,
+        *,
+        outbox_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        if limit < 1 or limit > 500:
+            raise LedgerError("INVALID_LIMIT", "limit must be between 1 and 500")
+        query = "SELECT * FROM notification_delivery_attempts WHERE 1=1"
+        params: list[object] = []
+        if outbox_id:
+            query += " AND outbox_id=?"
+            params.append(outbox_id)
+        if status:
+            query += " AND status=?"
+            params.append(status.strip().upper())
+        query += " ORDER BY claimed_at DESC, attempt_number DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._delivery_attempt_data(row) for row in rows]
 
     def list_missed_runs(
         self,
@@ -1686,6 +2126,9 @@ class OperationsService:
                     "SELECT COUNT(*) FROM notification_outbox WHERE status='PENDING'"
                 ).fetchone()[0]
             )
+            outbox_counts = connection.execute(
+                "SELECT status, COUNT(*) AS count FROM notification_outbox GROUP BY status"
+            ).fetchall()
             due_retries = int(
                 connection.execute(
                     """
@@ -1715,6 +2158,9 @@ class OperationsService:
             "latest_runs": [self._run_data(row) for row in latest_runs],
             "open_alert_count": open_alerts,
             "pending_outbox_count": pending_outbox,
+            "outbox_counts": {
+                str(row["status"]): int(row["count"]) for row in outbox_counts
+            },
             "due_retry_count": due_retries,
             "missed_run_count": len(missed_runs),
             "missed_runs": missed_runs,
