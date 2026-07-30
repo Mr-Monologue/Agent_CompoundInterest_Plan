@@ -20,13 +20,16 @@ from investor_core.api.schemas import (
     LifecycleObservationCreateRequest,
     MarketDataCanaryRequest,
     MarketDataSyncRequest,
+    MarketDiscoveryScanRequest,
     MarketNavSnapshotCreateRequest,
     MarketNavVerificationCreateRequest,
+    MarketResearchEvidenceRequest,
     NotificationDeliveryReceiptRequest,
     NotificationTestCreateRequest,
     OfficialNavBackfillRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
+    ReviewActionDecisionDraftRequest,
     RiskScanRequest,
     SellDecisionDraftCreateRequest,
     SellFollowupEvaluateRequest,
@@ -50,6 +53,7 @@ from investor_core.market_sync import MarketSyncService
 from investor_core.operations import OperationsService
 from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
+from investor_core.research import ResearchService
 from investor_core.risk import RiskService
 from investor_core.strategy import StrategyService
 from investor_core.version import __version__
@@ -80,6 +84,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     operations = OperationsService(runtime_settings)
     performance = PerformanceService(runtime_settings)
     capital = CapitalService(runtime_settings)
+    research = ResearchService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -356,6 +361,75 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     limit=limit,
                 )
             }
+        )
+
+    @app.post("/v1/market-research-evidence")
+    def market_research_evidence_record(
+        request: MarketResearchEvidenceRequest,
+    ) -> dict[str, Any]:
+        return success(research.record_evidence(**request.model_dump()))
+
+    @app.get("/v1/market-research-evidence")
+    def market_research_evidence_list(
+        instrument_code: str | None = None,
+        evidence_type: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_evidence(
+                    instrument_code=instrument_code,
+                    evidence_type=evidence_type,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.post("/v1/market-discovery-runs")
+    def market_discovery_run(request: MarketDiscoveryScanRequest) -> dict[str, Any]:
+        result = research.scan(**request.model_dump())
+        return success(
+            result,
+            warnings=(
+                ["Market discovery contains incomplete or limited source facts"]
+                if result["data_quality"] != "PASS"
+                else []
+            ),
+            data_quality=str(result["data_quality"]),
+        )
+
+    @app.get("/v1/market-discovery-runs")
+    def market_discovery_run_list(
+        portfolio_id: str,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {"items": research.list_runs(portfolio_id=portfolio_id, limit=limit)}
+        )
+
+    @app.post("/v1/review-action-items/{action_item_id}/decision-drafts")
+    def review_action_decision_draft_create(
+        action_item_id: str,
+        request: ReviewActionDecisionDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.create_action_decision_draft(
+                action_item_id=action_item_id,
+                **request.model_dump(),
+            )
+        )
+
+    @app.post("/v1/review-action-decision-drafts/{draft_id}/commit")
+    def review_action_decision_draft_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.commit_action_decision(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
         )
 
     @app.post("/v1/cash-event-drafts")

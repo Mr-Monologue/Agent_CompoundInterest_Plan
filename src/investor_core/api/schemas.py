@@ -227,6 +227,7 @@ class AutomationPolicyDraftCreateRequest(RequestModel):
         "MONTHLY_REVIEW",
         "QUARTERLY_REVIEW",
         "ANNUAL_REVIEW",
+        "WEEKLY_MARKET_DISCOVERY",
     ]
     enabled: bool
     schedule: str = Field(min_length=1, max_length=120)
@@ -247,6 +248,7 @@ class AutomationJobRunRequest(RequestModel):
         "MONTHLY_REVIEW",
         "QUARTERLY_REVIEW",
         "ANNUAL_REVIEW",
+        "WEEKLY_MARKET_DISCOVERY",
     ]
     scheduled_for: str | None = Field(default=None, min_length=1, max_length=80)
     actor_ref: str = Field(default="operations-runner", min_length=1, max_length=120)
@@ -318,6 +320,38 @@ class OfficialNavBackfillRequest(RequestModel):
     source_ref: str = Field(min_length=1, max_length=1000)
     source_lineage: Literal["FUND_MANAGER_OFFICIAL", "WIND"]
     observations: list[OfficialNavBackfillObservation] = Field(min_length=1, max_length=1000)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class MarketResearchEvidenceRequest(RequestModel):
+    instrument_code: str = Field(min_length=1, max_length=40)
+    evidence_date: date
+    evidence_type: Literal[
+        "FUND_PROFILE",
+        "HOLDINGS",
+        "MANAGER",
+        "FEES",
+        "BENCHMARK",
+        "MARKET_REGIME",
+        "OTHER",
+    ]
+    source_name: str = Field(min_length=1, max_length=200)
+    source_ref: str = Field(min_length=1, max_length=1000)
+    source_lineage: str = Field(min_length=1, max_length=120)
+    facts: dict[str, Any] = Field(min_length=1)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class MarketDiscoveryScanRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    instrument_codes: list[str] = Field(min_length=1, max_length=200)
+    as_of_date: date
+    lookback_days: int = Field(default=180, ge=30, le=730)
+
+
+class ReviewActionDecisionDraftRequest(RequestModel):
+    decision: Literal["ACKNOWLEDGE", "RESOLVE"]
+    reason: str = Field(min_length=1, max_length=1000)
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 

@@ -198,6 +198,20 @@ same period without mutating the earlier immutable record. Periodic review autom
 snapshots and action items; it may never approve a proposal, freeze a plan, change strategy or
 create a transaction.
 
+Use `market_research_evidence_record` only for facts actually returned by a cited source in the
+current session. Preserve its evidence date, type, source name, URL, lineage and structured facts;
+never turn model opinion into source evidence. Use `market_discovery_scan` only with an explicit
+list of already registered instrument codes supplied by the user or an approved local automation
+policy. Its returns, drawdown, volatility, freshness and evidence coverage are observations, not
+rankings or recommendations. `OBSERVE`, `REVIEW` and `DATA_BLOCKED` never change an instrument's
+role, thesis, contribution eligibility or strategy membership.
+
+Use `review_action_decision_draft_create` only when the user explicitly chooses to acknowledge or
+resolve one exact review action and supplies a reason. Show the returned previous and proposed
+status and expiry. Call `review_action_decision_draft_commit` only after confirmation with the
+matching token. A review-action decision never changes a holding, strategy, plan, sell proposal or
+transaction.
+
 When the user asks to install, repair, reconcile, or verify automation scheduling, call
 `automation_scheduler_manifest_get` first. Reconcile only jobs whose names begin with the returned
 managed prefix, using the Hermes Cron tool and the manifest's exact name, five-field schedule,
