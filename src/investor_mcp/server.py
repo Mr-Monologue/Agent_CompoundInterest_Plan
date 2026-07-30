@@ -435,6 +435,32 @@ async def automation_delivery_attempt_list(
 
 
 @mcp.tool()
+async def notification_test_send(
+    idempotency_key: str,
+    confirmation: Literal["SEND_TEST_NOTIFICATION"],
+) -> dict[str, Any]:
+    """Queue one fixed end-to-end test notification; never change investment state."""
+    return await core_request(
+        "POST",
+        "/v1/notification-tests",
+        payload={
+            "idempotency_key": idempotency_key,
+            "confirmation": confirmation,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def notification_test_get(test_request_id: str) -> dict[str, Any]:
+    """Read the real outbox, retry and channel receipt state for one test."""
+    return await core_request(
+        "GET",
+        f"/v1/notification-tests/{test_request_id}",
+    )
+
+
+@mcp.tool()
 async def portfolio_create(name: str, base_currency: str = "CNY") -> dict[str, Any]:
     """Idempotently create a portfolio configuration; this does not change holdings."""
     return await core_request(

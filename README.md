@@ -230,6 +230,10 @@ Hermes 平台适配器接受消息，不代表用户已经阅读；目标无法�
 虚拟环境中的 `investor_core` 包；便携目标 `origin` 交由 Hermes 使用已配置的平台 home
 channel 解析，避免将 Weixin iLink chat ID 误当作地址簿别名。
 
+0.19.0 增加受控通知链路测试：`notification_test_send` 只创建 Core 固定文案的测试消息，
+通过真实 outbox、Hermes no-agent 消费者和渠道回执完成端到端验收。测试请求需要精确确认词，
+支持幂等重放与 60 秒冷却；渠道会话失效和限流会保留在待重试状态，不会修改持仓、交易或策略。
+
 本版同时增加确定性绩效与周期复盘。`portfolio_performance_get` 从已提交交易和保存的 NAV
 计算 Modified Dietz、XIRR，以及满足数据条件时的 TWR；使用策略实例中明确配置的
 `benchmark_instrument_id` 计算基准收益和逐标的基准贡献。系统没有闲置现金账本，因此期间

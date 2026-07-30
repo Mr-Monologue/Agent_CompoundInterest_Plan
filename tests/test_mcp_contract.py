@@ -27,6 +27,8 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "periodic_review_list",
         "automation_delivery_status_list",
         "automation_delivery_attempt_list",
+        "notification_test_send",
+        "notification_test_get",
         "portfolio_create",
         "portfolio_list",
         "account_create",

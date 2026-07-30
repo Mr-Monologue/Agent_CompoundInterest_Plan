@@ -32,6 +32,7 @@ REQUIRED_TABLES = {
     "market_nav_verifications",
     "notification_delivery_attempts",
     "notification_outbox",
+    "notification_test_requests",
     "performance_snapshots",
     "periodic_reviews",
     "portfolios",
@@ -49,7 +50,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0015_performance_reviews"
+EXPECTED_ALEMBIC_REVISION = "0016_notification_test_delivery"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -125,7 +126,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Performance and periodic review schema is current"
+            schema_message = "Controlled notification test schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",
