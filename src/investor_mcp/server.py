@@ -401,6 +401,137 @@ async def periodic_review_list(
 
 
 @mcp.tool()
+async def market_research_evidence_record(
+    instrument_code: str,
+    evidence_date: str,
+    evidence_type: Literal[
+        "FUND_PROFILE",
+        "HOLDINGS",
+        "MANAGER",
+        "FEES",
+        "BENCHMARK",
+        "MARKET_REGIME",
+        "OTHER",
+    ],
+    source_name: str,
+    source_ref: str,
+    source_lineage: str,
+    facts: dict[str, Any],
+) -> dict[str, Any]:
+    """Record immutable sourced research facts; this never changes strategy or eligibility."""
+    return await core_request(
+        "POST",
+        "/v1/market-research-evidence",
+        payload={
+            "instrument_code": instrument_code,
+            "evidence_date": evidence_date,
+            "evidence_type": evidence_type,
+            "source_name": source_name,
+            "source_ref": source_ref,
+            "source_lineage": source_lineage,
+            "facts": facts,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def market_research_evidence_list(
+    instrument_code: str = "",
+    evidence_type: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List source-attributed market research facts without interpreting them as advice."""
+    return await core_request(
+        "GET",
+        "/v1/market-research-evidence",
+        params={
+            "instrument_code": instrument_code or None,
+            "evidence_type": evidence_type or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def market_discovery_scan(
+    instrument_codes: list[str],
+    as_of_date: str,
+    lookback_days: int = 180,
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Build an immutable facts-only candidate package from an explicit registered universe."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/market-discovery-runs",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "instrument_codes": instrument_codes,
+            "as_of_date": as_of_date,
+            "lookback_days": lookback_days,
+        },
+    )
+
+
+@mcp.tool()
+async def market_discovery_run_list(
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List immutable discovery packages and their data-quality boundaries."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/market-discovery-runs",
+        params={"portfolio_id": resolved_portfolio, "limit": limit},
+    )
+
+
+@mcp.tool()
+async def review_action_decision_draft_create(
+    action_item_id: str,
+    decision: Literal["ACKNOWLEDGE", "RESOLVE"],
+    reason: str,
+) -> dict[str, Any]:
+    """Draft an exact review-action state decision; this never changes investments."""
+    return await core_request(
+        "POST",
+        f"/v1/review-action-items/{action_item_id}/decision-drafts",
+        payload={
+            "decision": decision,
+            "reason": reason,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def review_action_decision_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Commit one confirmed review-action decision without changing strategy or holdings."""
+    return await core_request(
+        "POST",
+        f"/v1/review-action-decision-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
 async def cash_event_draft_create(
     event_type: Literal["DEPOSIT", "WITHDRAWAL", "DIVIDEND", "INTEREST", "FEE"],
     event_date: str,

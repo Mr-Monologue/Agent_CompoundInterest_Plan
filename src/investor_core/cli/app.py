@@ -424,7 +424,7 @@ def operations_run(
             help=(
                 "DAILY_MARKET_SYNC, DAILY_RISK_SCAN, WEEKLY_PLAN_PREPARE, "
                 "SELL_FOLLOWUP_DUE, SYSTEM_DOCTOR, MONTHLY_REVIEW, "
-                "QUARTERLY_REVIEW or ANNUAL_REVIEW."
+                "QUARTERLY_REVIEW, ANNUAL_REVIEW or WEEKLY_MARKET_DISCOVERY."
             )
         ),
     ],

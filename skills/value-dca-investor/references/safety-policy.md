@@ -61,3 +61,8 @@ current portfolio strategy instance's explicit contribution allowlist.
 
 Use only read-only tools. Never freeze a plan, approve a proposal, acknowledge an alert, update a
 review item, or commit a transaction from a Cron Agent session.
+
+`WEEKLY_MARKET_DISCOVERY` may scan only the explicit registered instrument codes stored in its
+confirmed local policy. It may create immutable discovery facts and a conditional notification;
+it must not register an instrument, change contribution eligibility, modify a thesis, rank a fund,
+or create a plan or transaction.

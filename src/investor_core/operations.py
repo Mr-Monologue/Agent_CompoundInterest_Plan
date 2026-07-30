@@ -23,6 +23,7 @@ from investor_core.ledger import JsonDict, LedgerError, LedgerService, utc_now
 from investor_core.market_sync import MarketSyncService
 from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
+from investor_core.research import ResearchService
 from investor_core.risk import RiskService
 
 SUPPORTED_JOBS = {
@@ -34,6 +35,7 @@ SUPPORTED_JOBS = {
     "MONTHLY_REVIEW",
     "QUARTERLY_REVIEW",
     "ANNUAL_REVIEW",
+    "WEEKLY_MARKET_DISCOVERY",
 }
 PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
 MANAGED_JOB_PREFIX = "value-dca-"
@@ -76,6 +78,7 @@ class OperationsService:
         risk: RiskService | None = None,
         planning: PlanningService | None = None,
         performance: PerformanceService | None = None,
+        research: ResearchService | None = None,
     ) -> None:
         self.settings = settings
         self._now = now
@@ -84,6 +87,7 @@ class OperationsService:
         self._risk = risk or RiskService(settings, now=now)
         self._planning = planning or PlanningService(settings, now=now)
         self._performance = performance or PerformanceService(settings, now=now)
+        self._research = research or ResearchService(settings, now=now)
 
     def _connect(self) -> sqlite3.Connection:
         path = (
@@ -157,6 +161,7 @@ class OperationsService:
             "MONTHLY_REVIEW": set(),
             "QUARTERLY_REVIEW": set(),
             "ANNUAL_REVIEW": set(),
+            "WEEKLY_MARKET_DISCOVERY": {"instrument_codes", "lookback_days"},
         }
         unknown = set(config) - allowed_common - allowed_by_job[job_name]
         if unknown:
@@ -209,6 +214,33 @@ class OperationsService:
                     ),
                 )
             normalized["contribution_amount"] = f"{amount:.2f}"
+        if job_name == "WEEKLY_MARKET_DISCOVERY":
+            raw_codes = normalized.get("instrument_codes")
+            if not isinstance(raw_codes, list):
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "market discovery requires an explicit instrument_codes list",
+                )
+            codes = sorted(
+                {
+                    str(code).strip().upper()
+                    for code in raw_codes
+                    if str(code).strip()
+                }
+            )
+            if not codes or len(codes) > 200:
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "market discovery requires between 1 and 200 instrument codes",
+                )
+            lookback = int(normalized.get("lookback_days", 180))
+            if not 30 <= lookback <= 730:
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "market discovery lookback_days must be between 30 and 730",
+                )
+            normalized["instrument_codes"] = codes
+            normalized["lookback_days"] = lookback
         return normalized
 
     @staticmethod
@@ -348,6 +380,26 @@ class OperationsService:
                         "PORTFOLIO_NOT_FOUND",
                         "active portfolio was not found",
                         http_status=404,
+                    )
+            if job == "WEEKLY_MARKET_DISCOVERY":
+                placeholders = ",".join("?" for _ in normalized_config["instrument_codes"])
+                registered = {
+                    str(row["code"])
+                    for row in connection.execute(
+                        f"""
+                        SELECT code FROM instruments
+                        WHERE status='ACTIVE' AND code IN ({placeholders})
+                        """,
+                        tuple(normalized_config["instrument_codes"]),
+                    ).fetchall()
+                }
+                missing = sorted(set(normalized_config["instrument_codes"]) - registered)
+                if missing:
+                    raise LedgerError(
+                        "AUTOMATION_DISCOVERY_UNIVERSE_INVALID",
+                        "market discovery policy contains unregistered instruments",
+                        details={"instrument_codes": missing},
+                        http_status=409,
                     )
             connection.execute(
                 """
@@ -1136,6 +1188,21 @@ class OperationsService:
                 result,
                 quality,
                 True,
+                str(result["reason_code"]),
+            )
+        if job_name == "WEEKLY_MARKET_DISCOVERY":
+            result = self._research.scan(
+                portfolio_id=portfolio_id,
+                instrument_codes=list(config["instrument_codes"]),
+                as_of_date=datetime.fromisoformat(business_date).date(),
+                lookback_days=int(config["lookback_days"]),
+            )
+            summary = dict(result["summary"])
+            notify = bool(summary["review_count"] or summary["blocked_count"])
+            return (
+                result,
+                str(result["data_quality"]),
+                notify,
                 str(result["reason_code"]),
             )
         raise AssertionError(f"unsupported job dispatch: {job_name}")
