@@ -113,3 +113,64 @@ def test_periodic_review_is_immutable_and_idempotent(tmp_path: Path) -> None:
     }
     assert second["id"] == first["id"]
     assert second["idempotent_replay"] is True
+
+
+def test_review_trend_preserves_cross_period_facts_and_action_backlog(
+    tmp_path: Path,
+) -> None:
+    settings, portfolio_id = _portfolio_with_navs(tmp_path)
+    client = TestClient(create_app(settings))
+    assert client.post(
+        "/v1/market-nav-snapshots",
+        json={
+            "instrument_code": "FUND001",
+            "nav_date": "2026-08-31",
+            "nav": "1.600000",
+            "source_type": "OFFICIAL",
+            "source_name": "基金公司",
+            "source_lineage": "FUND_MANAGER_OFFICIAL",
+            "verification_status": "VERIFIED",
+            "observed_at": "2026-08-31T12:00:00+08:00",
+        },
+    ).status_code == 200
+    service = PerformanceService(
+        settings,
+        now=lambda: datetime(2026, 9, 1, 1, 0, tzinfo=UTC),
+    )
+    service.prepare_review(
+        portfolio_id=portfolio_id,
+        review_type="MONTHLY",
+        anchor_date=date(2026, 7, 31),
+    )
+    service.prepare_review(
+        portfolio_id=portfolio_id,
+        review_type="MONTHLY",
+        anchor_date=date(2026, 8, 31),
+    )
+
+    first = service.build_review_trend(
+        portfolio_id=portfolio_id,
+        as_of_date=date(2026, 9, 1),
+        review_type="MONTHLY",
+        lookback_reviews=12,
+    )
+    replay = service.build_review_trend(
+        portfolio_id=portfolio_id,
+        as_of_date=date(2026, 9, 1),
+        review_type="MONTHLY",
+        lookback_reviews=12,
+    )
+
+    assert first["review_count"] == 2
+    assert len(first["review_series"]) == 2
+    assert first["action_summary"]["unresolved_count"] > 0
+    recurring = {
+        item["code"]: item["review_count"]
+        for item in first["action_summary"]["recurring_codes"]
+    }
+    assert recurring["BENCHMARK_COVERAGE_REVIEW"] == 2
+    assert recurring["MARKET_DISCOVERY_REVIEW"] == 2
+    assert first["trend_boundary"] == "DESCRIPTIVE_FACTS_NOT_INVESTMENT_ADVICE"
+    assert first["automatic_trade"] is False
+    assert replay["id"] == first["id"]
+    assert replay["idempotent_replay"] is True

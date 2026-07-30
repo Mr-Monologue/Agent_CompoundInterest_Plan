@@ -27,7 +27,18 @@ EVIDENCE_TYPES = {
     "OTHER",
 }
 DECISIONS = {"ACKNOWLEDGE": "ACKNOWLEDGED", "RESOLVE": "RESOLVED"}
-DISCOVERY_VERSION = "market-discovery-v1"
+DISCOVERY_VERSION = "market-discovery-v2"
+DISCOVERY_METRICS = (
+    "observation_count",
+    "verified_observation_count",
+    "research_evidence_count",
+    "return_20d_bps",
+    "return_60d_bps",
+    "return_120d_bps",
+    "max_drawdown_bps",
+    "annualized_volatility_bps",
+    "freshness_days",
+)
 
 
 def _json(value: object) -> str:
@@ -364,6 +375,94 @@ class ResearchService:
                         "selection_boundary": "FACTS_ONLY_NOT_A_RECOMMENDATION",
                     }
                 )
+            previous_run = connection.execute(
+                """
+                SELECT * FROM market_discovery_runs
+                WHERE portfolio_id=? AND instrument_codes_json=?
+                  AND lookback_days=? AND as_of_date<?
+                ORDER BY as_of_date DESC, created_at DESC LIMIT 1
+                """,
+                (
+                    portfolio_id,
+                    _json(codes),
+                    lookback_days,
+                    as_of_date.isoformat(),
+                ),
+            ).fetchone()
+            previous_items = (
+                {}
+                if previous_run is None
+                else {
+                    str(item["instrument_code"]): item
+                    for item in json.loads(str(previous_run["facts_json"]))["items"]
+                }
+            )
+            changes: list[JsonDict] = []
+            for item in items:
+                previous = previous_items.get(str(item["instrument_code"]))
+                current_flags = set(item["review_flags"])
+                previous_flags = (
+                    set() if previous is None else set(previous["review_flags"])
+                )
+                added_flags = sorted(current_flags - previous_flags)
+                removed_flags = sorted(previous_flags - current_flags)
+                metric_deltas: JsonDict = {}
+                if previous is not None:
+                    for metric in DISCOVERY_METRICS:
+                        before = previous.get(metric)
+                        after = item.get(metric)
+                        metric_deltas[metric] = (
+                            None
+                            if before is None or after is None
+                            else int(after) - int(before)
+                        )
+                state_changed = (
+                    previous is not None and previous["state"] != item["state"]
+                )
+                evidence_changed = (
+                    previous is not None
+                    and previous["research_evidence_count"]
+                    != item["research_evidence_count"]
+                )
+                verification_changed = (
+                    previous is not None
+                    and previous["verified_observation_count"]
+                    != item["verified_observation_count"]
+                )
+                if previous is None:
+                    change_type = "INITIAL"
+                    attention = bool(current_flags or item["state"] != "OBSERVE")
+                else:
+                    changed = bool(
+                        state_changed
+                        or added_flags
+                        or removed_flags
+                        or evidence_changed
+                        or verification_changed
+                    )
+                    change_type = "CHANGED" if changed else "UNCHANGED"
+                    attention = changed
+                changes.append(
+                    {
+                        "instrument_id": item["instrument_id"],
+                        "instrument_code": item["instrument_code"],
+                        "instrument_name": item["instrument_name"],
+                        "change_type": change_type,
+                        "previous_state": (
+                            None if previous is None else previous["state"]
+                        ),
+                        "current_state": item["state"],
+                        "attention_required": attention,
+                        "added_flags": added_flags,
+                        "removed_flags": removed_flags,
+                        "metric_deltas": metric_deltas,
+                        "previous_latest_nav_date": (
+                            None if previous is None else previous["latest_nav_date"]
+                        ),
+                        "current_latest_nav_date": item["latest_nav_date"],
+                        "change_boundary": "FACTUAL_CHANGE_NOT_A_RECOMMENDATION",
+                    }
+                )
             blocked = sum(item["state"] == "DATA_BLOCKED" for item in items)
             review = sum(item["state"] == "REVIEW" for item in items)
             unverified = any(
@@ -396,6 +495,24 @@ class ResearchService:
                     "review_count": review,
                     "blocked_count": blocked,
                 },
+                "change_summary": {
+                    "previous_run_id": (
+                        None if previous_run is None else str(previous_run["id"])
+                    ),
+                    "initial_count": sum(
+                        item["change_type"] == "INITIAL" for item in changes
+                    ),
+                    "changed_count": sum(
+                        item["change_type"] == "CHANGED" for item in changes
+                    ),
+                    "unchanged_count": sum(
+                        item["change_type"] == "UNCHANGED" for item in changes
+                    ),
+                    "attention_count": sum(
+                        bool(item["attention_required"]) for item in changes
+                    ),
+                },
+                "changes": changes,
                 "data_quality": quality,
                 "reason_code": reason,
                 "calculation_version": DISCOVERY_VERSION,
@@ -458,6 +575,32 @@ class ResearchService:
                         _json(item),
                     ),
                 )
+            for change in changes:
+                connection.execute(
+                    """
+                    INSERT INTO market_discovery_changes (
+                        id, run_id, previous_run_id, instrument_id, change_type,
+                        previous_state, current_state, attention_required,
+                        added_flags_json, removed_flags_json, metric_deltas_json,
+                        facts_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        run_id,
+                        None if previous_run is None else previous_run["id"],
+                        change["instrument_id"],
+                        change["change_type"],
+                        change["previous_state"],
+                        change["current_state"],
+                        bool(change["attention_required"]),
+                        _json(change["added_flags"]),
+                        _json(change["removed_flags"]),
+                        _json(change["metric_deltas"]),
+                        _json(change),
+                        _iso(self._now()),
+                    ),
+                )
             connection.commit()
             row = connection.execute(
                 "SELECT * FROM market_discovery_runs WHERE id=?",
@@ -493,6 +636,48 @@ class ResearchService:
                 (portfolio_id, limit),
             ).fetchall()
             return [self._run_data(connection, row) for row in rows]
+
+    def list_changes(
+        self,
+        *,
+        portfolio_id: str,
+        run_id: str | None = None,
+        attention_only: bool = False,
+        limit: int = 200,
+    ) -> list[JsonDict]:
+        query = """
+            SELECT c.*, r.portfolio_id, r.as_of_date
+            FROM market_discovery_changes c
+            JOIN market_discovery_runs r ON r.id=c.run_id
+            WHERE r.portfolio_id=?
+        """
+        params: list[object] = [portfolio_id]
+        if run_id:
+            query += " AND c.run_id=?"
+            params.append(run_id)
+        if attention_only:
+            query += " AND c.attention_required=1"
+        query += " ORDER BY r.as_of_date DESC, c.created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+            return [
+                {
+                    "id": str(row["id"]),
+                    "run_id": str(row["run_id"]),
+                    "previous_run_id": (
+                        None
+                        if row["previous_run_id"] is None
+                        else str(row["previous_run_id"])
+                    ),
+                    "portfolio_id": str(row["portfolio_id"]),
+                    "as_of_date": str(row["as_of_date"]),
+                    **json.loads(str(row["facts_json"])),
+                    "created_at": str(row["created_at"]),
+                    "automatic_trade": False,
+                }
+                for row in rows
+            ]
 
     def create_action_decision_draft(
         self,

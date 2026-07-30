@@ -66,3 +66,7 @@ review item, or commit a transaction from a Cron Agent session.
 confirmed local policy. It may create immutable discovery facts and a conditional notification;
 it must not register an instrument, change contribution eligibility, modify a thesis, rank a fund,
 or create a plan or transaction.
+
+Discovery-change and review-trend snapshots are immutable descriptive facts. A scheduled job may
+notify on a persisted state, flag, evidence or verification-coverage change, but it must never
+translate that change into a rotation, contribution, sell or strategy action.
