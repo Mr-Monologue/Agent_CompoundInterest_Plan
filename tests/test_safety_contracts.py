@@ -115,6 +115,20 @@ def test_skill_separates_public_strategy_instance_and_plan_execution() -> None:
     assert "Never treat a preview, DRAFT, or FROZEN plan as a purchase" in safety
 
 
+def test_market_discovery_and_review_actions_preserve_governance_boundaries() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
+    safety = (PROJECT_ROOT / "skills/value-dca-investor/references/safety-policy.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "never turn model opinion into source evidence" in skill
+    assert "observations, not\nrankings or recommendations" in skill
+    assert "never change an instrument's\nrole, thesis, contribution eligibility" in skill
+    assert "only after confirmation with the\nmatching token" in skill
+    assert "explicit registered instrument codes stored in its\nconfirmed local policy" in safety
+    assert "must not register an instrument, change contribution eligibility" in safety
+
+
 def test_cron_examples_are_disabled() -> None:
     for path in (PROJECT_ROOT / "cron").rglob("*.json"):
         assert '"enabled": false' in path.read_text(encoding="utf-8")

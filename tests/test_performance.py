@@ -106,7 +106,10 @@ def test_periodic_review_is_immutable_and_idempotent(tmp_path: Path) -> None:
     assert first["revision"] == 1
     assert {item["code"] for item in first["action_items"]} == {
         "BENCHMARK_COVERAGE_REVIEW",
+        "CASH_LEDGER_REVIEW",
         "DATA_QUALITY_REVIEW",
+        "MARKET_DISCOVERY_REVIEW",
+        "STRATEGY_INSTANCE_REVIEW",
     }
     assert second["id"] == first["id"]
     assert second["idempotent_replay"] is True

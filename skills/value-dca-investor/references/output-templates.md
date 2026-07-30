@@ -63,3 +63,10 @@ Present Core's period, calculation version, Modified Dietz, XIRR, TWR, benchmark
 return, data quality and warnings exactly. A null metric is `不可用`, never `0`. State the
 `EXTERNAL_FLOW` cash convention whenever Core returns it. Periodic review action items are
 follow-up facts only; do not convert them into trade advice.
+
+## Market discovery
+
+State the explicit scanned universe, as-of date, lookback, source quality and calculation version.
+For each item, show only Core-returned return windows, drawdown, volatility, freshness, evidence
+coverage, state and review flags. Label the package `事实观察，不是基金排名或买卖建议`. Never infer
+that `REVIEW` means buy, sell, rotate, add to strategy, or make contribution-eligible.
