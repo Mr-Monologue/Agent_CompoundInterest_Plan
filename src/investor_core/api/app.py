@@ -13,6 +13,7 @@ from investor_core.api.schemas import (
     AutomationJobRunRequest,
     AutomationPolicyDraftCreateRequest,
     AutomationSchedulerSnapshotRequest,
+    CashEventDraftCreateRequest,
     InstrumentCreateRequest,
     InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
@@ -23,6 +24,7 @@ from investor_core.api.schemas import (
     MarketNavVerificationCreateRequest,
     NotificationDeliveryReceiptRequest,
     NotificationTestCreateRequest,
+    OfficialNavBackfillRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     RiskScanRequest,
@@ -38,6 +40,7 @@ from investor_core.api.schemas import (
     WeeklyPlanExecutedRequest,
     WeeklyPlanSkipRequest,
 )
+from investor_core.capital import CapitalService
 from investor_core.config import Settings, get_settings
 from investor_core.health import build_doctor_report
 from investor_core.ledger import LedgerError, LedgerService
@@ -76,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     risk = RiskService(runtime_settings)
     operations = OperationsService(runtime_settings)
     performance = PerformanceService(runtime_settings)
+    capital = CapitalService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -352,6 +356,82 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     limit=limit,
                 )
             }
+        )
+
+    @app.post("/v1/cash-event-drafts")
+    def cash_event_draft_create(
+        request: CashEventDraftCreateRequest,
+    ) -> dict[str, Any]:
+        payload = request.model_dump()
+        payload["amount"] = str(payload["amount"])
+        return success(capital.create_cash_event_draft(**payload))
+
+    @app.post("/v1/cash-event-drafts/{draft_id}/commit")
+    def cash_event_draft_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            capital.commit_cash_event_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.get("/v1/cash-ledger-events")
+    def cash_ledger_event_list(
+        portfolio_id: str,
+        account_id: str | None = None,
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        return success(
+            capital.list_cash_events(
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                limit=limit,
+            )
+        )
+
+    @app.post("/v1/official-nav-backfills")
+    def official_nav_backfill_create(
+        request: OfficialNavBackfillRequest,
+    ) -> dict[str, Any]:
+        payload = request.model_dump(mode="json")
+        result = capital.record_official_nav_backfill(**payload)
+        quality = "SOURCE_ERROR" if result["status"] == "CONFLICT" else "PASS"
+        warnings = (
+            ["Conflicting official NAV observations require manual review"]
+            if quality == "SOURCE_ERROR"
+            else []
+        )
+        return success(result, warnings=warnings, data_quality=quality)
+
+    @app.get("/v1/official-nav-backfills")
+    def official_nav_backfill_list(
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success({"items": capital.list_official_nav_backfills(limit=limit)})
+
+    @app.get("/v1/runtime-mode")
+    def runtime_mode_get(
+        as_of_date: date,
+        portfolio_id: str | None = None,
+    ) -> dict[str, Any]:
+        result = capital.runtime_mode(
+            portfolio_id=portfolio_id,
+            as_of_date=as_of_date,
+        )
+        quality = {
+            "L0": "PASS",
+            "L1": "WARNING",
+            "L2": "SOURCE_ERROR",
+            "L3": "SOURCE_ERROR",
+        }[str(result["level"])]
+        return success(
+            result,
+            warnings=[] if quality == "PASS" else [str(result["reason_code"])],
+            data_quality=quality,
         )
 
     @app.post("/v1/portfolios")
