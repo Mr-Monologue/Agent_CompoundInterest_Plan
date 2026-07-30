@@ -43,6 +43,8 @@ MISSED_RUN_GRACE_MINUTES = 10
 MISSED_RUN_LOOKBACK_DAYS = 7
 DELIVERY_RECEIPT_TIMEOUT_MINUTES = 15
 DELIVERY_RETRY_MINUTES = (5, 15, 30, 60, 120)
+NOTIFICATION_TEST_COOLDOWN_SECONDS = 60
+NOTIFICATION_TEST_CONFIRMATION = "SEND_TEST_NOTIFICATION"
 
 
 def _iso(value: datetime) -> str:
@@ -1567,25 +1569,174 @@ class OperationsService:
         params.append(limit)
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
-        return [
-            {
-                "id": str(row["id"]),
-                "report_bundle_id": row["report_bundle_id"],
-                "alert_id": row["alert_id"],
-                "delivery_target": str(row["delivery_target"]),
-                "status": str(row["status"]),
-                "attempt_count": int(row["attempt_count"]),
-                "max_attempts": int(row["max_attempts"]),
-                "next_attempt_at": row["next_attempt_at"],
-                "last_error_code": row["last_error_code"],
-                "created_at": str(row["created_at"]),
-                "dispatched_at": row["dispatched_at"],
-                "delivered_at": row["delivered_at"],
-                "provider_message_id": row["provider_message_id"],
-                "sent_at": row["sent_at"],
-            }
-            for row in rows
-        ]
+        return [self._outbox_data(row) for row in rows]
+
+    def create_notification_test(
+        self,
+        *,
+        idempotency_key: str,
+        confirmation: str,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Queue one fixed, non-financial test message through the real outbox."""
+        key = idempotency_key.strip()
+        if not key or len(key) > 200:
+            raise LedgerError(
+                "NOTIFICATION_TEST_IDEMPOTENCY_KEY_INVALID",
+                "idempotency_key must be between 1 and 200 characters",
+            )
+        if confirmation != NOTIFICATION_TEST_CONFIRMATION:
+            raise LedgerError(
+                "NOTIFICATION_TEST_CONFIRMATION_REQUIRED",
+                f"confirmation must exactly equal {NOTIFICATION_TEST_CONFIRMATION}",
+            )
+        now = self._now()
+        timestamp = _iso(now)
+        cooldown_cutoff = _iso(
+            now - timedelta(seconds=NOTIFICATION_TEST_COOLDOWN_SECONDS)
+        )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                existing = connection.execute(
+                    """
+                    SELECT n.*, o.id AS outbox_id
+                    FROM notification_test_requests n
+                    JOIN notification_outbox o
+                      ON o.notification_test_request_id=n.id
+                    WHERE n.idempotency_key=?
+                    """,
+                    (key,),
+                ).fetchone()
+                if existing is not None:
+                    connection.commit()
+                    result = self.get_notification_test(
+                        test_request_id=str(existing["id"])
+                    )
+                    result["idempotent_replay"] = True
+                    return result
+                recent = connection.execute(
+                    """
+                    SELECT id, created_at FROM notification_test_requests
+                    WHERE created_at > ?
+                    ORDER BY created_at DESC LIMIT 1
+                    """,
+                    (cooldown_cutoff,),
+                ).fetchone()
+                if recent is not None:
+                    raise LedgerError(
+                        "NOTIFICATION_TEST_RATE_LIMITED",
+                        "a notification test was already queued within the cooldown window",
+                        details={
+                            "cooldown_seconds": NOTIFICATION_TEST_COOLDOWN_SECONDS,
+                            "latest_test_request_id": str(recent["id"]),
+                        },
+                    )
+                test_id = str(uuid4())
+                outbox_id = str(uuid4())
+                display_text = (
+                    "Value DCA 通知链路测试\n"
+                    f"测试 ID: {test_id}\n"
+                    f"创建时间: {timestamp}\n"
+                    "此消息只验证 Core、通知队列、Hermes 与渠道回执;"
+                    "不会创建交易, 也不会修改持仓或策略。"
+                )
+                connection.execute(
+                    """
+                    INSERT INTO notification_test_requests (
+                        id, idempotency_key, display_text, delivery_target,
+                        requested_by, created_at
+                    ) VALUES (?, ?, ?, 'origin', ?, ?)
+                    """,
+                    (test_id, key, display_text, actor_ref, timestamp),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO notification_outbox (
+                        id, report_bundle_id, alert_id,
+                        notification_test_request_id, delivery_target, status,
+                        dedup_key, attempt_count, max_attempts, next_attempt_at,
+                        last_error_code, created_at, sent_at
+                    ) VALUES (?, NULL, NULL, ?, 'origin', 'PENDING', ?, 0, 5,
+                              ?, NULL, ?, NULL)
+                    """,
+                    (
+                        outbox_id,
+                        test_id,
+                        f"notification-test:{test_id}:origin",
+                        timestamp,
+                        timestamp,
+                    ),
+                )
+                self._audit(
+                    connection,
+                    action="NOTIFICATION_TEST_QUEUED",
+                    entity_type="notification_test_request",
+                    entity_id=test_id,
+                    actor_ref=actor_ref,
+                    details={
+                        "outbox_id": outbox_id,
+                        "delivery_target": "origin",
+                        "financial_state_changed": False,
+                    },
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        result = self.get_notification_test(test_request_id=test_id)
+        result["idempotent_replay"] = False
+        return result
+
+    def get_notification_test(self, *, test_request_id: str) -> JsonDict:
+        """Read the durable outbox and receipt state for one test request."""
+        with self._connect() as connection:
+            request = connection.execute(
+                "SELECT * FROM notification_test_requests WHERE id=?",
+                (test_request_id,),
+            ).fetchone()
+            if request is None:
+                raise LedgerError(
+                    "NOTIFICATION_TEST_NOT_FOUND",
+                    "notification test request was not found",
+                    http_status=404,
+                )
+            outbox = connection.execute(
+                """
+                SELECT * FROM notification_outbox
+                WHERE notification_test_request_id=?
+                """,
+                (test_request_id,),
+            ).fetchone()
+            assert outbox is not None
+            attempts = connection.execute(
+                """
+                SELECT * FROM notification_delivery_attempts
+                WHERE outbox_id=? ORDER BY attempt_number DESC
+                """,
+                (outbox["id"],),
+            ).fetchall()
+        return {
+            "test_request": {
+                "id": str(request["id"]),
+                "delivery_target": str(request["delivery_target"]),
+                "requested_by": str(request["requested_by"]),
+                "created_at": str(request["created_at"]),
+            },
+            "outbox": self._outbox_data(outbox),
+            "attempts": [self._delivery_attempt_data(row) for row in attempts],
+            "safety": {
+                "holdings_changed": False,
+                "transactions_created": False,
+                "strategy_changed": False,
+                "automatic_trade": False,
+            },
+            "display_text": (
+                "通知测试已投递。"
+                if str(outbox["status"]) == "DELIVERED"
+                else "通知测试已进入真实投递队列, 等待 Hermes 渠道回执。"
+            ),
+        }
 
     @staticmethod
     def _delivery_payload(
@@ -1609,6 +1760,24 @@ class OperationsService:
                 ),
                 "facts": json.loads(str(bundle["facts_json"])),
                 "facts_hash": str(bundle["facts_hash"]),
+            }
+        if row["notification_test_request_id"] is not None:
+            request = connection.execute(
+                "SELECT * FROM notification_test_requests WHERE id=?",
+                (row["notification_test_request_id"],),
+            ).fetchone()
+            assert request is not None
+            facts = {
+                "test_request_id": str(request["id"]),
+                "purpose": "END_TO_END_NOTIFICATION_DELIVERY_TEST",
+                "financial_state_changed": False,
+            }
+            return {
+                "source_type": "NOTIFICATION_TEST",
+                "source_id": str(request["id"]),
+                "display_text": str(request["display_text"]),
+                "facts": facts,
+                "facts_hash": _hash(facts),
             }
         alert = connection.execute(
             "SELECT * FROM alerts WHERE id=?",
@@ -1970,6 +2139,7 @@ class OperationsService:
             "id": str(row["id"]),
             "report_bundle_id": row["report_bundle_id"],
             "alert_id": row["alert_id"],
+            "notification_test_request_id": row["notification_test_request_id"],
             "delivery_target": str(row["delivery_target"]),
             "status": str(row["status"]),
             "attempt_count": int(row["attempt_count"]),

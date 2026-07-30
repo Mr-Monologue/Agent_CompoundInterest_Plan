@@ -26,6 +26,16 @@ def _digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()
 
 
+def _failure_code(stdout: str, stderr: str) -> str:
+    """Classify known retryable Hermes channel failures without storing secrets."""
+    combined = f"{stdout}\n{stderr}".lower()
+    if "prepare failed" in combined or "pairing code" in combined:
+        return "HERMES_WEIXIN_SESSION_STALE"
+    if "rate limit" in combined or "rate_limited" in combined:
+        return "HERMES_CHANNEL_RATE_LIMITED"
+    return "HERMES_SEND_FAILED"
+
+
 def _read_env(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -120,7 +130,7 @@ def send_with_hermes(
     }
     if result.returncode != 0:
         raise LedgerError(
-            "HERMES_SEND_FAILED",
+            _failure_code(result.stdout, result.stderr),
             "Hermes CLI did not accept the outbound message",
             details=evidence,
         )

@@ -287,6 +287,12 @@ class NotificationDeliveryReceiptRequest(RequestModel):
     )
 
 
+class NotificationTestCreateRequest(RequestModel):
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    confirmation: Literal["SEND_TEST_NOTIFICATION"]
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class WeeklyPlanDraftCreateRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     account_id: str = Field(min_length=1, max_length=80)
