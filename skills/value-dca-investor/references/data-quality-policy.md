@@ -22,8 +22,15 @@ Historical cost composition may still be labeled explicitly as a ledger fact, ne
 For proxy valuation, disclose `STRONG`, `WEAK`, or `NOT_APPLICABLE`. Never use a `WEAK` proxy as
 the only basis for a sell conclusion. Do not calculate PE percentiles for `NOT_APPLICABLE` assets.
 
-At model degradation L2 or L3, deliver Core facts and deterministic templates only. State that the
-explanation layer is degraded; never fill the missing narrative with guesses.
+Runtime levels are Core capability facts: L0 is full deterministic operation; L1 permits only the
+warning-qualified capabilities returned by Core; L2 is ledger/facts-only; L3 is safety and system
+health only. Never continue a valuation, plan, risk scan, review, or explanation when its
+capability is false. Degradation cannot enable a mutation or automatic trade.
+
+Official history backfill must preserve the source name, independent lineage, evidence reference,
+observation timestamp and every original NAV date. A batch conflict is `SOURCE_ERROR`; never
+average, overwrite, or hide it. `EASTMONEY` aliases remain aggregator evidence and cannot be
+relabeled `FUND_MANAGER_OFFICIAL`.
 
 Performance, loss, market-value weight, and an instrument role are observations, not allocation or
 sell rules. Without a Core-supplied target, threshold, trigger state, and reason code, describe the
