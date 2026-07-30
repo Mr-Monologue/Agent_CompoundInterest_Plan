@@ -86,7 +86,42 @@ def test_sourced_research_and_discovery_are_immutable_facts(tmp_path: Path) -> N
     assert data["strategy_changed"] is False
     assert data["contribution_eligibility_changed"] is False
     assert data["automatic_trade"] is False
+    assert data["change_summary"]["previous_run_id"] is None
+    assert data["change_summary"]["initial_count"] == 1
+    assert data["change_summary"]["attention_count"] == 1
     assert scan_replay.json()["data"]["idempotent_replay"] is True
+
+    second_evidence = {
+        **evidence_payload,
+        "evidence_date": "2026-05-11",
+        "evidence_type": "HOLDINGS",
+        "source_ref": "https://official.example/fund001/holdings",
+        "facts": {"top_holding_count": 10},
+    }
+    assert client.post(
+        "/v1/market-research-evidence",
+        json=second_evidence,
+    ).status_code == 200
+    changed = client.post(
+        "/v1/market-discovery-runs",
+        json={**payload, "as_of_date": "2026-05-11"},
+    ).json()["data"]
+
+    assert changed["change_summary"]["previous_run_id"] == data["id"]
+    assert changed["change_summary"]["changed_count"] == 1
+    assert changed["change_summary"]["attention_count"] == 1
+    changes = client.get(
+        "/v1/market-discovery-changes",
+        params={
+            "portfolio_id": portfolio_id,
+            "run_id": changed["id"],
+            "attention_only": True,
+        },
+    ).json()["data"]["items"]
+    assert len(changes) == 1
+    assert changes[0]["change_type"] == "CHANGED"
+    assert changes[0]["metric_deltas"]["research_evidence_count"] == 1
+    assert changes[0]["change_boundary"] == "FACTUAL_CHANGE_NOT_A_RECOMMENDATION"
 
 
 def test_discovery_requires_explicit_registered_universe(tmp_path: Path) -> None:

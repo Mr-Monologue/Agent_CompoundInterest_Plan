@@ -349,6 +349,13 @@ class MarketDiscoveryScanRequest(RequestModel):
     lookback_days: int = Field(default=180, ge=30, le=730)
 
 
+class ReviewTrendSnapshotRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    as_of_date: date
+    review_type: Literal["ALL", "MONTHLY", "QUARTERLY", "ANNUAL"] = "ALL"
+    lookback_reviews: int = Field(default=12, ge=1, le=120)
+
+
 class ReviewActionDecisionDraftRequest(RequestModel):
     decision: Literal["ACKNOWLEDGE", "RESOLVE"]
     reason: str = Field(min_length=1, max_length=1000)

@@ -17,6 +17,7 @@ from investor_core.config import Settings
 from investor_core.ledger import JsonDict, LedgerError, utc_now
 
 CALCULATION_VERSION = "performance-v2"
+REVIEW_TREND_VERSION = "review-trend-v1"
 
 
 def _json(value: object) -> str:
@@ -650,10 +651,10 @@ class PerformanceService:
             latest_discovery = connection.execute(
                 """
                 SELECT * FROM market_discovery_runs
-                WHERE portfolio_id=? AND as_of_date<=?
+                WHERE portfolio_id=? AND as_of_date BETWEEN ? AND ?
                 ORDER BY as_of_date DESC, created_at DESC LIMIT 1
                 """,
-                (portfolio_id, end.isoformat()),
+                (portfolio_id, start.isoformat(), end.isoformat()),
             ).fetchone()
         governance: JsonDict = {
             "strategy_assignment_present": assignment is not None,
@@ -685,6 +686,9 @@ class PerformanceService:
                     "data_quality": str(latest_discovery["data_quality"]),
                     "reason_code": str(latest_discovery["reason_code"]),
                     "summary": json.loads(str(latest_discovery["facts_json"]))["summary"],
+                    "change_summary": json.loads(
+                        str(latest_discovery["facts_json"])
+                    ).get("change_summary"),
                 }
             ),
         }
@@ -757,6 +761,20 @@ class PerformanceService:
                 {
                     "code": "MARKET_DISCOVERY_DATA_REVIEW",
                     "severity": "WARNING",
+                    "facts": governance["latest_discovery"],
+                }
+            )
+        elif (
+            governance["latest_discovery"]["change_summary"] is not None
+            and int(
+                governance["latest_discovery"]["change_summary"]["attention_count"]
+            )
+            > 0
+        ):
+            action_items.append(
+                {
+                    "code": "MARKET_DISCOVERY_CHANGE_REVIEW",
+                    "severity": "INFO",
                     "facts": governance["latest_discovery"],
                 }
             )
@@ -881,6 +899,283 @@ class PerformanceService:
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
             return [self._review_data(connection, row) for row in rows]
+
+    def build_review_trend(
+        self,
+        *,
+        portfolio_id: str,
+        as_of_date: date,
+        review_type: str = "ALL",
+        lookback_reviews: int = 12,
+    ) -> JsonDict:
+        normalized = review_type.strip().upper()
+        if normalized not in {"ALL", "MONTHLY", "QUARTERLY", "ANNUAL"}:
+            raise LedgerError(
+                "REVIEW_TREND_TYPE_INVALID",
+                "review_type must be ALL, MONTHLY, QUARTERLY or ANNUAL",
+            )
+        if not 1 <= lookback_reviews <= 120:
+            raise LedgerError(
+                "REVIEW_TREND_LOOKBACK_INVALID",
+                "lookback_reviews must be between 1 and 120",
+            )
+        with self._connect() as connection:
+            portfolio = connection.execute(
+                "SELECT id FROM portfolios WHERE id=?",
+                (portfolio_id,),
+            ).fetchone()
+            if portfolio is None:
+                raise LedgerError(
+                    "PORTFOLIO_NOT_FOUND",
+                    "portfolio was not found",
+                    http_status=404,
+                )
+            query = """
+                SELECT * FROM (
+                    SELECT r.*,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY review_type, period_start, period_end
+                               ORDER BY revision DESC
+                           ) AS latest_revision
+                    FROM periodic_reviews r
+                    WHERE portfolio_id=? AND period_end<=?
+            """
+            params: list[object] = [portfolio_id, as_of_date.isoformat()]
+            if normalized != "ALL":
+                query += " AND review_type=?"
+                params.append(normalized)
+            query += """
+                ) ranked
+                WHERE latest_revision=1
+                ORDER BY period_end DESC
+                LIMIT ?
+            """
+            params.append(lookback_reviews)
+            review_rows = list(connection.execute(query, params).fetchall())
+            review_rows.reverse()
+            review_ids = [str(row["id"]) for row in review_rows]
+            action_rows: list[sqlite3.Row] = []
+            if review_ids:
+                placeholders = ",".join("?" for _ in review_ids)
+                action_rows = list(
+                    connection.execute(
+                        f"""
+                        SELECT a.*, r.period_end, r.review_type
+                        FROM review_action_items a
+                        JOIN periodic_reviews r ON r.id=a.review_id
+                        WHERE a.review_id IN ({placeholders})
+                        ORDER BY r.period_end, a.code
+                        """,
+                        tuple(review_ids),
+                    ).fetchall()
+                )
+
+            quality_counts = {"PASS": 0, "WARNING": 0, "SOURCE_ERROR": 0}
+            review_series: list[JsonDict] = []
+            governance_series: list[JsonDict] = []
+            for row in review_rows:
+                quality = str(row["data_quality"])
+                quality_counts[quality] += 1
+                review_facts = json.loads(str(row["facts_json"]))
+                performance = review_facts["performance"]
+                governance = review_facts.get("governance", {})
+                review_series.append(
+                    {
+                        "review_id": str(row["id"]),
+                        "review_type": str(row["review_type"]),
+                        "period_start": str(row["period_start"]),
+                        "period_end": str(row["period_end"]),
+                        "revision": int(row["revision"]),
+                        "status": str(row["status"]),
+                        "data_quality": quality,
+                        "modified_dietz_bps": performance.get("modified_dietz_bps"),
+                        "xirr_bps": performance.get("xirr_bps"),
+                        "twr_bps": performance.get("twr_bps"),
+                        "benchmark_return_bps": performance.get(
+                            "benchmark_return_bps"
+                        ),
+                        "excess_return_bps": performance.get("excess_return_bps"),
+                    }
+                )
+                governance_series.append(
+                    {
+                        "review_id": str(row["id"]),
+                        "period_end": str(row["period_end"]),
+                        "configured_instrument_count": governance.get(
+                            "configured_instrument_count"
+                        ),
+                        "contribution_eligible_count": governance.get(
+                            "contribution_eligible_count"
+                        ),
+                        "benchmark_mapped_count": governance.get(
+                            "benchmark_mapped_count"
+                        ),
+                        "benchmark_missing_count": len(
+                            governance.get("benchmark_missing_codes", [])
+                        ),
+                        "thesis_review_count": len(
+                            governance.get("thesis_review_codes", [])
+                        ),
+                        "discovery_status": (
+                            None
+                            if governance.get("latest_discovery") is None
+                            else governance["latest_discovery"].get("status")
+                        ),
+                    }
+                )
+
+            status_counts = {"OPEN": 0, "ACKNOWLEDGED": 0, "RESOLVED": 0}
+            severity_counts = {"INFO": 0, "WARNING": 0, "HIGH": 0}
+            code_counts: dict[str, int] = {}
+            unresolved: list[JsonDict] = []
+            for row in action_rows:
+                status = str(row["status"])
+                severity = str(row["severity"])
+                code = str(row["code"])
+                status_counts[status] += 1
+                severity_counts[severity] += 1
+                code_counts[code] = code_counts.get(code, 0) + 1
+                if status != "RESOLVED":
+                    created = datetime.fromisoformat(
+                        str(row["created_at"]).replace("Z", "+00:00")
+                    ).date()
+                    unresolved.append(
+                        {
+                            "action_item_id": str(row["id"]),
+                            "review_id": str(row["review_id"]),
+                            "review_type": str(row["review_type"]),
+                            "period_end": str(row["period_end"]),
+                            "code": code,
+                            "severity": severity,
+                            "status": status,
+                            "age_days": max(0, (as_of_date - created).days),
+                        }
+                    )
+            recurring_codes = [
+                {"code": code, "review_count": count}
+                for code, count in sorted(code_counts.items())
+                if count >= 2
+            ]
+            unresolved.sort(
+                key=lambda item: (
+                    -int(item["age_days"]),
+                    str(item["severity"]),
+                    str(item["code"]),
+                )
+            )
+            if not review_rows:
+                quality = "SOURCE_ERROR"
+                status = "DATA_BLOCKED"
+                reason = "REVIEW_TREND_NO_PERIODIC_REVIEWS"
+            elif quality_counts["SOURCE_ERROR"]:
+                quality = "SOURCE_ERROR"
+                status = "COMPLETED"
+                reason = "REVIEW_TREND_COMPLETED_WITH_SOURCE_ERRORS"
+            elif quality_counts["WARNING"]:
+                quality = "WARNING"
+                status = "COMPLETED"
+                reason = "REVIEW_TREND_COMPLETED_WITH_LIMITS"
+            else:
+                quality = "PASS"
+                status = "COMPLETED"
+                reason = "REVIEW_TREND_COMPLETED"
+            facts: JsonDict = {
+                "portfolio_id": portfolio_id,
+                "as_of_date": as_of_date.isoformat(),
+                "review_type": normalized,
+                "lookback_reviews": lookback_reviews,
+                "review_count": len(review_rows),
+                "review_series": review_series,
+                "quality_summary": quality_counts,
+                "governance_series": governance_series,
+                "action_summary": {
+                    "total_count": len(action_rows),
+                    "status_counts": status_counts,
+                    "severity_counts": severity_counts,
+                    "recurring_codes": recurring_codes,
+                    "unresolved_count": len(unresolved),
+                    "oldest_unresolved_age_days": (
+                        None if not unresolved else unresolved[0]["age_days"]
+                    ),
+                    "unresolved_items": unresolved,
+                },
+                "data_quality": quality,
+                "status": status,
+                "reason_code": reason,
+                "calculation_version": REVIEW_TREND_VERSION,
+                "trend_boundary": "DESCRIPTIVE_FACTS_NOT_INVESTMENT_ADVICE",
+                "automatic_trade": False,
+                "strategy_changed": False,
+            }
+            facts_hash = _hash(facts)
+            existing = connection.execute(
+                "SELECT * FROM review_trend_snapshots WHERE facts_hash=?",
+                (facts_hash,),
+            ).fetchone()
+            if existing is not None:
+                return self._review_trend_data(existing, idempotent_replay=True)
+            snapshot_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO review_trend_snapshots (
+                    id, portfolio_id, as_of_date, review_type,
+                    lookback_reviews, review_count, status, data_quality,
+                    reason_code, facts_json, facts_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    portfolio_id,
+                    as_of_date.isoformat(),
+                    normalized,
+                    lookback_reviews,
+                    len(review_rows),
+                    status,
+                    quality,
+                    reason,
+                    _json(facts),
+                    facts_hash,
+                    _iso(self._now()),
+                ),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM review_trend_snapshots WHERE id=?",
+                (snapshot_id,),
+            ).fetchone()
+            assert row is not None
+            return self._review_trend_data(row, idempotent_replay=False)
+
+    def list_review_trends(
+        self,
+        *,
+        portfolio_id: str,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM review_trend_snapshots
+                WHERE portfolio_id=?
+                ORDER BY as_of_date DESC, created_at DESC LIMIT ?
+                """,
+                (portfolio_id, limit),
+            ).fetchall()
+            return [self._review_trend_data(row) for row in rows]
+
+    @staticmethod
+    def _review_trend_data(
+        row: sqlite3.Row,
+        *,
+        idempotent_replay: bool = False,
+    ) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            **json.loads(str(row["facts_json"])),
+            "facts_hash": str(row["facts_hash"]),
+            "created_at": str(row["created_at"]),
+            "idempotent_replay": idempotent_replay,
+        }
 
     @staticmethod
     def _review_data(

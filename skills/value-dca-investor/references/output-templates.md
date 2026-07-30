@@ -70,3 +70,16 @@ State the explicit scanned universe, as-of date, lookback, source quality and ca
 For each item, show only Core-returned return windows, drawdown, volatility, freshness, evidence
 coverage, state and review flags. Label the package `事实观察，不是基金排名或买卖建议`. Never infer
 that `REVIEW` means buy, sell, rotate, add to strategy, or make contribution-eligible.
+
+## Discovery changes
+
+State both run IDs and dates. Separate state transitions, added/removed flags, evidence or
+verification-coverage changes, and numeric metric deltas. Label every item `事实变化，不是轮换或交易
+信号`. If Core reports zero attention changes, do not manufacture a narrative.
+
+## Review trends
+
+State the as-of date, review type, lookback and included review count. Report quality continuity,
+the returned performance series, governance coverage, recurring action codes, unresolved count
+and oldest unresolved age. Preserve null values. Label the result `跨期复盘事实，不是策略评分或投资
+建议`.
