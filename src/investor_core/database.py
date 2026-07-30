@@ -23,6 +23,8 @@ REQUIRED_TABLES = {
     "automation_policy_drafts",
     "automation_scheduler_snapshots",
     "backups",
+    "cash_event_drafts",
+    "cash_ledger_events",
     "holding_snapshots",
     "instruments",
     "job_runs",
@@ -33,11 +35,13 @@ REQUIRED_TABLES = {
     "notification_delivery_attempts",
     "notification_outbox",
     "notification_test_requests",
+    "official_nav_backfill_batches",
     "performance_snapshots",
     "periodic_reviews",
     "portfolios",
     "report_bundles",
     "review_action_items",
+    "runtime_mode_snapshots",
     "schema_meta",
     "settings",
     "strategy_assignments",
@@ -50,7 +54,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0016_notification_test_delivery"
+EXPECTED_ALEMBIC_REVISION = "0017_capital_data_resilience"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -126,7 +130,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Controlled notification test schema is current"
+            schema_message = "Capital, official backfill and runtime-mode schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",

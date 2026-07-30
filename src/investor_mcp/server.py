@@ -401,6 +401,132 @@ async def periodic_review_list(
 
 
 @mcp.tool()
+async def cash_event_draft_create(
+    event_type: Literal["DEPOSIT", "WITHDRAWAL", "DIVIDEND", "INTEREST", "FEE"],
+    event_date: str,
+    amount: str,
+    source: str,
+    idempotency_key: str,
+    note: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Draft one exact cash-ledger fact; this never changes holdings or creates a trade."""
+    resolved_portfolio, resolved_account, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/cash-event-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "account_id": resolved_account,
+            "event_type": event_type,
+            "event_date": event_date,
+            "amount": amount,
+            "source": source,
+            "idempotency_key": idempotency_key,
+            "note": note or None,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def cash_event_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Commit exactly one confirmed cash event; this never creates an investment trade."""
+    return await core_request(
+        "POST",
+        f"/v1/cash-event-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def cash_ledger_event_list(
+    portfolio_id: str = "",
+    account_id: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """List confirmed cash facts and the deterministic cash balance."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/cash-ledger-events",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "account_id": account_id or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def official_nav_backfill_record(
+    source_name: str,
+    source_ref: str,
+    source_lineage: Literal["FUND_MANAGER_OFFICIAL", "WIND"],
+    observations: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Record an immutable batch of independently sourced official NAV facts."""
+    return await core_request(
+        "POST",
+        "/v1/official-nav-backfills",
+        payload={
+            "source_name": source_name,
+            "source_ref": source_ref,
+            "source_lineage": source_lineage,
+            "observations": observations,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def official_nav_backfill_list(limit: int = 100) -> dict[str, Any]:
+    """List immutable official NAV backfill batches and conflicts."""
+    return await core_request(
+        "GET",
+        "/v1/official-nav-backfills",
+        params={"limit": limit},
+    )
+
+
+@mcp.tool()
+async def runtime_mode_get(
+    as_of_date: str,
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Return Core's deterministic L0-L3 capability boundary; never infer missing facts."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account, error = await resolve_investment_context()
+        if error is not None:
+            resolved_portfolio = ""
+    return await core_request(
+        "GET",
+        "/v1/runtime-mode",
+        params={
+            "portfolio_id": resolved_portfolio or None,
+            "as_of_date": as_of_date,
+        },
+    )
+
+
+@mcp.tool()
 async def automation_delivery_status_list(
     status: str = "",
     limit: int = 100,
