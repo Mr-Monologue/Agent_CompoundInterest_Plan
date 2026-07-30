@@ -429,6 +429,44 @@ def test_weekly_plan_policy_requires_explicit_contribution_amount(tmp_path: Path
         )
 
 
+def test_market_discovery_policy_requires_registered_explicit_universe(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    settings, portfolio_id, _account_id = create_context(database_path)
+    ledger = LedgerService(settings, now=fixed_now)
+    ledger.create_instrument(code="FUND001", name="公共候选基金")
+    service = OperationsService(settings, now=fixed_now)
+
+    with pytest.raises(LedgerError) as exc:
+        service.create_policy_draft(
+            portfolio_id=portfolio_id,
+            job_name="WEEKLY_MARKET_DISCOVERY",
+            enabled=True,
+            schedule="0 10 * * 6",
+            timezone="Asia/Shanghai",
+            config={"instrument_codes": ["UNKNOWN"], "lookback_days": 180},
+            reason="无效候选范围",
+        )
+    assert exc.value.code == "AUTOMATION_DISCOVERY_UNIVERSE_INVALID"
+
+    commit_policy(
+        service,
+        job_name="WEEKLY_MARKET_DISCOVERY",
+        portfolio_id=portfolio_id,
+        config={"instrument_codes": ["FUND001"], "lookback_days": 180},
+    )
+    manifest = service.scheduler_manifest(profile="investor")
+    discovery = next(
+        item
+        for item in manifest["jobs"]
+        if item["job_name"] == "WEEKLY_MARKET_DISCOVERY"
+    )
+    assert discovery["script"] == "value_dca_weekly_market_discovery.py"
+    assert discovery["no_agent"] is True
+
+
 def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
@@ -458,7 +496,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0017_capital_data_resilience",)
+    assert revision == ("0018_review_market_discovery",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:

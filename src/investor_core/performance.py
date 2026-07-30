@@ -624,6 +624,70 @@ class PerformanceService:
             persist=True,
         )
         action_items: list[JsonDict] = []
+        with self._connect() as connection:
+            assignment = connection.execute(
+                """
+                SELECT * FROM strategy_assignments
+                WHERE portfolio_id=? AND status='ACTIVE'
+                ORDER BY approved_at DESC LIMIT 1
+                """,
+                (portfolio_id,),
+            ).fetchone()
+            configs: list[sqlite3.Row] = []
+            if assignment is not None:
+                configs = list(
+                    connection.execute(
+                        """
+                        SELECT c.*, i.code
+                        FROM strategy_instrument_configs c
+                        JOIN instruments i ON i.id=c.instrument_id
+                        WHERE c.strategy_assignment_id=? AND c.status='ACTIVE'
+                        ORDER BY i.code
+                        """,
+                        (assignment["id"],),
+                    ).fetchall()
+                )
+            latest_discovery = connection.execute(
+                """
+                SELECT * FROM market_discovery_runs
+                WHERE portfolio_id=? AND as_of_date<=?
+                ORDER BY as_of_date DESC, created_at DESC LIMIT 1
+                """,
+                (portfolio_id, end.isoformat()),
+            ).fetchone()
+        governance: JsonDict = {
+            "strategy_assignment_present": assignment is not None,
+            "configured_instrument_count": len(configs),
+            "contribution_eligible_count": sum(
+                bool(item["contribution_eligible"]) for item in configs
+            ),
+            "benchmark_mapped_count": sum(
+                item["benchmark_instrument_id"] is not None for item in configs
+            ),
+            "benchmark_missing_codes": [
+                str(item["code"])
+                for item in configs
+                if str(item["role"]) in {"CORE", "SATELLITE"}
+                and item["benchmark_instrument_id"] is None
+            ],
+            "thesis_review_codes": [
+                str(item["code"])
+                for item in configs
+                if str(item["thesis_status"]) != "ACTIVE"
+            ],
+            "latest_discovery": (
+                None
+                if latest_discovery is None
+                else {
+                    "id": str(latest_discovery["id"]),
+                    "as_of_date": str(latest_discovery["as_of_date"]),
+                    "status": str(latest_discovery["status"]),
+                    "data_quality": str(latest_discovery["data_quality"]),
+                    "reason_code": str(latest_discovery["reason_code"]),
+                    "summary": json.loads(str(latest_discovery["facts_json"]))["summary"],
+                }
+            ),
+        }
         if str(performance["data_quality"]) != "PASS":
             action_items.append(
                 {
@@ -638,6 +702,62 @@ class PerformanceService:
                     "code": "BENCHMARK_COVERAGE_REVIEW",
                     "severity": "WARNING",
                     "facts": {"reason": "BENCHMARK_RETURN_INCOMPLETE"},
+                }
+            )
+        if assignment is None:
+            action_items.append(
+                {
+                    "code": "STRATEGY_INSTANCE_REVIEW",
+                    "severity": "HIGH",
+                    "facts": {"reason": "ACTIVE_STRATEGY_INSTANCE_MISSING"},
+                }
+            )
+        elif not governance["contribution_eligible_count"]:
+            action_items.append(
+                {
+                    "code": "CONTRIBUTION_UNIVERSE_REVIEW",
+                    "severity": "WARNING",
+                    "facts": {"reason": "NO_CONTRIBUTION_ELIGIBLE_INSTRUMENT"},
+                }
+            )
+        if governance["benchmark_missing_codes"]:
+            action_items.append(
+                {
+                    "code": "INSTRUMENT_BENCHMARK_REVIEW",
+                    "severity": "WARNING",
+                    "facts": {"instrument_codes": governance["benchmark_missing_codes"]},
+                }
+            )
+        if governance["thesis_review_codes"]:
+            action_items.append(
+                {
+                    "code": "INVESTMENT_THESIS_REVIEW",
+                    "severity": "HIGH",
+                    "facts": {"instrument_codes": governance["thesis_review_codes"]},
+                }
+            )
+        if not bool(performance["methodology"]["cash_ledger"]):
+            action_items.append(
+                {
+                    "code": "CASH_LEDGER_REVIEW",
+                    "severity": "WARNING",
+                    "facts": {"reason": "LEGACY_EXTERNAL_FLOW_CONVENTION"},
+                }
+            )
+        if governance["latest_discovery"] is None:
+            action_items.append(
+                {
+                    "code": "MARKET_DISCOVERY_REVIEW",
+                    "severity": "INFO",
+                    "facts": {"reason": "NO_DISCOVERY_FACT_PACKAGE_FOR_PERIOD"},
+                }
+            )
+        elif str(governance["latest_discovery"]["status"]) == "DATA_BLOCKED":
+            action_items.append(
+                {
+                    "code": "MARKET_DISCOVERY_DATA_REVIEW",
+                    "severity": "WARNING",
+                    "facts": governance["latest_discovery"],
                 }
             )
         facts: JsonDict = {
@@ -661,6 +781,11 @@ class PerformanceService:
                     "reason_code",
                 )
             },
+            "position_facts": {
+                "end_positions": performance["end_positions"],
+                "benchmark_attribution": performance["benchmark_attribution"],
+            },
+            "governance": governance,
             "action_items": action_items,
             "automatic_trade": False,
             "review_boundary": "FACTS_AND_ACTION_ITEMS_ONLY",
