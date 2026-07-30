@@ -21,6 +21,15 @@ position must be the first active ledger event for that account and instrument.
 
 Do not expose confirmation tokens in logs or unrelated messages.
 
+## Cash ledger
+
+A cash event is an immutable account fact, not a brokerage order. Draft only the exact
+platform-reported type, date, amount, currency and source. Deposit and withdrawal are external
+flows; dividend, interest and fee are internal performance facts. Every event requires its own
+15-minute confirmation token. Never infer cash from a BUY/SELL, create synthetic opening cash, or
+use a cash adjustment to hide incomplete history. Committing a cash event must report
+`holdings_changed=false`, `transactions_created=false` and `automatic_trade=false`.
+
 ## Sell lifecycle
 
 Maintain these states separately:

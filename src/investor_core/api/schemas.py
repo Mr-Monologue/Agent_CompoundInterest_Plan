@@ -293,6 +293,34 @@ class NotificationTestCreateRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
+class CashEventDraftCreateRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    account_id: str = Field(min_length=1, max_length=80)
+    event_type: Literal["DEPOSIT", "WITHDRAWAL", "DIVIDEND", "INTEREST", "FEE"]
+    event_date: date
+    amount: Decimal = Field(gt=0)
+    currency: str = Field(default="CNY", min_length=3, max_length=3)
+    source: str = Field(min_length=1, max_length=200)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    note: str | None = Field(default=None, max_length=1000)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class OfficialNavBackfillObservation(RequestModel):
+    instrument_code: str = Field(min_length=1, max_length=40)
+    nav_date: date
+    nav: Decimal = Field(gt=0)
+    observed_at: datetime
+
+
+class OfficialNavBackfillRequest(RequestModel):
+    source_name: str = Field(min_length=1, max_length=200)
+    source_ref: str = Field(min_length=1, max_length=1000)
+    source_lineage: Literal["FUND_MANAGER_OFFICIAL", "WIND"]
+    observations: list[OfficialNavBackfillObservation] = Field(min_length=1, max_length=1000)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class WeeklyPlanDraftCreateRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     account_id: str = Field(min_length=1, max_length=80)

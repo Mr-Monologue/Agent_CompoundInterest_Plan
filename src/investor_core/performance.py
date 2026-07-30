@@ -8,7 +8,7 @@ import math
 import sqlite3
 from calendar import monthrange
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -16,7 +16,7 @@ from uuid import uuid4
 from investor_core.config import Settings
 from investor_core.ledger import JsonDict, LedgerError, utc_now
 
-CALCULATION_VERSION = "performance-v1"
+CALCULATION_VERSION = "performance-v2"
 
 
 def _json(value: object) -> str:
@@ -165,6 +165,107 @@ class PerformanceService:
         return total, positions, sorted(set(warnings))
 
     @staticmethod
+    def _cash_events(
+        connection: sqlite3.Connection,
+        portfolio_id: str,
+        end: date,
+    ) -> list[sqlite3.Row]:
+        return list(
+            connection.execute(
+                """
+                SELECT * FROM cash_ledger_events
+                WHERE portfolio_id=? AND event_date<=?
+                ORDER BY event_date, committed_at, id
+                """,
+                (portfolio_id, end.isoformat()),
+            ).fetchall()
+        )
+
+    @staticmethod
+    def _cash_balance_at(
+        transactions: list[sqlite3.Row],
+        cash_events: list[sqlite3.Row],
+        at: date,
+    ) -> int:
+        balance = sum(
+            int(row["signed_amount_minor"])
+            for row in cash_events
+            if str(row["event_date"]) <= at.isoformat()
+        )
+        for row in transactions:
+            if str(row["trade_date"]) > at.isoformat() or str(row["kind"]) != "TRADE":
+                continue
+            balance += (
+                -int(row["amount_minor"])
+                if str(row["side"]) == "BUY"
+                else int(row["amount_minor"])
+            )
+        return balance
+
+    def _total_value_at(
+        self,
+        connection: sqlite3.Connection,
+        transactions: list[sqlite3.Row],
+        cash_events: list[sqlite3.Row],
+        at: date,
+    ) -> tuple[int, list[JsonDict], list[str], int]:
+        invested, positions, warnings = self._value_at(connection, transactions, at)
+        cash = self._cash_balance_at(transactions, cash_events, at)
+        if cash < 0:
+            warnings.append(f"CASH_LEDGER_NEGATIVE_BALANCE:{at.isoformat()}:{cash}")
+        return invested + cash, positions, sorted(set(warnings)), cash
+
+    def _daily_linked_twr(
+        self,
+        connection: sqlite3.Connection,
+        transactions: list[sqlite3.Row],
+        cash_events: list[sqlite3.Row],
+        start: date,
+        end: date,
+    ) -> tuple[float | None, list[JsonDict], list[str]]:
+        previous_value, _positions, warnings, previous_cash = self._total_value_at(
+            connection, transactions, cash_events, start
+        )
+        if previous_value <= 0 or previous_cash < 0:
+            return None, [], sorted(set([*warnings, "TWR_START_VALUE_UNAVAILABLE"]))
+        linked = 1.0
+        checkpoints: list[JsonDict] = []
+        current = start + timedelta(days=1)
+        while current <= end:
+            current_value, _positions, day_warnings, current_cash = self._total_value_at(
+                connection, transactions, cash_events, current
+            )
+            warnings.extend(day_warnings)
+            external_flow = sum(
+                int(row["signed_amount_minor"])
+                for row in cash_events
+                if bool(row["is_external_flow"]) and str(row["event_date"]) == current.isoformat()
+            )
+            if (
+                previous_value <= 0
+                or current_value < 0
+                or current_cash < 0
+                or any(item.startswith("NAV_MISSING") for item in day_warnings)
+            ):
+                return None, checkpoints, sorted(
+                    set([*warnings, "TWR_DAILY_CHAIN_INCOMPLETE"])
+                )
+            daily_return = (current_value - external_flow) / previous_value - 1
+            linked *= 1 + daily_return
+            checkpoints.append(
+                {
+                    "date": current.isoformat(),
+                    "opening_value": _money(previous_value),
+                    "closing_value": _money(current_value),
+                    "external_flow": _money(external_flow),
+                    "return_bps": round(daily_return * 10000),
+                }
+            )
+            previous_value = current_value
+            current += timedelta(days=1)
+        return linked - 1, checkpoints, sorted(set(warnings))
+
+    @staticmethod
     def _xirr(cashflows: list[tuple[date, int]]) -> float | None:
         if (
             not cashflows
@@ -292,34 +393,68 @@ class PerformanceService:
                 raise LedgerError("PERFORMANCE_DATA_UNAVAILABLE", "portfolio has no transactions")
             if normalized_type == "SINCE_INCEPTION":
                 period_start = date.fromisoformat(str(transactions[0]["trade_date"]))
-            start_value, start_positions, start_warnings = self._value_at(
-                connection, transactions, period_start
-            )
-            end_value, end_positions, end_warnings = self._value_at(
-                connection, transactions, period_end
-            )
+            cash_events = self._cash_events(connection, portfolio_id, period_end)
+            cash_ledger_active = bool(cash_events)
+            if cash_ledger_active:
+                start_value, start_positions, start_warnings, start_cash = self._total_value_at(
+                    connection, transactions, cash_events, period_start
+                )
+                end_value, end_positions, end_warnings, end_cash = self._total_value_at(
+                    connection, transactions, cash_events, period_end
+                )
+            else:
+                start_value, start_positions, start_warnings = self._value_at(
+                    connection, transactions, period_start
+                )
+                end_value, end_positions, end_warnings = self._value_at(
+                    connection, transactions, period_end
+                )
+                start_cash = end_cash = 0
             flows: list[JsonDict] = []
             net_flow = 0
             weighted_flow = 0.0
             total_days = max((period_end - period_start).days, 1)
-            for row in transactions:
-                flow_date = date.fromisoformat(str(row["trade_date"]))
-                if not period_start < flow_date <= period_end:
-                    continue
-                amount = int(row["amount_minor"]) * (1 if str(row["side"]) == "BUY" else -1)
-                net_flow += amount
-                weight = (period_end - flow_date).days / total_days
-                weighted_flow += amount * weight
-                flows.append(
-                    {
-                        "date": flow_date.isoformat(),
-                        "instrument_code": str(row["code"]),
-                        "side": str(row["side"]),
-                        "amount": _money(amount),
-                        "amount_minor": amount,
-                        "cash_convention": "EXTERNAL_FLOW",
-                    }
-                )
+            if cash_ledger_active:
+                for row in cash_events:
+                    if not bool(row["is_external_flow"]):
+                        continue
+                    flow_date = date.fromisoformat(str(row["event_date"]))
+                    if not period_start < flow_date <= period_end:
+                        continue
+                    amount = int(row["signed_amount_minor"])
+                    net_flow += amount
+                    weight = (period_end - flow_date).days / total_days
+                    weighted_flow += amount * weight
+                    flows.append(
+                        {
+                            "date": flow_date.isoformat(),
+                            "event_type": str(row["event_type"]),
+                            "amount": _money(amount),
+                            "amount_minor": amount,
+                            "cash_convention": "CONFIRMED_EXTERNAL_CASH_FLOW",
+                        }
+                    )
+            else:
+                for row in transactions:
+                    flow_date = date.fromisoformat(str(row["trade_date"]))
+                    if not period_start < flow_date <= period_end:
+                        continue
+                    amount = int(row["amount_minor"]) * (
+                        1 if str(row["side"]) == "BUY" else -1
+                    )
+                    net_flow += amount
+                    weight = (period_end - flow_date).days / total_days
+                    weighted_flow += amount * weight
+                    flows.append(
+                        {
+                            "date": flow_date.isoformat(),
+                            "instrument_code": str(row["code"]),
+                            "side": str(row["side"]),
+                            "amount": _money(amount),
+                            "amount_minor": amount,
+                            "cash_convention": "LEGACY_EXTERNAL_FLOW",
+                        }
+                    )
             denominator = start_value + weighted_flow
             modified_dietz = (
                 (end_value - start_value - net_flow) / denominator if denominator > 0 else None
@@ -331,9 +466,18 @@ class PerformanceService:
             )
             cashflows.append((period_end, end_value))
             xirr = self._xirr(cashflows)
-            # With no represented cash balance, TWR is only deterministic when no
-            # transaction flow occurs inside the period.
-            twr = modified_dietz if not flows else None
+            twr_checkpoints: list[JsonDict] = []
+            twr_warnings: list[str] = []
+            if cash_ledger_active:
+                twr, twr_checkpoints, twr_warnings = self._daily_linked_twr(
+                    connection,
+                    transactions,
+                    cash_events,
+                    period_start,
+                    period_end,
+                )
+            else:
+                twr = modified_dietz if not flows else None
             benchmark_return, attribution, benchmark_warnings = self._benchmark_attribution(
                 connection,
                 portfolio_id,
@@ -342,10 +486,12 @@ class PerformanceService:
                 start_positions,
             )
             modified_dietz_bps = _bps(modified_dietz)
-            warnings = sorted(set(start_warnings + end_warnings + benchmark_warnings))
-            if flows:
+            warnings = sorted(
+                set(start_warnings + end_warnings + benchmark_warnings + twr_warnings)
+            )
+            if not cash_ledger_active and flows:
                 warnings.append("CASH_LEDGER_ABSENT:BUY_SELL_TREATED_AS_EXTERNAL_FLOWS")
-            if twr is None:
+            if not cash_ledger_active and twr is None:
                 warnings.append("TWR_UNAVAILABLE_WITH_INTRAPERIOD_FLOWS")
             if benchmark_return is None:
                 warnings.append("BENCHMARK_RETURN_INCOMPLETE")
@@ -366,6 +512,8 @@ class PerformanceService:
                 "period_end": period_end.isoformat(),
                 "start_value": _money(start_value),
                 "end_value": _money(end_value),
+                "start_cash": _money(start_cash),
+                "end_cash": _money(end_cash),
                 "net_external_flow": _money(net_flow),
                 "modified_dietz_bps": modified_dietz_bps,
                 "xirr_bps": _bps(xirr),
@@ -379,13 +527,22 @@ class PerformanceService:
                 "start_positions": start_positions,
                 "end_positions": end_positions,
                 "external_flows": flows,
+                "twr_checkpoints": twr_checkpoints,
                 "benchmark_attribution": attribution,
                 "methodology": {
                     "calculation_version": CALCULATION_VERSION,
-                    "cash_ledger": False,
-                    "buy_sell_cash_convention": "EXTERNAL_FLOW",
+                    "cash_ledger": cash_ledger_active,
+                    "buy_sell_cash_convention": (
+                        "INTERNAL_CASH_MOVEMENT"
+                        if cash_ledger_active
+                        else "LEGACY_EXTERNAL_FLOW"
+                    ),
                     "opening_position_treatment": "INITIAL_CAPITAL_OR_EXTERNAL_FLOW",
-                    "twr_requires_no_intraperiod_flow": True,
+                    "twr_method": (
+                        "DAILY_LINKED_EXTERNAL_FLOW_ADJUSTED"
+                        if cash_ledger_active
+                        else "NO_INTRAPERIOD_FLOW_ONLY"
+                    ),
                 },
                 "warnings": sorted(set(warnings)),
                 "data_quality": quality,
