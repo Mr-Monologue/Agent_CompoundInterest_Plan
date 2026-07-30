@@ -667,6 +667,8 @@ class CapitalService:
                 "planning_preview": level in {"L0", "L1"},
                 "risk_scan": level in {"L0", "L1"},
                 "periodic_review": level in {"L0", "L1"},
+                "review_trend": level in {"L0", "L1"},
+                "market_discovery": level in {"L0", "L1"},
                 "model_may_fill_missing_facts": False,
                 "automatic_trade": False,
             }

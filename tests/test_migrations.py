@@ -45,6 +45,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
             "market_research_evidence",
             "market_discovery_runs",
             "market_discovery_items",
+            "market_discovery_changes",
         "holding_snapshots",
         "instruments",
         "job_runs",
@@ -58,6 +59,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
             "official_nav_backfill_batches",
             "review_action_decision_drafts",
             "review_action_decisions",
+            "review_trend_snapshots",
         "portfolios",
             "report_bundles",
             "runtime_mode_snapshots",
@@ -74,7 +76,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0018_review_market_discovery",)
+    assert revision == ("0019_review_trends_discovery_changes",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -164,7 +166,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0018_review_market_discovery",
+            "0019_review_trends_discovery_changes",
         )
 
 
@@ -222,7 +224,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0018_review_market_discovery",)
+    assert revision == ("0019_review_trends_discovery_changes",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(

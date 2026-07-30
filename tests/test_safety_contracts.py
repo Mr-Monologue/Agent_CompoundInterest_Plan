@@ -127,6 +127,9 @@ def test_market_discovery_and_review_actions_preserve_governance_boundaries() ->
     assert "only after confirmation with the\nmatching token" in skill
     assert "explicit registered instrument codes stored in its\nconfirmed local policy" in safety
     assert "must not register an instrument, change contribution eligibility" in safety
+    assert "A state transition, added or removed flag" in skill
+    assert "Never invent a review score, causal explanation" in skill
+    assert "must never\ntranslate that change into a rotation" in safety
 
 
 def test_cron_examples_are_disabled() -> None:
