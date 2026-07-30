@@ -212,6 +212,14 @@ status and expiry. Call `review_action_decision_draft_commit` only after confirm
 matching token. A review-action decision never changes a holding, strategy, plan, sell proposal or
 transaction.
 
+Use `market_discovery_change_list` to describe only persisted differences between comparable
+discovery runs. A state transition, added or removed flag, evidence-count change, verification
+coverage change or metric delta is a fact, not a buy, sell, rotation or ranking signal. Use
+`review_trend_snapshot_build` for an explicit portfolio, as-of date, review type and lookback.
+Report recurring action codes, unresolved backlog age, quality continuity, governance coverage and
+performance fields as Core returns them. Never invent a review score, causal explanation or
+strategy conclusion that Core did not return.
+
 When the user asks to install, repair, reconcile, or verify automation scheduling, call
 `automation_scheduler_manifest_get` first. Reconcile only jobs whose names begin with the returned
 managed prefix, using the Hermes Cron tool and the manifest's exact name, five-field schedule,

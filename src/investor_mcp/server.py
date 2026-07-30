@@ -401,6 +401,49 @@ async def periodic_review_list(
 
 
 @mcp.tool()
+async def review_trend_snapshot_build(
+    as_of_date: str,
+    review_type: Literal["ALL", "MONTHLY", "QUARTERLY", "ANNUAL"] = "ALL",
+    lookback_reviews: int = 12,
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Build an immutable cross-period review trend without changing investments."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/review-trend-snapshots",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "as_of_date": as_of_date,
+            "review_type": review_type,
+            "lookback_reviews": lookback_reviews,
+        },
+    )
+
+
+@mcp.tool()
+async def review_trend_snapshot_list(
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List immutable cross-period review trends and action backlog facts."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/review-trend-snapshots",
+        params={"portfolio_id": resolved_portfolio, "limit": limit},
+    )
+
+
+@mcp.tool()
 async def market_research_evidence_record(
     instrument_code: str,
     evidence_date: str,
@@ -493,6 +536,31 @@ async def market_discovery_run_list(
         "GET",
         "/v1/market-discovery-runs",
         params={"portfolio_id": resolved_portfolio, "limit": limit},
+    )
+
+
+@mcp.tool()
+async def market_discovery_change_list(
+    run_id: str = "",
+    attention_only: bool = False,
+    portfolio_id: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """List factual changes between comparable discovery runs without ranking funds."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/market-discovery-changes",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "run_id": run_id or None,
+            "attention_only": attention_only,
+            "limit": limit,
+        },
     )
 
 

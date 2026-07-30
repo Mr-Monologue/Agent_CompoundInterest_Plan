@@ -30,6 +30,7 @@ from investor_core.api.schemas import (
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     ReviewActionDecisionDraftRequest,
+    ReviewTrendSnapshotRequest,
     RiskScanRequest,
     SellDecisionDraftCreateRequest,
     SellFollowupEvaluateRequest,
@@ -363,6 +364,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         )
 
+    @app.post("/v1/review-trend-snapshots")
+    def review_trend_snapshot_build(
+        request: ReviewTrendSnapshotRequest,
+    ) -> dict[str, Any]:
+        result = performance.build_review_trend(**request.model_dump())
+        return success(
+            result,
+            warnings=(
+                ["Review trend contains incomplete or limited source facts"]
+                if result["data_quality"] != "PASS"
+                else []
+            ),
+            data_quality=str(result["data_quality"]),
+        )
+
+    @app.get("/v1/review-trend-snapshots")
+    def review_trend_snapshot_list(
+        portfolio_id: str,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": performance.list_review_trends(
+                    portfolio_id=portfolio_id,
+                    limit=limit,
+                )
+            }
+        )
+
     @app.post("/v1/market-research-evidence")
     def market_research_evidence_record(
         request: MarketResearchEvidenceRequest,
@@ -405,6 +435,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         return success(
             {"items": research.list_runs(portfolio_id=portfolio_id, limit=limit)}
+        )
+
+    @app.get("/v1/market-discovery-changes")
+    def market_discovery_change_list(
+        portfolio_id: str,
+        run_id: str | None = None,
+        attention_only: bool = False,
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_changes(
+                    portfolio_id=portfolio_id,
+                    run_id=run_id,
+                    attention_only=attention_only,
+                    limit=limit,
+                )
+            }
         )
 
     @app.post("/v1/review-action-items/{action_item_id}/decision-drafts")

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.21.0",
+  "version": "0.22.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0018_review_market_discovery",
+  "database_revision": "0019_review_trends_discovery_changes",
   "minimum_current_version": "0.5.3",
-  "notes": "Make review and market discovery first-class with sourced research evidence, deterministic candidate fact packages, richer periodic governance reviews, confirmed action-item decisions, and weekly discovery automation."
+  "notes": "Add immutable market-discovery change detection and cross-period review trends with recurring action, unresolved backlog, governance coverage, and quality continuity facts."
 }

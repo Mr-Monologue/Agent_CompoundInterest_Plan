@@ -1197,8 +1197,8 @@ class OperationsService:
                 as_of_date=datetime.fromisoformat(business_date).date(),
                 lookback_days=int(config["lookback_days"]),
             )
-            summary = dict(result["summary"])
-            notify = bool(summary["review_count"] or summary["blocked_count"])
+            change_summary = dict(result["change_summary"])
+            notify = bool(change_summary["attention_count"])
             return (
                 result,
                 str(result["data_quality"]),
