@@ -338,6 +338,79 @@ def test_dispatch_without_receipt_times_out_before_reclaim(tmp_path: Path) -> No
     assert [item["status"] for item in attempts] == ["DISPATCHED", "TIMED_OUT"]
 
 
+def test_controlled_notification_test_uses_real_outbox_and_receipt(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    service = OperationsService(settings_for(database_path), now=fixed_now)
+
+    created = service.create_notification_test(
+        idempotency_key="notification-test-20260727",
+        confirmation="SEND_TEST_NOTIFICATION",
+        actor_ref="test-user",
+    )
+
+    assert created["idempotent_replay"] is False
+    assert created["outbox"]["status"] == "PENDING"
+    assert created["outbox"]["notification_test_request_id"] == created["test_request"]["id"]
+    assert created["safety"] == {
+        "holdings_changed": False,
+        "transactions_created": False,
+        "strategy_changed": False,
+        "automatic_trade": False,
+    }
+    claimed = service.claim_delivery_attempts()["items"][0]
+    assert claimed["payload"]["source_type"] == "NOTIFICATION_TEST"
+    assert "不会创建交易" in claimed["payload"]["display_text"]
+    delivered = service.record_delivery_receipt(
+        outbox_id=str(claimed["outbox_id"]),
+        attempt_id=str(claimed["attempt_id"]),
+        receipt_token=str(claimed["receipt_token"]),
+        outcome="DELIVERED",
+        provider="HERMES_SEND",
+        provider_message_id="hermes-send:test",
+        evidence={"acknowledgement": "CLI_EXIT_ZERO"},
+        error_code=None,
+    )
+    status = service.get_notification_test(
+        test_request_id=str(created["test_request"]["id"])
+    )
+    assert delivered["outbox"]["status"] == "DELIVERED"
+    assert status["outbox"]["status"] == "DELIVERED"
+    assert status["attempts"][0]["status"] == "DELIVERED"
+
+
+def test_notification_test_requires_confirmation_is_idempotent_and_rate_limited(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    service = OperationsService(settings_for(database_path), now=fixed_now)
+
+    with pytest.raises(LedgerError, match="confirmation"):
+        service.create_notification_test(
+            idempotency_key="first",
+            confirmation="yes",
+        )
+    first = service.create_notification_test(
+        idempotency_key="first",
+        confirmation="SEND_TEST_NOTIFICATION",
+    )
+    replay = service.create_notification_test(
+        idempotency_key="first",
+        confirmation="SEND_TEST_NOTIFICATION",
+    )
+    assert replay["idempotent_replay"] is True
+    assert replay["test_request"]["id"] == first["test_request"]["id"]
+    with pytest.raises(LedgerError) as exc:
+        service.create_notification_test(
+            idempotency_key="second",
+            confirmation="SEND_TEST_NOTIFICATION",
+        )
+    assert exc.value.code == "NOTIFICATION_TEST_RATE_LIMITED"
+
+
 def test_weekly_plan_policy_requires_explicit_contribution_amount(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
@@ -385,7 +458,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0015_performance_reviews",)
+    assert revision == ("0016_notification_test_delivery",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:
