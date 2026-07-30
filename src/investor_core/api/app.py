@@ -22,6 +22,7 @@ from investor_core.api.schemas import (
     MarketNavSnapshotCreateRequest,
     MarketNavVerificationCreateRequest,
     NotificationDeliveryReceiptRequest,
+    NotificationTestCreateRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     RiskScanRequest,
@@ -265,6 +266,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         limit: int = Query(default=100, ge=1, le=500),
     ) -> dict[str, Any]:
         return success({"items": operations.list_outbox(status=status, limit=limit)})
+
+    @app.post("/v1/notification-tests")
+    def notification_test_create(
+        request: NotificationTestCreateRequest,
+    ) -> dict[str, Any]:
+        return success(operations.create_notification_test(**request.model_dump()))
+
+    @app.get("/v1/notification-tests/{test_request_id}")
+    def notification_test_get(test_request_id: str) -> dict[str, Any]:
+        return success(
+            operations.get_notification_test(test_request_id=test_request_id)
+        )
 
     @app.post("/v1/notification-deliveries/claim")
     def notification_delivery_claim(

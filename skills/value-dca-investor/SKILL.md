@@ -143,6 +143,13 @@ reviews. Follow-up results describe post-sale evidence and never alter strategy 
 Use `automation_policy_list`, `automation_run_list`, `automation_missed_run_list`,
 `automation_report_bundle_list`, `automation_alert_list`, `automation_delivery_status_list`, and
 `automation_delivery_attempt_list` to inspect unattended operations.
+Use `notification_test_send` only when the user explicitly asks to test the real notification
+chain and pass the exact confirmation value required by its tool schema. The Core generates the
+message body; never turn it into an arbitrary-message sender. Reuse a stable idempotency key when
+retrying the same request, and respect the Core cooldown instead of creating another test. Use
+`notification_test_get` to report the durable outbox, retry and channel receipt state. A test
+changes no holdings, transactions, strategy or trading permission. `DELIVERED` proves only that
+Hermes reported provider acceptance, never that the person read the message.
 Never claim a job is scheduled merely because a Cron example exists; require an active Core policy with `enabled=true`
 and a current Hermes scheduler snapshot whose reconciliation status is
 `IN_SYNC`. A missed window is a Core fact only when `automation_missed_run_list` returns it; never

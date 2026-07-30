@@ -9,6 +9,7 @@ from typing import Any, cast
 import pytest
 
 from investor_core.hermes_delivery import resolve_delivery_target, send_with_hermes
+from investor_core.ledger import LedgerError
 
 
 def test_origin_resolves_to_profile_home_channel(tmp_path: Path) -> None:
@@ -41,6 +42,35 @@ def test_hermes_exit_zero_is_provider_acceptance_not_read_receipt(
     assert evidence["acknowledgement"] == "CLI_EXIT_ZERO"
     assert evidence["evidence_level"] == "PROVIDER_ACCEPTED_NOT_HUMAN_READ"
     assert evidence["native_provider_message_id"] is False
+
+
+@pytest.mark.parametrize(
+    ("stderr", "expected_code"),
+    [
+        (
+            "Weixin send failed: iLink sendmessage rate limited: ret=-2 errmsg=prepare failed",
+            "HERMES_WEIXIN_SESSION_STALE",
+        ),
+        ("cooldown active: rate limited", "HERMES_CHANNEL_RATE_LIMITED"),
+        ("unknown provider failure", "HERMES_SEND_FAILED"),
+    ],
+)
+def test_hermes_failures_are_classified_for_durable_retry(
+    monkeypatch: pytest.MonkeyPatch,
+    stderr: str,
+    expected_code: str,
+) -> None:
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(["hermes"], 1, stdout="", stderr=stderr)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(LedgerError) as exc:
+        send_with_hermes(
+            profile="investor",
+            target="weixin",
+            message="test",
+        )
+    assert exc.value.code == expected_code
 
 
 def test_copied_notification_worker_has_no_project_package_dependency() -> None:

@@ -49,6 +49,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "market_nav_verifications",
         "notification_delivery_attempts",
         "notification_outbox",
+        "notification_test_requests",
         "portfolios",
         "report_bundles",
         "schema_meta",
@@ -64,7 +65,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0015_performance_reviews",)
+    assert revision == ("0016_notification_test_delivery",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -154,7 +155,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0015_performance_reviews",
+            "0016_notification_test_delivery",
         )
 
 
@@ -212,7 +213,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0015_performance_reviews",)
+    assert revision == ("0016_notification_test_delivery",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(

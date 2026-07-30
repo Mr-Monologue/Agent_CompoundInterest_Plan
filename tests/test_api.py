@@ -33,6 +33,33 @@ def test_ready_after_migration(tmp_path: Path) -> None:
     assert checks["database-schema"]["status"] == "PASS"
 
 
+def test_notification_test_api_requires_explicit_confirmation(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    client = TestClient(
+        create_app(Settings(environment=Environment.TEST, db_path=database_path))
+    )
+
+    rejected = client.post(
+        "/v1/notification-tests",
+        json={"idempotency_key": "api-test", "confirmation": "yes"},
+    )
+    created = client.post(
+        "/v1/notification-tests",
+        json={
+            "idempotency_key": "api-test",
+            "confirmation": "SEND_TEST_NOTIFICATION",
+        },
+    )
+    test_id = created.json()["data"]["test_request"]["id"]
+    status = client.get(f"/v1/notification-tests/{test_id}")
+
+    assert rejected.status_code == 422
+    assert created.status_code == 200
+    assert created.json()["data"]["outbox"]["status"] == "PENDING"
+    assert status.json()["data"]["safety"]["transactions_created"] is False
+
+
 def test_ready_fails_before_migration(tmp_path: Path) -> None:
     settings = Settings(environment=Environment.TEST, db_path=tmp_path / "missing.db")
 
