@@ -85,3 +85,12 @@ converted into model-generated market calls or automatic trades.
 Watchlist review snapshots and `WATCHLIST_REVIEW_DUE` automation are facts-only. They may identify
 an overdue or unscheduled review and request notification, but they cannot mutate watchlist state,
 adopt or reject an instrument, change strategy membership, create a plan or create a transaction.
+
+External research collection runs are source-attributed ingestion receipts. `SUCCESS` means every
+submitted item satisfied the persistence contract; it does not mean the publisher is independent,
+the facts are correct, or an instrument is suitable. Never let a connector batch register a new
+instrument, expand a discovery universe, alter strategy configuration or create a trade.
+
+Review-quality snapshots and `REVIEW_QUALITY_SNAPSHOT` automation evaluate the review process, not
+investment performance or strategy merit. Strategy contexts are time associations only. They must
+never rank strategy versions, infer causality, modify parameters, approve proposals or trade.

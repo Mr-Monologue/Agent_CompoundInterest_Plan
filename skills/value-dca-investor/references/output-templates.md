@@ -113,3 +113,16 @@ coverage, latest discovery facts and quality flags exactly. State `到期复核�
 Show the action ID, action code, outcome, evidence quality, evidence reference, note and confirmed
 time. For a trend, report outcome coverage, missing outcomes, outcome distribution and resolution
 days exactly. State `复盘结果事实，不是策略评分、因果证明或自动调参依据`.
+
+## Research collection run
+
+State the connector key, adapter version, upstream source lineage, start/finish times, manifest
+hash and execution status. Report recorded, replayed and rejected counts plus every stable item
+error exactly. State `采集成功只证明事实已按契约保存，不代表独立验证、投资相关性或推荐`.
+
+## Review quality
+
+State the as-of date, lookback, status and data quality. Report review continuity, action closure
+and outcome coverage, unresolved age, research-run traceability and each strategy context exactly.
+Preserve `INSUFFICIENT_HISTORY` and `OBSERVATIONAL_ONLY`. State `复盘流程质量事实，不是策略得分、
+参数优劣、因果证明或自动调参依据`.
