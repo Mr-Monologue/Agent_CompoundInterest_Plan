@@ -20,7 +20,8 @@ from investor_core.strategy import StrategyService
 
 VALUE_SCALE = 1_000_000
 CALCULATION_VERSION = "valuation-percentile-v1"
-RULE_VERSION = "risk-rules-v1"
+RULE_VERSION = "risk-rules-v2"
+RULE_EVALUATED_STATUSES = {"HIT", "EVALUATED_NOT_HIT", "EXEMPT"}
 LIFECYCLE_OBSERVATION_TYPES = {
     "RELATIVE_PERFORMANCE",
     "REPLACEMENT_CANDIDATE",
@@ -56,6 +57,26 @@ def _hash(value: object) -> str:
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
+
+
+def _rule_status(
+    *,
+    configured: bool,
+    data_available: bool,
+    triggered: bool,
+    applicable: bool = True,
+    exempt: bool = False,
+) -> str:
+    """Classify rule execution without treating missing configuration as a safe result."""
+    if not applicable:
+        return "NOT_APPLICABLE"
+    if not configured:
+        return "NOT_CONFIGURED"
+    if not data_available:
+        return "DATA_UNAVAILABLE"
+    if exempt:
+        return "EXEMPT"
+    return "HIT" if triggered else "EVALUATED_NOT_HIT"
 
 
 def _token_digest(token: str) -> str:
@@ -629,6 +650,7 @@ class RiskService:
         as_of_date: str | None = None,
         liquidity_amount: str | None = None,
         liquidity_destination: str | None = None,
+        include_rule_hits: bool = False,
     ) -> JsonDict:
         """Evaluate only explicitly configured deterministic rules."""
         valuation = self._market.portfolio_valuation(
@@ -640,6 +662,7 @@ class RiskService:
         configs = {str(item["instrument_code"]): item for item in assignment["instruments"]}
         hits: list[JsonDict] = []
         proposals: list[JsonDict] = []
+        instrument_summaries: list[JsonDict] = []
         if valuation["totals"] is None:
             hit = self._record_hit(
                 portfolio_id=portfolio_id,
@@ -657,9 +680,24 @@ class RiskService:
             return {
                 "state": "DATA_BLOCKED",
                 "reason_code": "DATA_QUALITY_BLOCK",
-                "rule_hits": [hit],
+                "evaluation_summary": {
+                    "candidate_rule_count": 1,
+                    "configured_rule_count": 1,
+                    "evaluable_rule_count": 0,
+                    "evaluated_rule_count": 0,
+                    "not_configured_count": 0,
+                    "data_unavailable_count": 1,
+                    "not_applicable_count": 0,
+                    "exempt_count": 0,
+                    "triggered_rule_count": 0,
+                    "sell_proposal_count": 0,
+                },
+                "instrument_summaries": [],
+                "rule_hits_included": include_rule_hits,
+                "rule_hits": [hit] if include_rule_hits else [],
                 "sell_proposals": [],
                 "data_quality": "SOURCE_ERROR",
+                "execution_status": "NOT_EXECUTED",
             }
         allocation = self._market.portfolio_brief(
             portfolio_id=portfolio_id,
@@ -709,14 +747,20 @@ class RiskService:
             config = configs.get(code)
             if config is None:
                 continue
+            position_hits: list[JsonDict] = []
             evaluations: list[tuple[str, bool, str, str, JsonDict]] = []
             thesis = str(config["thesis_status"])
+            thesis_review_hit = thesis == "REVIEW_REQUIRED"
             evaluations.append(
                 (
                     "THESIS_REVIEW_REQUIRED",
-                    thesis == "REVIEW_REQUIRED",
+                    thesis_review_hit,
                     "WARNING",
-                    "HIT" if thesis == "REVIEW_REQUIRED" else "NOT_HIT",
+                    _rule_status(
+                        configured=True,
+                        data_available=True,
+                        triggered=thesis_review_hit,
+                    ),
                     {"thesis_status": thesis},
                 )
             )
@@ -734,10 +778,13 @@ class RiskService:
                 str(config["instrument_id"]), "REPLACEMENT_CANDIDATE"
             )
             replacement_facts = replacement["facts"] if replacement else {}
+            replacement_configured = (
+                "replacement_min_score_delta_bps" in rules
+                and "replacement_min_consecutive_periods" in rules
+            )
             replacement_hit = (
                 replacement is not None
-                and "replacement_min_score_delta_bps" in rules
-                and "replacement_min_consecutive_periods" in rules
+                and replacement_configured
                 and int(replacement_facts["score_delta_bps"])
                 >= int(rules["replacement_min_score_delta_bps"])
                 and int(replacement_facts["consecutive_periods"])
@@ -748,7 +795,11 @@ class RiskService:
                     "SELL_04_REPLACE",
                     replacement_hit,
                     "HIGH",
-                    "HIT" if replacement_hit else "NOT_HIT",
+                    _rule_status(
+                        configured=replacement_configured,
+                        data_available=replacement is not None,
+                        triggered=replacement_hit,
+                    ),
                     {
                         "configured_rules": {
                             key: rules.get(key)
@@ -765,10 +816,13 @@ class RiskService:
                 str(config["instrument_id"]), "RELATIVE_PERFORMANCE"
             )
             relative_facts = relative["facts"] if relative else {}
+            relative_configured = (
+                "underperformance_threshold_bps" in rules
+                and "underperformance_min_days" in rules
+            )
             underperformance_hit = (
                 relative is not None
-                and "underperformance_threshold_bps" in rules
-                and "underperformance_min_days" in rules
+                and relative_configured
                 and int(relative_facts["relative_return_bps"])
                 <= int(rules["underperformance_threshold_bps"])
                 and int(relative_facts["window_days"])
@@ -779,7 +833,11 @@ class RiskService:
                     "SELL_05_UNDERPERFORMANCE",
                     underperformance_hit,
                     "HIGH",
-                    "HIT" if underperformance_hit else "NOT_HIT",
+                    _rule_status(
+                        configured=relative_configured,
+                        data_available=relative is not None,
+                        triggered=underperformance_hit,
+                    ),
                     {
                         "configured_rules": {
                             key: rules.get(key)
@@ -796,10 +854,13 @@ class RiskService:
                 date.fromisoformat(valuation["as_of_date"])
                 - date.fromisoformat(str(holding["as_of"]))
             ).days
+            take_profit_configured = (
+                "take_profit_return_bps" in rules
+                and "take_profit_min_holding_days" in rules
+            )
             take_profit_hit = (
                 return_bps is not None
-                and "take_profit_return_bps" in rules
-                and "take_profit_min_holding_days" in rules
+                and take_profit_configured
                 and return_bps >= int(rules["take_profit_return_bps"])
                 and holding_days >= int(rules["take_profit_min_holding_days"])
             )
@@ -808,7 +869,11 @@ class RiskService:
                     "SELL_06_TAKE_PROFIT",
                     take_profit_hit,
                     "WARNING",
-                    "HIT" if take_profit_hit else "NOT_HIT",
+                    _rule_status(
+                        configured=take_profit_configured,
+                        data_available=return_bps is not None,
+                        triggered=take_profit_hit,
+                    ),
                     {
                         "configured_return_bps": rules.get("take_profit_return_bps"),
                         "configured_min_holding_days": rules.get(
@@ -823,17 +888,22 @@ class RiskService:
             objective = self._latest_lifecycle_observation(
                 str(config["instrument_id"]), "OBJECTIVE_STATUS"
             )
+            objective_configured = "objective_sell_fraction_bps" in rules
             objective_hit = (
                 objective is not None
                 and str(objective["facts"]["status"]).upper() == "ACHIEVED"
-                and "objective_sell_fraction_bps" in rules
+                and objective_configured
             )
             evaluations.append(
                 (
                     "SELL_07_OBJECTIVE_COMPLETE",
                     objective_hit,
                     "WARNING",
-                    "HIT" if objective_hit else "NOT_HIT",
+                    _rule_status(
+                        configured=objective_configured,
+                        data_available=objective is not None,
+                        triggered=objective_hit,
+                    ),
                     {
                         "configured_fraction_bps": rules.get(
                             "objective_sell_fraction_bps"
@@ -846,6 +916,10 @@ class RiskService:
                 str(config["instrument_id"]), "TOOL_QUALITY"
             )
             tool_facts = tool_quality["facts"] if tool_quality else {}
+            tool_quality_configured = any(
+                key in rules
+                for key in ("max_tracking_error_bps", "max_expense_ratio_bps")
+            )
             tool_quality_hit = tool_quality is not None and (
                 (
                     "max_tracking_error_bps" in rules
@@ -865,17 +939,29 @@ class RiskService:
                     "CORE_TOOL_QUALITY",
                     tool_quality_hit,
                     "HIGH",
-                    "HIT" if tool_quality_hit else "NOT_HIT",
+                    _rule_status(
+                        configured=tool_quality_configured,
+                        data_available=tool_quality is not None,
+                        triggered=tool_quality_hit,
+                    ),
                     {"configured_rules": rules, "observation": tool_quality},
                 )
             )
             liquidity_minor = liquidity_allocations.get(code)
+            liquidity_applicable = liquidity_amount is not None
+            liquidity_configured = "liquidity_priority" in rules
+            liquidity_hit = liquidity_minor is not None
             evaluations.append(
                 (
                     "SELL_08_LIQUIDITY",
-                    liquidity_minor is not None,
+                    liquidity_hit,
                     "WARNING",
-                    "HIT" if liquidity_minor is not None else "NOT_HIT",
+                    _rule_status(
+                        configured=liquidity_configured,
+                        data_available=True,
+                        triggered=liquidity_hit,
+                        applicable=liquidity_applicable,
+                    ),
                     {
                         "requested_amount_minor": liquidity_minor,
                         "fund_destination": liquidity_destination,
@@ -888,24 +974,30 @@ class RiskService:
                     "SELL_02_THESIS_INVALID",
                     thesis == "INVALID",
                     "CRITICAL",
-                    "HIT" if thesis == "INVALID" else "NOT_HIT",
+                    _rule_status(
+                        configured=True,
+                        data_available=True,
+                        triggered=thesis == "INVALID",
+                    ),
                     {"thesis_status": thesis},
                 )
             )
             hard_stop = config["hard_stop_return_bps"]
+            hard_stop_configured = hard_stop is not None
+            hard_stop_hit = (
+                hard_stop_configured
+                and return_bps is not None
+                and return_bps <= int(hard_stop)
+            )
             evaluations.append(
                 (
                     "SELL_01_HARD_STOP",
-                    hard_stop is not None
-                    and return_bps is not None
-                    and return_bps <= int(hard_stop),
+                    hard_stop_hit,
                     "HIGH",
-                    (
-                        "HIT"
-                        if hard_stop is not None
-                        and return_bps is not None
-                        and return_bps <= int(hard_stop)
-                        else "NOT_HIT"
+                    _rule_status(
+                        configured=hard_stop_configured,
+                        data_available=return_bps is not None,
+                        triggered=hard_stop_hit,
                     ),
                     {
                         "configured_threshold_bps": hard_stop,
@@ -914,6 +1006,7 @@ class RiskService:
                 )
             )
             cap = config["maximum_position_weight_bps"]
+            cap_configured = cap is not None
             weight_bps = (
                 int(
                     (Decimal(str(position["weight_pct"])) * Decimal(100)).to_integral_value(
@@ -923,11 +1016,13 @@ class RiskService:
                 if position["weight_pct"] is not None
                 else None
             )
-            cap_hit = cap is not None and weight_bps is not None and weight_bps > int(cap)
-            rebalance_status = (
-                "EXEMPT"
-                if cap_hit and allocation["state"] == "TRANSITION_REQUIRED"
-                else ("HIT" if cap_hit else "NOT_HIT")
+            cap_hit = cap_configured and weight_bps is not None and weight_bps > int(cap)
+            cap_exempt = cap_hit and allocation["state"] == "TRANSITION_REQUIRED"
+            rebalance_status = _rule_status(
+                configured=cap_configured,
+                data_available=weight_bps is not None,
+                triggered=cap_hit and not cap_exempt,
+                exempt=cap_exempt,
             )
             evaluations.append(
                 (
@@ -966,6 +1061,7 @@ class RiskService:
                     },
                 )
                 hits.append(hit)
+                position_hits.append(hit)
                 if triggered and (
                     rule_code.startswith("SELL_") or rule_code == "CORE_TOOL_QUALITY"
                 ):
@@ -978,18 +1074,107 @@ class RiskService:
                             hit=hit,
                         )
                     )
-        triggered_count = sum(
-            1 for hit in hits if bool(hit["output"].get("triggered"))
+            instrument_status_counts: dict[str, int] = {}
+            for hit in position_hits:
+                status = str(hit["status"])
+                instrument_status_counts[status] = (
+                    instrument_status_counts.get(status, 0) + 1
+                )
+            evaluated_count = sum(
+                count
+                for status, count in instrument_status_counts.items()
+                if status in RULE_EVALUATED_STATUSES
+            )
+            triggered_for_instrument = sum(
+                1 for hit in position_hits if bool(hit["output"].get("triggered"))
+            )
+            if triggered_for_instrument:
+                assessment = "REVIEW_REQUIRED"
+                assessment_reason = "RULE_HIT"
+            elif (
+                instrument_status_counts.get("DATA_UNAVAILABLE", 0)
+                and evaluated_count == 0
+            ):
+                assessment = "DATA_BLOCKED"
+                assessment_reason = "NO_EVALUABLE_RULES"
+            elif instrument_status_counts.get(
+                "NOT_CONFIGURED", 0
+            ) or instrument_status_counts.get("DATA_UNAVAILABLE", 0):
+                assessment = "PARTIAL"
+                assessment_reason = "RULE_CONFIGURATION_OR_DATA_INCOMPLETE"
+            else:
+                assessment = "PASS"
+                assessment_reason = "NO_SELL_RULE_HIT"
+            instrument_summaries.append(
+                {
+                    "instrument_code": code,
+                    "instrument_name": holding["instrument_name"],
+                    "assessment": assessment,
+                    "reason_code": assessment_reason,
+                    "candidate_rule_count": len(position_hits),
+                    "configured_rule_count": sum(
+                        count
+                        for status, count in instrument_status_counts.items()
+                        if status not in {"NOT_CONFIGURED", "NOT_APPLICABLE"}
+                    ),
+                    "evaluable_rule_count": evaluated_count,
+                    "evaluated_rule_count": evaluated_count,
+                    "triggered_rule_count": triggered_for_instrument,
+                    "status_counts": instrument_status_counts,
+                }
+            )
+        status_counts: dict[str, int] = {}
+        for hit in hits:
+            status = str(hit["status"])
+            status_counts[status] = status_counts.get(status, 0) + 1
+        evaluated_count = sum(
+            count
+            for status, count in status_counts.items()
+            if status in RULE_EVALUATED_STATUSES
         )
+        configured_count = sum(
+            count
+            for status, count in status_counts.items()
+            if status not in {"NOT_CONFIGURED", "NOT_APPLICABLE"}
+        )
+        triggered_count = sum(1 for hit in hits if bool(hit["output"].get("triggered")))
+        if proposals:
+            state = "REVIEW_REQUIRED"
+            reason_code = "SELL_PROPOSALS_CREATED"
+        elif evaluated_count == 0 and status_counts.get("DATA_UNAVAILABLE", 0):
+            state = "DATA_BLOCKED"
+            reason_code = "RISK_SCAN_DATA_BLOCKED"
+        elif status_counts.get("NOT_CONFIGURED", 0) or status_counts.get(
+            "DATA_UNAVAILABLE", 0
+        ):
+            state = "PARTIAL"
+            reason_code = "RISK_SCAN_PARTIAL"
+        elif evaluated_count == 0:
+            state = "NOT_CONFIGURED"
+            reason_code = "NO_CONFIGURED_RULES"
+        else:
+            state = "PASS"
+            reason_code = "NO_SELL_RULE_HIT"
         return {
-            "state": "REVIEW_REQUIRED" if proposals else "PASS",
-            "reason_code": "SELL_PROPOSALS_CREATED" if proposals else "NO_SELL_RULE_HIT",
+            "state": state,
+            "reason_code": reason_code,
+            "rule_contract_version": RULE_VERSION,
+            "rule_source": "STRATEGY_INSTANCE_AND_CORE_LIFECYCLE",
             "evaluation_summary": {
-                "evaluated_rule_count": len(hits),
+                "candidate_rule_count": len(hits),
+                "configured_rule_count": configured_count,
+                "evaluable_rule_count": evaluated_count,
+                "evaluated_rule_count": evaluated_count,
+                "not_configured_count": status_counts.get("NOT_CONFIGURED", 0),
+                "data_unavailable_count": status_counts.get("DATA_UNAVAILABLE", 0),
+                "not_applicable_count": status_counts.get("NOT_APPLICABLE", 0),
+                "exempt_count": status_counts.get("EXEMPT", 0),
                 "triggered_rule_count": triggered_count,
                 "sell_proposal_count": len(proposals),
             },
-            "rule_hits": hits,
+            "instrument_summaries": instrument_summaries,
+            "rule_hits_included": include_rule_hits,
+            "rule_hits": hits if include_rule_hits else [],
             "sell_proposals": proposals,
             "data_quality": valuation["data_quality"],
             "execution_status": "NOT_EXECUTED",
@@ -1022,6 +1207,90 @@ class RiskService:
             "record_hash": str(row["record_hash"]),
         }
 
+    def list_rule_hits(
+        self,
+        *,
+        portfolio_id: str,
+        instrument_code: str | None = None,
+        rule_code: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_details: bool = False,
+    ) -> JsonDict:
+        """Return paginated rule facts without forcing large scan responses."""
+        clauses = ["rh.portfolio_id = ?"]
+        params: list[object] = [portfolio_id]
+        if instrument_code:
+            clauses.append("i.code = ?")
+            params.append(instrument_code)
+        if rule_code:
+            clauses.append("rh.rule_code = ?")
+            params.append(rule_code)
+        if status:
+            clauses.append("rh.status = ?")
+            params.append(status)
+        where = " AND ".join(clauses)
+        with self._connect() as connection:
+            total = int(
+                connection.execute(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM rule_hits rh
+                    LEFT JOIN instruments i ON i.id = rh.instrument_id
+                    WHERE {where}
+                    """,
+                    params,
+                ).fetchone()[0]
+            )
+            rows = connection.execute(
+                f"""
+                SELECT rh.*, i.code AS instrument_code, i.name AS instrument_name
+                FROM rule_hits rh
+                LEFT JOIN instruments i ON i.id = rh.instrument_id
+                WHERE {where}
+                ORDER BY rh.evaluated_at DESC, rh.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                [*params, limit, offset],
+            ).fetchall()
+        items: list[JsonDict] = []
+        for row in rows:
+            output = json.loads(str(row["output_json"]))
+            item: JsonDict = {
+                "id": str(row["id"]),
+                "instrument_id": row["instrument_id"],
+                "instrument_code": row["instrument_code"],
+                "instrument_name": row["instrument_name"],
+                "rule_code": str(row["rule_code"]),
+                "rule_version": str(row["rule_version"]),
+                "severity": str(row["severity"]),
+                "status": str(row["status"]),
+                "triggered": bool(output.get("triggered")),
+                "requires_human_review": bool(output.get("requires_human_review")),
+                "evaluated_at": str(row["evaluated_at"]),
+            }
+            if include_details:
+                item.update(
+                    {
+                        "inputs": json.loads(str(row["input_json"])),
+                        "output": output,
+                        "input_hash": str(row["input_hash"]),
+                    }
+                )
+            items.append(item)
+        return {
+            "items": items,
+            "page": {
+                "limit": limit,
+                "offset": offset,
+                "returned_count": len(items),
+                "total_count": total,
+                "has_more": offset + len(items) < total,
+            },
+            "include_details": include_details,
+        }
+
     def _record_hit(
         self,
         *,
@@ -1033,7 +1302,7 @@ class RiskService:
         inputs: JsonDict,
         output: JsonDict,
     ) -> JsonDict:
-        input_hash = _hash(inputs)
+        input_hash = _hash({"rule_version": RULE_VERSION, "inputs": inputs})
         with self._connect() as connection:
             existing = connection.execute(
                 """

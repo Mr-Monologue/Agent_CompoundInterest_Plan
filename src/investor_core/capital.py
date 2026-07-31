@@ -669,6 +669,9 @@ class CapitalService:
                 "periodic_review": level in {"L0", "L1"},
                 "review_trend": level in {"L0", "L1"},
                 "market_discovery": level in {"L0", "L1"},
+                "research_watchlist": level in {"L0", "L1", "L2"},
+                "research_content_change": level in {"L0", "L1", "L2"},
+                "review_action_outcome": level in {"L0", "L1", "L2"},
                 "model_may_fill_missing_facts": False,
                 "automatic_trade": False,
             }

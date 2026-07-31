@@ -955,6 +955,7 @@ class PerformanceService:
             review_rows.reverse()
             review_ids = [str(row["id"]) for row in review_rows]
             action_rows: list[sqlite3.Row] = []
+            outcome_rows: list[sqlite3.Row] = []
             if review_ids:
                 placeholders = ",".join("?" for _ in review_ids)
                 action_rows = list(
@@ -965,6 +966,21 @@ class PerformanceService:
                         JOIN periodic_reviews r ON r.id=a.review_id
                         WHERE a.review_id IN ({placeholders})
                         ORDER BY r.period_end, a.code
+                        """,
+                        tuple(review_ids),
+                    ).fetchall()
+                )
+                outcome_rows = list(
+                    connection.execute(
+                        f"""
+                        SELECT o.*, a.code, a.review_id, a.created_at AS action_created_at,
+                               d.confirmed_at AS resolved_at
+                        FROM review_action_outcomes o
+                        JOIN review_action_items a ON a.id=o.action_item_id
+                        LEFT JOIN review_action_decisions d
+                          ON d.action_item_id=a.id AND d.new_status='RESOLVED'
+                        WHERE a.review_id IN ({placeholders})
+                        ORDER BY o.confirmed_at, a.code
                         """,
                         tuple(review_ids),
                     ).fetchall()
@@ -1063,6 +1079,47 @@ class PerformanceService:
                     str(item["code"]),
                 )
             )
+            outcome_counts = {
+                "COMPLETED": 0,
+                "PARTIAL": 0,
+                "NOT_COMPLETED": 0,
+                "NOT_APPLICABLE": 0,
+            }
+            outcome_quality_counts = {
+                "VERIFIED": 0,
+                "USER_REPORTED": 0,
+                "UNVERIFIED": 0,
+            }
+            outcome_items: list[JsonDict] = []
+            resolution_days: list[int] = []
+            for row in outcome_rows:
+                outcome_counts[str(row["outcome"])] += 1
+                outcome_quality_counts[str(row["evidence_quality"])] += 1
+                resolved_at = row["resolved_at"]
+                days_to_resolution = None
+                if resolved_at is not None:
+                    created = datetime.fromisoformat(
+                        str(row["action_created_at"]).replace("Z", "+00:00")
+                    )
+                    resolved = datetime.fromisoformat(
+                        str(resolved_at).replace("Z", "+00:00")
+                    )
+                    days_to_resolution = max(0, (resolved - created).days)
+                    resolution_days.append(days_to_resolution)
+                outcome_items.append(
+                    {
+                        "outcome_id": str(row["id"]),
+                        "action_item_id": str(row["action_item_id"]),
+                        "review_id": str(row["review_id"]),
+                        "code": str(row["code"]),
+                        "outcome": str(row["outcome"]),
+                        "evidence_quality": str(row["evidence_quality"]),
+                        "evidence_ref": row["evidence_ref"],
+                        "days_to_resolution": days_to_resolution,
+                        "confirmed_at": str(row["confirmed_at"]),
+                    }
+                )
+            resolved_count = status_counts["RESOLVED"]
             if not review_rows:
                 quality = "SOURCE_ERROR"
                 status = "DATA_BLOCKED"
@@ -1098,6 +1155,29 @@ class PerformanceService:
                         None if not unresolved else unresolved[0]["age_days"]
                     ),
                     "unresolved_items": unresolved,
+                    "outcome_summary": {
+                        "resolved_count": resolved_count,
+                        "recorded_outcome_count": len(outcome_rows),
+                        "missing_outcome_count": max(
+                            0, resolved_count - len(outcome_rows)
+                        ),
+                        "outcome_coverage_bps": (
+                            None
+                            if resolved_count == 0
+                            else round(len(outcome_rows) / resolved_count * 10000)
+                        ),
+                        "outcome_counts": outcome_counts,
+                        "evidence_quality_counts": outcome_quality_counts,
+                        "average_resolution_days": (
+                            None
+                            if not resolution_days
+                            else round(sum(resolution_days) / len(resolution_days), 2)
+                        ),
+                        "items": outcome_items,
+                        "evaluation_boundary": (
+                            "DESCRIPTIVE_OUTCOME_FACTS_NOT_A_STRATEGY_SCORE"
+                        ),
+                    },
                 },
                 "data_quality": quality,
                 "status": status,

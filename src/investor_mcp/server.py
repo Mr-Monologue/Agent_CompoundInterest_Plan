@@ -497,6 +497,24 @@ async def market_research_evidence_list(
 
 
 @mcp.tool()
+async def market_research_evidence_change_list(
+    instrument_code: str = "",
+    change_type: Literal["", "INITIAL", "UNCHANGED", "CHANGED"] = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List source-content fact changes without interpreting them as market signals."""
+    return await core_request(
+        "GET",
+        "/v1/market-research-evidence-changes",
+        params={
+            "instrument_code": instrument_code or None,
+            "change_type": change_type or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
 async def market_discovery_scan(
     instrument_codes: list[str],
     as_of_date: str,
@@ -565,6 +583,89 @@ async def market_discovery_change_list(
 
 
 @mcp.tool()
+async def research_watchlist_transition_draft_create(
+    instrument_code: str,
+    new_state: Literal[
+        "CANDIDATE",
+        "OBSERVING",
+        "REVIEW_DUE",
+        "ADOPTED",
+        "REJECTED",
+        "ARCHIVED",
+    ],
+    reason: str,
+    review_due_date: str = "",
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Draft an explicit research-watchlist transition without changing strategy or trades."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/research-watchlist-transition-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "instrument_code": instrument_code,
+            "new_state": new_state,
+            "reason": reason,
+            "review_due_date": review_due_date or None,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def research_watchlist_transition_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str = "user",
+) -> dict[str, Any]:
+    """Commit one exact watchlist transition after explicit confirmation."""
+    return await core_request(
+        "POST",
+        f"/v1/research-watchlist-transition-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def research_watchlist_list(
+    state: Literal[
+        "",
+        "CANDIDATE",
+        "OBSERVING",
+        "REVIEW_DUE",
+        "ADOPTED",
+        "REJECTED",
+        "ARCHIVED",
+    ] = "",
+    portfolio_id: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """List the portfolio-local research watchlist without ranking or selecting funds."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-watchlist",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "state": state or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
 async def review_action_decision_draft_create(
     action_item_id: str,
     decision: Literal["ACKNOWLEDGE", "RESOLVE"],
@@ -596,6 +697,63 @@ async def review_action_decision_draft_commit(
             "confirmation_token": confirmation_token,
             "confirmed_by": confirmed_by,
         },
+    )
+
+
+@mcp.tool()
+async def review_action_outcome_draft_create(
+    action_item_id: str,
+    outcome: Literal["COMPLETED", "PARTIAL", "NOT_COMPLETED", "NOT_APPLICABLE"],
+    evidence_quality: Literal["VERIFIED", "USER_REPORTED", "UNVERIFIED"],
+    note: str,
+    evidence_ref: str = "",
+) -> dict[str, Any]:
+    """Draft a factual outcome for one resolved review action; this never trades."""
+    return await core_request(
+        "POST",
+        f"/v1/review-action-items/{action_item_id}/outcome-drafts",
+        payload={
+            "outcome": outcome,
+            "evidence_quality": evidence_quality,
+            "evidence_ref": evidence_ref or None,
+            "note": note,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def review_action_outcome_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str = "user",
+) -> dict[str, Any]:
+    """Commit one exact review-action outcome after explicit confirmation."""
+    return await core_request(
+        "POST",
+        f"/v1/review-action-outcome-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def review_action_outcome_list(
+    portfolio_id: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """List immutable review-action outcomes and their evidence quality."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/review-action-outcomes",
+        params={"portfolio_id": resolved_portfolio, "limit": limit},
     )
 
 
@@ -1221,8 +1379,9 @@ async def risk_scan_run(
     liquidity_destination: str = "",
     portfolio_id: str = "",
     account_id: str = "",
+    include_rule_hits: bool = False,
 ) -> dict[str, Any]:
-    """Run configured deterministic rules; may create proposals, never transactions."""
+    """Run configured rules; defaults to compact summaries and never creates transactions."""
     resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
         portfolio_id, account_id
     )
@@ -1237,8 +1396,50 @@ async def risk_scan_run(
             "as_of_date": as_of_date or None,
             "liquidity_amount": liquidity_amount or None,
             "liquidity_destination": liquidity_destination or None,
+            "include_rule_hits": include_rule_hits,
         },
     )
+
+
+@mcp.tool()
+async def risk_rule_hit_list(
+    instrument_code: str = "",
+    rule_code: str = "",
+    status: Literal[
+        "HIT",
+        "EVALUATED_NOT_HIT",
+        "NOT_CONFIGURED",
+        "DATA_UNAVAILABLE",
+        "NOT_APPLICABLE",
+        "DATA_BLOCKED",
+        "EXEMPT",
+    ]
+    | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    include_details: bool = False,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """List paginated deterministic rule facts; details are opt-in to protect context."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "limit": limit,
+        "offset": offset,
+        "include_details": include_details,
+    }
+    if instrument_code:
+        params["instrument_code"] = instrument_code
+    if rule_code:
+        params["rule_code"] = rule_code
+    if status:
+        params["status"] = status
+    return await core_request("GET", "/v1/rule-hits", params=params)
 
 
 @mcp.tool()

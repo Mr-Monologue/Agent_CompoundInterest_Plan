@@ -27,6 +27,25 @@ EVIDENCE_TYPES = {
     "OTHER",
 }
 DECISIONS = {"ACKNOWLEDGE": "ACKNOWLEDGED", "RESOLVE": "RESOLVED"}
+WATCHLIST_STATES = {
+    "CANDIDATE",
+    "OBSERVING",
+    "REVIEW_DUE",
+    "ADOPTED",
+    "REJECTED",
+    "ARCHIVED",
+}
+WATCHLIST_TRANSITIONS: dict[str | None, set[str]] = {
+    None: {"CANDIDATE"},
+    "CANDIDATE": {"OBSERVING", "REJECTED", "ARCHIVED"},
+    "OBSERVING": {"REVIEW_DUE", "ADOPTED", "REJECTED", "ARCHIVED"},
+    "REVIEW_DUE": {"OBSERVING", "ADOPTED", "REJECTED", "ARCHIVED"},
+    "ADOPTED": {"OBSERVING", "ARCHIVED"},
+    "REJECTED": {"CANDIDATE", "ARCHIVED"},
+    "ARCHIVED": {"CANDIDATE"},
+}
+ACTION_OUTCOMES = {"COMPLETED", "PARTIAL", "NOT_COMPLETED", "NOT_APPLICABLE"}
+OUTCOME_QUALITY = {"VERIFIED", "USER_REPORTED", "UNVERIFIED"}
 DISCOVERY_VERSION = "market-discovery-v2"
 DISCOVERY_METRICS = (
     "observation_count",
@@ -55,6 +74,22 @@ def _token_digest(value: str) -> str:
 
 def _iso(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "Z")
+
+
+def _flatten(value: object, prefix: str = "") -> dict[str, object]:
+    if isinstance(value, dict):
+        flattened: dict[str, object] = {}
+        for key in sorted(value):
+            path = f"{prefix}.{key}" if prefix else str(key)
+            flattened.update(_flatten(value[key], path))
+        return flattened
+    if isinstance(value, list):
+        flattened = {}
+        for index, item in enumerate(value):
+            path = f"{prefix}[{index}]"
+            flattened.update(_flatten(item, path))
+        return flattened or {prefix: []}
+    return {prefix: value}
 
 
 class ResearchService:
@@ -129,6 +164,20 @@ class ResearchService:
             ).fetchone()
             if existing is not None:
                 return self._evidence_data(connection, existing, idempotent_replay=True)
+            previous = connection.execute(
+                """
+                SELECT * FROM market_research_evidence
+                WHERE instrument_id=? AND evidence_type=? AND source_lineage=?
+                  AND evidence_date<=?
+                ORDER BY evidence_date DESC, created_at DESC LIMIT 1
+                """,
+                (
+                    instrument["id"],
+                    normalized_type,
+                    source_lineage.strip().upper(),
+                    evidence_date.isoformat(),
+                ),
+            ).fetchone()
             evidence_id = str(uuid4())
             connection.execute(
                 """
@@ -152,13 +201,69 @@ class ResearchService:
                     _iso(self._now()),
                 ),
             )
+            previous_facts = (
+                {} if previous is None else json.loads(str(previous["facts_json"]))
+            )
+            before = _flatten(previous_facts)
+            after = _flatten(facts)
+            added_keys = sorted(after.keys() - before.keys())
+            removed_keys = sorted(before.keys() - after.keys())
+            changed_keys = sorted(
+                key for key in before.keys() & after.keys() if before[key] != after[key]
+            )
+            change_type = (
+                "INITIAL"
+                if previous is None
+                else (
+                    "CHANGED"
+                    if added_keys or removed_keys or changed_keys
+                    else "UNCHANGED"
+                )
+            )
+            change_facts: JsonDict = {
+                "evidence_id": evidence_id,
+                "previous_evidence_id": (
+                    None if previous is None else str(previous["id"])
+                ),
+                "instrument_code": str(instrument["code"]),
+                "evidence_type": normalized_type,
+                "source_lineage": source_lineage.strip().upper(),
+                "change_type": change_type,
+                "added_keys": added_keys,
+                "removed_keys": removed_keys,
+                "changed_keys": changed_keys,
+                "change_boundary": "SOURCE_FACT_CHANGE_NOT_INVESTMENT_ADVICE",
+            }
+            connection.execute(
+                """
+                INSERT INTO research_evidence_changes (
+                    id, evidence_id, previous_evidence_id, instrument_id,
+                    change_type, added_keys_json, removed_keys_json,
+                    changed_keys_json, facts_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid4()),
+                    evidence_id,
+                    None if previous is None else previous["id"],
+                    instrument["id"],
+                    change_type,
+                    _json(added_keys),
+                    _json(removed_keys),
+                    _json(changed_keys),
+                    _json(change_facts),
+                    _iso(self._now()),
+                ),
+            )
             connection.commit()
             row = connection.execute(
                 "SELECT * FROM market_research_evidence WHERE id=?",
                 (evidence_id,),
             ).fetchone()
             assert row is not None
-            return self._evidence_data(connection, row, idempotent_replay=False)
+            result = self._evidence_data(connection, row, idempotent_replay=False)
+            result["change"] = change_facts
+            return result
 
     @staticmethod
     def _evidence_data(
@@ -213,6 +318,42 @@ class ResearchService:
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
             return [self._evidence_data(connection, row) for row in rows]
+
+    def list_evidence_changes(
+        self,
+        *,
+        instrument_code: str | None = None,
+        change_type: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = """
+            SELECT c.*, i.code, i.name
+            FROM research_evidence_changes c
+            JOIN instruments i ON i.id=c.instrument_id
+            WHERE 1=1
+        """
+        params: list[object] = []
+        if instrument_code:
+            query += " AND i.code=?"
+            params.append(instrument_code.strip().upper())
+        if change_type:
+            query += " AND c.change_type=?"
+            params.append(change_type.strip().upper())
+        query += " ORDER BY c.created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+            return [
+                {
+                    "id": str(row["id"]),
+                    "instrument_code": str(row["code"]),
+                    "instrument_name": str(row["name"]),
+                    **json.loads(str(row["facts_json"])),
+                    "created_at": str(row["created_at"]),
+                    "automatic_trade": False,
+                }
+                for row in rows
+            ]
 
     @staticmethod
     def _return_bps(values: list[int], periods: int) -> int | None:
@@ -679,6 +820,361 @@ class ResearchService:
                 for row in rows
             ]
 
+    def create_watchlist_transition_draft(
+        self,
+        *,
+        portfolio_id: str,
+        instrument_code: str,
+        new_state: str,
+        reason: str,
+        review_due_date: date | None,
+        actor_ref: str,
+    ) -> JsonDict:
+        normalized_state = new_state.strip().upper()
+        if normalized_state not in WATCHLIST_STATES:
+            raise LedgerError(
+                "WATCHLIST_STATE_INVALID",
+                "unsupported research watchlist state",
+                details={"supported_states": sorted(WATCHLIST_STATES)},
+            )
+        if not reason.strip():
+            raise LedgerError("WATCHLIST_REASON_REQUIRED", "transition reason is required")
+        if normalized_state == "REVIEW_DUE" and review_due_date is None:
+            raise LedgerError(
+                "WATCHLIST_REVIEW_DATE_REQUIRED",
+                "REVIEW_DUE requires review_due_date",
+            )
+        with self._connect() as connection:
+            portfolio = connection.execute(
+                "SELECT id FROM portfolios WHERE id=?",
+                (portfolio_id,),
+            ).fetchone()
+            if portfolio is None:
+                raise LedgerError(
+                    "PORTFOLIO_NOT_FOUND",
+                    "portfolio was not found",
+                    http_status=404,
+                )
+            instrument = connection.execute(
+                "SELECT id, code, name FROM instruments WHERE code=? AND status='ACTIVE'",
+                (instrument_code.strip().upper(),),
+            ).fetchone()
+            if instrument is None:
+                raise LedgerError(
+                    "INSTRUMENT_NOT_FOUND",
+                    "instrument was not found",
+                    http_status=404,
+                )
+            entry = connection.execute(
+                """
+                SELECT * FROM research_watchlist_entries
+                WHERE portfolio_id=? AND instrument_id=?
+                """,
+                (portfolio_id, instrument["id"]),
+            ).fetchone()
+            previous_state = None if entry is None else str(entry["state"])
+            if normalized_state not in WATCHLIST_TRANSITIONS[previous_state]:
+                raise LedgerError(
+                    "WATCHLIST_TRANSITION_INVALID",
+                    "requested watchlist state transition is not allowed",
+                    details={
+                        "previous_state": previous_state,
+                        "new_state": normalized_state,
+                        "allowed_states": sorted(WATCHLIST_TRANSITIONS[previous_state]),
+                    },
+                    http_status=409,
+                )
+            facts: JsonDict = {
+                "portfolio_id": portfolio_id,
+                "instrument_code": str(instrument["code"]),
+                "instrument_name": str(instrument["name"]),
+                "previous_state": previous_state,
+                "new_state": normalized_state,
+                "review_due_date": (
+                    None if review_due_date is None else review_due_date.isoformat()
+                ),
+                "reason": reason.strip(),
+                "watchlist_boundary": (
+                    "RESEARCH_CLASSIFICATION_ONLY_NO_STRATEGY_OR_TRADE_CHANGE"
+                ),
+            }
+            token = secrets.token_urlsafe(24)
+            draft_id = str(uuid4())
+            created = self._now()
+            expires = created + timedelta(minutes=15)
+            connection.execute(
+                """
+                INSERT INTO research_watchlist_transition_drafts (
+                    id, portfolio_id, instrument_id, previous_state, new_state,
+                    review_due_date, reason, status, confirmation_token_digest,
+                    facts_hash, created_by, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
+                """,
+                (
+                    draft_id,
+                    portfolio_id,
+                    instrument["id"],
+                    previous_state,
+                    normalized_state,
+                    facts["review_due_date"],
+                    reason.strip(),
+                    _token_digest(token),
+                    _hash(facts),
+                    actor_ref,
+                    _iso(created),
+                    _iso(expires),
+                ),
+            )
+            connection.commit()
+            return {
+                "draft": {
+                    "id": draft_id,
+                    **facts,
+                    "status": "PENDING",
+                    "expires_at": _iso(expires),
+                },
+                "confirmation_token": token,
+                "strategy_changed": False,
+                "contribution_eligibility_changed": False,
+                "holdings_changed": False,
+                "transactions_created": False,
+                "automatic_trade": False,
+            }
+
+    def commit_watchlist_transition(
+        self,
+        *,
+        draft_id: str,
+        confirmation_token: str,
+        confirmed_by: str,
+    ) -> JsonDict:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM research_watchlist_transition_drafts WHERE id=?",
+                (draft_id,),
+            ).fetchone()
+            if draft is None:
+                raise LedgerError(
+                    "WATCHLIST_DRAFT_NOT_FOUND",
+                    "watchlist transition draft was not found",
+                    http_status=404,
+                )
+            existing = connection.execute(
+                "SELECT * FROM research_watchlist_transitions WHERE draft_id=?",
+                (draft_id,),
+            ).fetchone()
+            if existing is not None:
+                connection.rollback()
+                return self._watchlist_transition_data(
+                    connection, existing, idempotent_replay=True
+                )
+            if str(draft["status"]) != "PENDING":
+                raise LedgerError(
+                    "WATCHLIST_DRAFT_NOT_PENDING",
+                    "watchlist transition draft is not pending",
+                    http_status=409,
+                )
+            if self._now() > datetime.fromisoformat(
+                str(draft["expires_at"]).replace("Z", "+00:00")
+            ):
+                connection.execute(
+                    """
+                    UPDATE research_watchlist_transition_drafts
+                    SET status='EXPIRED' WHERE id=?
+                    """,
+                    (draft_id,),
+                )
+                connection.commit()
+                raise LedgerError(
+                    "WATCHLIST_DRAFT_EXPIRED",
+                    "watchlist transition draft has expired",
+                    http_status=409,
+                )
+            if not secrets.compare_digest(
+                str(draft["confirmation_token_digest"]),
+                _token_digest(confirmation_token),
+            ):
+                raise LedgerError(
+                    "CONFIRMATION_TOKEN_MISMATCH",
+                    "confirmation token does not match",
+                    http_status=409,
+                )
+            entry = connection.execute(
+                """
+                SELECT * FROM research_watchlist_entries
+                WHERE portfolio_id=? AND instrument_id=?
+                """,
+                (draft["portfolio_id"], draft["instrument_id"]),
+            ).fetchone()
+            current_state = None if entry is None else str(entry["state"])
+            if current_state != draft["previous_state"]:
+                raise LedgerError(
+                    "WATCHLIST_STATE_CONFLICT",
+                    "watchlist state changed after the draft was created",
+                    details={
+                        "expected_state": draft["previous_state"],
+                        "current_state": current_state,
+                    },
+                    http_status=409,
+                )
+            now = _iso(self._now())
+            if entry is None:
+                entry_id = str(uuid4())
+                connection.execute(
+                    """
+                    INSERT INTO research_watchlist_entries (
+                        id, portfolio_id, instrument_id, state, review_due_date,
+                        latest_reason, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry_id,
+                        draft["portfolio_id"],
+                        draft["instrument_id"],
+                        draft["new_state"],
+                        draft["review_due_date"],
+                        draft["reason"],
+                        now,
+                        now,
+                    ),
+                )
+            else:
+                entry_id = str(entry["id"])
+                connection.execute(
+                    """
+                    UPDATE research_watchlist_entries
+                    SET state=?, review_due_date=?, latest_reason=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (
+                        draft["new_state"],
+                        draft["review_due_date"],
+                        draft["reason"],
+                        now,
+                        entry_id,
+                    ),
+                )
+            transition_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO research_watchlist_transitions (
+                    id, draft_id, entry_id, previous_state, new_state,
+                    review_due_date, reason, facts_hash, confirmed_by, confirmed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    transition_id,
+                    draft_id,
+                    entry_id,
+                    draft["previous_state"],
+                    draft["new_state"],
+                    draft["review_due_date"],
+                    draft["reason"],
+                    draft["facts_hash"],
+                    confirmed_by,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE research_watchlist_transition_drafts
+                SET status='COMMITTED', committed_at=? WHERE id=?
+                """,
+                (now, draft_id),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM research_watchlist_transitions WHERE id=?",
+                (transition_id,),
+            ).fetchone()
+            assert row is not None
+            return self._watchlist_transition_data(
+                connection, row, idempotent_replay=False
+            )
+
+    @staticmethod
+    def _watchlist_transition_data(
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        idempotent_replay: bool,
+    ) -> JsonDict:
+        entry = connection.execute(
+            """
+            SELECT e.*, i.code, i.name
+            FROM research_watchlist_entries e
+            JOIN instruments i ON i.id=e.instrument_id
+            WHERE e.id=?
+            """,
+            (row["entry_id"],),
+        ).fetchone()
+        assert entry is not None
+        return {
+            "transition": {
+                "id": str(row["id"]),
+                "draft_id": str(row["draft_id"]),
+                "entry_id": str(row["entry_id"]),
+                "portfolio_id": str(entry["portfolio_id"]),
+                "instrument_code": str(entry["code"]),
+                "instrument_name": str(entry["name"]),
+                "previous_state": row["previous_state"],
+                "new_state": str(row["new_state"]),
+                "review_due_date": row["review_due_date"],
+                "reason": str(row["reason"]),
+                "facts_hash": str(row["facts_hash"]),
+                "confirmed_by": str(row["confirmed_by"]),
+                "confirmed_at": str(row["confirmed_at"]),
+            },
+            "idempotent_replay": idempotent_replay,
+            "strategy_changed": False,
+            "contribution_eligibility_changed": False,
+            "holdings_changed": False,
+            "transactions_created": False,
+            "automatic_trade": False,
+        }
+
+    def list_watchlist(
+        self,
+        *,
+        portfolio_id: str,
+        state: str | None = None,
+        limit: int = 200,
+    ) -> list[JsonDict]:
+        query = """
+            SELECT e.*, i.code, i.name, i.asset_type
+            FROM research_watchlist_entries e
+            JOIN instruments i ON i.id=e.instrument_id
+            WHERE e.portfolio_id=?
+        """
+        params: list[object] = [portfolio_id]
+        if state:
+            query += " AND e.state=?"
+            params.append(state.strip().upper())
+        query += " ORDER BY e.updated_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+            return [
+                {
+                    "id": str(row["id"]),
+                    "portfolio_id": str(row["portfolio_id"]),
+                    "instrument_code": str(row["code"]),
+                    "instrument_name": str(row["name"]),
+                    "asset_type": str(row["asset_type"]),
+                    "state": str(row["state"]),
+                    "review_due_date": row["review_due_date"],
+                    "latest_reason": str(row["latest_reason"]),
+                    "created_at": str(row["created_at"]),
+                    "updated_at": str(row["updated_at"]),
+                    "watchlist_boundary": (
+                        "RESEARCH_CLASSIFICATION_ONLY_NO_STRATEGY_OR_TRADE_CHANGE"
+                    ),
+                    "automatic_trade": False,
+                }
+                for row in rows
+            ]
+
     def create_action_decision_draft(
         self,
         *,
@@ -892,3 +1388,292 @@ class ResearchService:
             "transactions_created": False,
             "automatic_trade": False,
         }
+
+    def create_action_outcome_draft(
+        self,
+        *,
+        action_item_id: str,
+        outcome: str,
+        evidence_quality: str,
+        evidence_ref: str | None,
+        note: str,
+        actor_ref: str,
+    ) -> JsonDict:
+        normalized_outcome = outcome.strip().upper()
+        normalized_quality = evidence_quality.strip().upper()
+        if normalized_outcome not in ACTION_OUTCOMES:
+            raise LedgerError(
+                "REVIEW_ACTION_OUTCOME_INVALID",
+                "unsupported review action outcome",
+                details={"supported_outcomes": sorted(ACTION_OUTCOMES)},
+            )
+        if normalized_quality not in OUTCOME_QUALITY:
+            raise LedgerError(
+                "REVIEW_ACTION_OUTCOME_QUALITY_INVALID",
+                "unsupported outcome evidence quality",
+                details={"supported_quality": sorted(OUTCOME_QUALITY)},
+            )
+        if not note.strip():
+            raise LedgerError(
+                "REVIEW_ACTION_OUTCOME_NOTE_REQUIRED",
+                "outcome note is required",
+            )
+        if normalized_quality == "VERIFIED" and not (evidence_ref or "").strip():
+            raise LedgerError(
+                "REVIEW_ACTION_OUTCOME_EVIDENCE_REQUIRED",
+                "VERIFIED outcome quality requires evidence_ref",
+            )
+        normalized_evidence_ref = (evidence_ref or "").strip() or None
+        with self._connect() as connection:
+            action = connection.execute(
+                """
+                SELECT a.*, r.portfolio_id, r.review_type, r.period_end
+                FROM review_action_items a
+                JOIN periodic_reviews r ON r.id=a.review_id
+                WHERE a.id=?
+                """,
+                (action_item_id,),
+            ).fetchone()
+            if action is None:
+                raise LedgerError(
+                    "REVIEW_ACTION_NOT_FOUND",
+                    "review action item was not found",
+                    http_status=404,
+                )
+            if str(action["status"]) != "RESOLVED":
+                raise LedgerError(
+                    "REVIEW_ACTION_OUTCOME_REQUIRES_RESOLVED",
+                    "an outcome can only be recorded for a resolved review action",
+                    http_status=409,
+                )
+            existing = connection.execute(
+                "SELECT id FROM review_action_outcomes WHERE action_item_id=?",
+                (action_item_id,),
+            ).fetchone()
+            if existing is not None:
+                raise LedgerError(
+                    "REVIEW_ACTION_OUTCOME_ALREADY_RECORDED",
+                    "review action outcome already exists",
+                    http_status=409,
+                )
+            facts: JsonDict = {
+                "action_item_id": action_item_id,
+                "review_id": str(action["review_id"]),
+                "portfolio_id": str(action["portfolio_id"]),
+                "review_type": str(action["review_type"]),
+                "period_end": str(action["period_end"]),
+                "code": str(action["code"]),
+                "outcome": normalized_outcome,
+                "evidence_quality": normalized_quality,
+                "evidence_ref": normalized_evidence_ref,
+                "note": note.strip(),
+                "outcome_boundary": "REVIEW_FACT_NOT_INVESTMENT_OR_TRADE_ACTION",
+            }
+            token = secrets.token_urlsafe(24)
+            draft_id = str(uuid4())
+            created = self._now()
+            expires = created + timedelta(minutes=15)
+            connection.execute(
+                """
+                INSERT INTO review_action_outcome_drafts (
+                    id, action_item_id, outcome, evidence_quality, evidence_ref,
+                    note, status, confirmation_token_digest, facts_hash,
+                    created_by, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
+                """,
+                (
+                    draft_id,
+                    action_item_id,
+                    normalized_outcome,
+                    normalized_quality,
+                    facts["evidence_ref"],
+                    note.strip(),
+                    _token_digest(token),
+                    _hash(facts),
+                    actor_ref,
+                    _iso(created),
+                    _iso(expires),
+                ),
+            )
+            connection.commit()
+            return {
+                "draft": {
+                    "id": draft_id,
+                    **facts,
+                    "status": "PENDING",
+                    "expires_at": _iso(expires),
+                },
+                "confirmation_token": token,
+                "holdings_changed": False,
+                "transactions_created": False,
+                "strategy_changed": False,
+                "automatic_trade": False,
+            }
+
+    def commit_action_outcome(
+        self,
+        *,
+        draft_id: str,
+        confirmation_token: str,
+        confirmed_by: str,
+    ) -> JsonDict:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM review_action_outcome_drafts WHERE id=?",
+                (draft_id,),
+            ).fetchone()
+            if draft is None:
+                raise LedgerError(
+                    "REVIEW_ACTION_OUTCOME_DRAFT_NOT_FOUND",
+                    "review action outcome draft was not found",
+                    http_status=404,
+                )
+            existing = connection.execute(
+                "SELECT * FROM review_action_outcomes WHERE draft_id=?",
+                (draft_id,),
+            ).fetchone()
+            if existing is not None:
+                connection.rollback()
+                return self._outcome_data(existing, idempotent_replay=True)
+            if str(draft["status"]) != "PENDING":
+                raise LedgerError(
+                    "REVIEW_ACTION_OUTCOME_DRAFT_NOT_PENDING",
+                    "review action outcome draft is not pending",
+                    http_status=409,
+                )
+            if self._now() > datetime.fromisoformat(
+                str(draft["expires_at"]).replace("Z", "+00:00")
+            ):
+                connection.execute(
+                    """
+                    UPDATE review_action_outcome_drafts
+                    SET status='EXPIRED' WHERE id=?
+                    """,
+                    (draft_id,),
+                )
+                connection.commit()
+                raise LedgerError(
+                    "REVIEW_ACTION_OUTCOME_DRAFT_EXPIRED",
+                    "review action outcome draft has expired",
+                    http_status=409,
+                )
+            if not secrets.compare_digest(
+                str(draft["confirmation_token_digest"]),
+                _token_digest(confirmation_token),
+            ):
+                raise LedgerError(
+                    "CONFIRMATION_TOKEN_MISMATCH",
+                    "confirmation token does not match",
+                    http_status=409,
+                )
+            action = connection.execute(
+                "SELECT status FROM review_action_items WHERE id=?",
+                (draft["action_item_id"],),
+            ).fetchone()
+            assert action is not None
+            if str(action["status"]) != "RESOLVED":
+                raise LedgerError(
+                    "REVIEW_ACTION_OUTCOME_REQUIRES_RESOLVED",
+                    "review action is no longer resolved",
+                    http_status=409,
+                )
+            duplicate = connection.execute(
+                "SELECT id FROM review_action_outcomes WHERE action_item_id=?",
+                (draft["action_item_id"],),
+            ).fetchone()
+            if duplicate is not None:
+                raise LedgerError(
+                    "REVIEW_ACTION_OUTCOME_ALREADY_RECORDED",
+                    "review action outcome already exists",
+                    http_status=409,
+                )
+            outcome_id = str(uuid4())
+            now = _iso(self._now())
+            connection.execute(
+                """
+                INSERT INTO review_action_outcomes (
+                    id, draft_id, action_item_id, outcome, evidence_quality,
+                    evidence_ref, note, facts_hash, confirmed_by, confirmed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    outcome_id,
+                    draft_id,
+                    draft["action_item_id"],
+                    draft["outcome"],
+                    draft["evidence_quality"],
+                    draft["evidence_ref"],
+                    draft["note"],
+                    draft["facts_hash"],
+                    confirmed_by,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE review_action_outcome_drafts
+                SET status='COMMITTED', committed_at=? WHERE id=?
+                """,
+                (now, draft_id),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM review_action_outcomes WHERE id=?",
+                (outcome_id,),
+            ).fetchone()
+            assert row is not None
+            return self._outcome_data(row, idempotent_replay=False)
+
+    @staticmethod
+    def _outcome_data(row: sqlite3.Row, *, idempotent_replay: bool) -> JsonDict:
+        return {
+            "outcome": {
+                "id": str(row["id"]),
+                "draft_id": str(row["draft_id"]),
+                "action_item_id": str(row["action_item_id"]),
+                "outcome": str(row["outcome"]),
+                "evidence_quality": str(row["evidence_quality"]),
+                "evidence_ref": row["evidence_ref"],
+                "note": str(row["note"]),
+                "facts_hash": str(row["facts_hash"]),
+                "confirmed_by": str(row["confirmed_by"]),
+                "confirmed_at": str(row["confirmed_at"]),
+                "outcome_boundary": "REVIEW_FACT_NOT_INVESTMENT_OR_TRADE_ACTION",
+            },
+            "idempotent_replay": idempotent_replay,
+            "holdings_changed": False,
+            "transactions_created": False,
+            "strategy_changed": False,
+            "automatic_trade": False,
+        }
+
+    def list_action_outcomes(
+        self,
+        *,
+        portfolio_id: str,
+        limit: int = 200,
+    ) -> list[JsonDict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT o.*, a.code, a.review_id, r.review_type, r.period_end
+                FROM review_action_outcomes o
+                JOIN review_action_items a ON a.id=o.action_item_id
+                JOIN periodic_reviews r ON r.id=a.review_id
+                WHERE r.portfolio_id=?
+                ORDER BY o.confirmed_at DESC LIMIT ?
+                """,
+                (portfolio_id, limit),
+            ).fetchall()
+            return [
+                {
+                    **self._outcome_data(row, idempotent_replay=False)["outcome"],
+                    "portfolio_id": portfolio_id,
+                    "review_id": str(row["review_id"]),
+                    "review_type": str(row["review_type"]),
+                    "period_end": str(row["period_end"]),
+                    "code": str(row["code"]),
+                }
+                for row in rows
+            ]
