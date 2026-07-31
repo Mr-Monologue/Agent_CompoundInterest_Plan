@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import secrets
 import sqlite3
 from collections.abc import Callable
@@ -112,11 +113,29 @@ class ResearchService:
         connection.execute("PRAGMA journal_mode=WAL")
         return connection
 
-    @staticmethod
-    def source_contract() -> JsonDict:
+    def source_contract(self, *, portfolio_id: str | None = None) -> JsonDict:
         """Describe the public sourced-research ingestion boundary."""
+        configured_connectors = (
+            []
+            if portfolio_id is None
+            else [
+                {
+                    "connector_key": item["connector_key"],
+                    "display_name": item["display_name"],
+                    "enabled": item["enabled"],
+                    "evidence_types": item["evidence_types"],
+                    "source_lineages": item["source_lineages"],
+                    "credential_configured": item["credential_ref"] is not None,
+                    "version": item["version"],
+                }
+                for item in self.list_source_configs(
+                    portfolio_id=portfolio_id,
+                    include_disabled=True,
+                )
+            ]
+        )
         return {
-            "contract_version": "research-source-v2",
+            "contract_version": "research-source-v3",
             "ingestion_tool": "market_research_evidence_record",
             "collection_run_tool": "research_collection_run_record",
             "supported_evidence_types": sorted(EVIDENCE_TYPES),
@@ -129,7 +148,9 @@ class ResearchService:
                 "source_lineage",
                 "facts",
             ],
-            "configured_connectors": [],
+            "source_config_tool": "research_source_config_draft_create",
+            "coverage_tool": "research_coverage_snapshot_build",
+            "configured_connectors": configured_connectors,
             "automatic_sync": False,
             "idempotency": "CONTENT_HASH",
             "collection_run_idempotency": "EXACT_MANIFEST_HASH",
@@ -146,6 +167,389 @@ class ResearchService:
             "strategy_changed": False,
             "automatic_trade": False,
         }
+
+    @staticmethod
+    def _normalize_source_config(
+        *,
+        connector_key: str,
+        display_name: str,
+        enabled: bool,
+        evidence_types: list[str],
+        source_lineages: list[str],
+        credential_ref: str | None,
+        reason: str,
+    ) -> JsonDict:
+        normalized_key = connector_key.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9_.-]{0,119}", normalized_key):
+            raise LedgerError(
+                "RESEARCH_CONNECTOR_KEY_INVALID",
+                "connector_key must be a stable public adapter identifier",
+            )
+        normalized_types = sorted({item.strip().upper() for item in evidence_types})
+        if not normalized_types or not set(normalized_types).issubset(EVIDENCE_TYPES):
+            raise LedgerError(
+                "RESEARCH_EVIDENCE_TYPE_INVALID",
+                "source configuration contains an unsupported evidence type",
+                details={"supported_evidence_types": sorted(EVIDENCE_TYPES)},
+            )
+        normalized_lineages = sorted(
+            {item.strip().upper() for item in source_lineages if item.strip()}
+        )
+        if not normalized_lineages:
+            raise LedgerError(
+                "RESEARCH_SOURCE_LINEAGE_REQUIRED",
+                "at least one upstream source lineage is required",
+            )
+        normalized_credential = (
+            None if credential_ref is None else credential_ref.strip().upper()
+        )
+        if normalized_credential is not None and not re.fullmatch(
+            r"[A-Z][A-Z0-9_]{2,119}", normalized_credential
+        ):
+            raise LedgerError(
+                "RESEARCH_CREDENTIAL_REF_INVALID",
+                "credential_ref must be an environment variable name, never a secret value",
+            )
+        return {
+            "connector_key": normalized_key,
+            "display_name": display_name.strip(),
+            "enabled": bool(enabled),
+            "evidence_types": normalized_types,
+            "source_lineages": normalized_lineages,
+            "credential_ref": normalized_credential,
+            "reason": reason.strip(),
+        }
+
+    def create_source_config_draft(
+        self,
+        *,
+        portfolio_id: str,
+        connector_key: str,
+        display_name: str,
+        enabled: bool,
+        evidence_types: list[str],
+        source_lineages: list[str],
+        credential_ref: str | None,
+        reason: str,
+        actor_ref: str,
+    ) -> JsonDict:
+        normalized = self._normalize_source_config(
+            connector_key=connector_key,
+            display_name=display_name,
+            enabled=enabled,
+            evidence_types=evidence_types,
+            source_lineages=source_lineages,
+            credential_ref=credential_ref,
+            reason=reason,
+        )
+        with self._connect() as connection:
+            portfolio = connection.execute(
+                "SELECT id FROM portfolios WHERE id=?", (portfolio_id,)
+            ).fetchone()
+            if portfolio is None:
+                raise LedgerError(
+                    "PORTFOLIO_NOT_FOUND", "portfolio was not found", http_status=404
+                )
+            current = connection.execute(
+                """
+                SELECT version FROM research_source_configs
+                WHERE portfolio_id=? AND connector_key=? AND is_current=1
+                """,
+                (portfolio_id, normalized["connector_key"]),
+            ).fetchone()
+            expected_version = 0 if current is None else int(current["version"])
+            facts: JsonDict = {
+                "portfolio_id": portfolio_id,
+                **normalized,
+                "expected_current_version": expected_version,
+                "configuration_boundary": (
+                    "LOCAL_SOURCE_CAPABILITY_ONLY_NO_SECRET_NO_AUTONOMOUS_CRAWL"
+                ),
+            }
+            token = secrets.token_urlsafe(24)
+            draft_id = str(uuid4())
+            created = self._now()
+            expires = created + timedelta(minutes=15)
+            connection.execute(
+                """
+                INSERT INTO research_source_config_drafts (
+                    id, portfolio_id, connector_key, display_name, enabled,
+                    evidence_types_json, source_lineages_json, credential_ref,
+                    reason, expected_current_version, status,
+                    confirmation_token_digest, facts_hash, created_by,
+                    created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
+                """,
+                (
+                    draft_id,
+                    portfolio_id,
+                    normalized["connector_key"],
+                    normalized["display_name"],
+                    int(bool(normalized["enabled"])),
+                    _json(normalized["evidence_types"]),
+                    _json(normalized["source_lineages"]),
+                    normalized["credential_ref"],
+                    normalized["reason"],
+                    expected_version,
+                    _token_digest(token),
+                    _hash(facts),
+                    actor_ref,
+                    _iso(created),
+                    _iso(expires),
+                ),
+            )
+            connection.commit()
+            return {
+                "draft": {
+                    "id": draft_id,
+                    **facts,
+                    "status": "PENDING",
+                    "expires_at": _iso(expires),
+                },
+                "confirmation_token": token,
+                "strategy_changed": False,
+                "holdings_changed": False,
+                "transactions_created": False,
+                "automatic_collection": False,
+                "automatic_trade": False,
+            }
+
+    def get_source_config_draft(self, *, draft_id: str) -> JsonDict:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM research_source_config_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if row is None:
+                raise LedgerError(
+                    "RESEARCH_SOURCE_CONFIG_DRAFT_NOT_FOUND",
+                    "research source configuration draft was not found",
+                    http_status=404,
+                )
+            return self._source_config_draft_data(row)
+
+    @staticmethod
+    def _source_config_draft_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "draft": {
+                "id": str(row["id"]),
+                "portfolio_id": str(row["portfolio_id"]),
+                "connector_key": str(row["connector_key"]),
+                "display_name": str(row["display_name"]),
+                "enabled": bool(row["enabled"]),
+                "evidence_types": json.loads(str(row["evidence_types_json"])),
+                "source_lineages": json.loads(str(row["source_lineages_json"])),
+                "credential_ref": row["credential_ref"],
+                "reason": str(row["reason"]),
+                "expected_current_version": int(row["expected_current_version"]),
+                "status": str(row["status"]),
+                "created_at": str(row["created_at"]),
+                "expires_at": str(row["expires_at"]),
+                "committed_at": row["committed_at"],
+                "configuration_boundary": (
+                    "LOCAL_SOURCE_CAPABILITY_ONLY_NO_SECRET_NO_AUTONOMOUS_CRAWL"
+                ),
+            },
+            "automatic_collection": False,
+            "automatic_trade": False,
+        }
+
+    def commit_source_config_draft(
+        self,
+        *,
+        draft_id: str,
+        confirmation_token: str,
+        confirmed_by: str,
+    ) -> JsonDict:
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM research_source_config_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if draft is None:
+                raise LedgerError(
+                    "RESEARCH_SOURCE_CONFIG_DRAFT_NOT_FOUND",
+                    "research source configuration draft was not found",
+                    http_status=404,
+                )
+            existing = connection.execute(
+                "SELECT * FROM research_source_configs WHERE draft_id=?", (draft_id,)
+            ).fetchone()
+            if existing is not None:
+                connection.rollback()
+                return self._source_config_data(existing, idempotent_replay=True)
+            if str(draft["status"]) != "PENDING":
+                raise LedgerError(
+                    "RESEARCH_SOURCE_CONFIG_DRAFT_NOT_PENDING",
+                    "research source configuration draft is not pending",
+                    http_status=409,
+                )
+            if self._now() > datetime.fromisoformat(
+                str(draft["expires_at"]).replace("Z", "+00:00")
+            ):
+                connection.execute(
+                    "UPDATE research_source_config_drafts SET status='EXPIRED' WHERE id=?",
+                    (draft_id,),
+                )
+                connection.commit()
+                raise LedgerError(
+                    "RESEARCH_SOURCE_CONFIG_DRAFT_EXPIRED",
+                    "research source configuration draft has expired",
+                    http_status=409,
+                )
+            if not secrets.compare_digest(
+                str(draft["confirmation_token_digest"]),
+                _token_digest(confirmation_token),
+            ):
+                raise LedgerError(
+                    "CONFIRMATION_TOKEN_MISMATCH",
+                    "confirmation token does not match",
+                    http_status=409,
+                )
+            current = connection.execute(
+                """
+                SELECT * FROM research_source_configs
+                WHERE portfolio_id=? AND connector_key=? AND is_current=1
+                """,
+                (draft["portfolio_id"], draft["connector_key"]),
+            ).fetchone()
+            current_version = 0 if current is None else int(current["version"])
+            if current_version != int(draft["expected_current_version"]):
+                raise LedgerError(
+                    "RESEARCH_SOURCE_CONFIG_VERSION_CONFLICT",
+                    "research source configuration changed after the draft was created",
+                    details={
+                        "expected_version": int(draft["expected_current_version"]),
+                        "current_version": current_version,
+                    },
+                    http_status=409,
+                )
+            connection.execute(
+                """
+                UPDATE research_source_configs SET is_current=0
+                WHERE portfolio_id=? AND connector_key=? AND is_current=1
+                """,
+                (draft["portfolio_id"], draft["connector_key"]),
+            )
+            config_id = str(uuid4())
+            version = current_version + 1
+            confirmed_at = _iso(self._now())
+            connection.execute(
+                """
+                INSERT INTO research_source_configs (
+                    id, draft_id, portfolio_id, connector_key, display_name,
+                    enabled, evidence_types_json, source_lineages_json,
+                    credential_ref, reason, version, is_current, facts_hash,
+                    confirmed_by, confirmed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                """,
+                (
+                    config_id,
+                    draft_id,
+                    draft["portfolio_id"],
+                    draft["connector_key"],
+                    draft["display_name"],
+                    draft["enabled"],
+                    draft["evidence_types_json"],
+                    draft["source_lineages_json"],
+                    draft["credential_ref"],
+                    draft["reason"],
+                    version,
+                    draft["facts_hash"],
+                    confirmed_by,
+                    confirmed_at,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE research_source_config_drafts
+                SET status='COMMITTED', committed_at=? WHERE id=?
+                """,
+                (confirmed_at, draft_id),
+            )
+            audit_details: JsonDict = {
+                "portfolio_id": str(draft["portfolio_id"]),
+                "connector_key": str(draft["connector_key"]),
+                "version": version,
+                "enabled": bool(draft["enabled"]),
+                "credential_ref_present": draft["credential_ref"] is not None,
+                "boundary": "SOURCE_CAPABILITY_CONFIGURATION_ONLY",
+            }
+            connection.execute(
+                """
+                INSERT INTO audit_events (
+                    id, occurred_at, actor_type, actor_ref, action, entity_type,
+                    entity_id, before_hash, after_hash, details_json, trace_id
+                ) VALUES (?, ?, 'USER', ?, 'RESEARCH_SOURCE_CONFIG_COMMIT',
+                          'RESEARCH_SOURCE_CONFIG', ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid4()),
+                    confirmed_at,
+                    confirmed_by,
+                    config_id,
+                    None if current is None else str(current["facts_hash"]),
+                    str(draft["facts_hash"]),
+                    _json(audit_details),
+                    str(uuid4()),
+                ),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM research_source_configs WHERE id=?", (config_id,)
+            ).fetchone()
+            assert row is not None
+            return self._source_config_data(row, idempotent_replay=False)
+
+    @staticmethod
+    def _source_config_data(
+        row: sqlite3.Row, *, idempotent_replay: bool = False
+    ) -> JsonDict:
+        return {
+            "config": {
+                "id": str(row["id"]),
+                "draft_id": str(row["draft_id"]),
+                "portfolio_id": str(row["portfolio_id"]),
+                "connector_key": str(row["connector_key"]),
+                "display_name": str(row["display_name"]),
+                "enabled": bool(row["enabled"]),
+                "evidence_types": json.loads(str(row["evidence_types_json"])),
+                "source_lineages": json.loads(str(row["source_lineages_json"])),
+                "credential_ref": row["credential_ref"],
+                "version": int(row["version"]),
+                "reason": str(row["reason"]),
+                "confirmed_by": str(row["confirmed_by"]),
+                "confirmed_at": str(row["confirmed_at"]),
+                "configuration_boundary": (
+                    "LOCAL_SOURCE_CAPABILITY_ONLY_NO_SECRET_NO_AUTONOMOUS_CRAWL"
+                ),
+            },
+            "idempotent_replay": idempotent_replay,
+            "strategy_changed": False,
+            "holdings_changed": False,
+            "transactions_created": False,
+            "automatic_collection": False,
+            "automatic_trade": False,
+        }
+
+    def list_source_configs(
+        self,
+        *,
+        portfolio_id: str,
+        include_disabled: bool = True,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = """
+            SELECT * FROM research_source_configs
+            WHERE portfolio_id=? AND is_current=1
+        """
+        params: list[object] = [portfolio_id]
+        if not include_disabled:
+            query += " AND enabled=1"
+        query += " ORDER BY connector_key LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+            return [self._source_config_data(row)["config"] for row in rows]
 
     def record_collection_run(
         self,
@@ -424,6 +828,298 @@ class ResearchService:
             "transactions_created": False,
             "automatic_trade": False,
         }
+
+    def build_coverage_snapshot(
+        self,
+        *,
+        portfolio_id: str,
+        instrument_codes: list[str],
+        as_of_date: date,
+        required_evidence_types: list[str],
+        max_age_days: int = 120,
+    ) -> JsonDict:
+        """Build an immutable source-coverage audit and bounded collection task list."""
+        normalized_codes = sorted({code.strip().upper() for code in instrument_codes})
+        normalized_types = sorted(
+            {evidence_type.strip().upper() for evidence_type in required_evidence_types}
+        )
+        if not normalized_codes:
+            raise LedgerError(
+                "RESEARCH_COVERAGE_UNIVERSE_REQUIRED",
+                "at least one explicit registered instrument is required",
+            )
+        if not normalized_types or not set(normalized_types).issubset(EVIDENCE_TYPES):
+            raise LedgerError(
+                "RESEARCH_EVIDENCE_TYPE_INVALID",
+                "coverage audit contains an unsupported evidence type",
+                details={"supported_evidence_types": sorted(EVIDENCE_TYPES)},
+            )
+        if not 1 <= max_age_days <= 730:
+            raise LedgerError(
+                "RESEARCH_COVERAGE_MAX_AGE_INVALID",
+                "max_age_days must be between 1 and 730",
+            )
+        with self._connect() as connection:
+            portfolio = connection.execute(
+                "SELECT id FROM portfolios WHERE id=?", (portfolio_id,)
+            ).fetchone()
+            if portfolio is None:
+                raise LedgerError(
+                    "PORTFOLIO_NOT_FOUND", "portfolio was not found", http_status=404
+                )
+            placeholders = ",".join("?" for _ in normalized_codes)
+            instruments = connection.execute(
+                f"""
+                SELECT id, code, name, asset_type FROM instruments
+                WHERE status='ACTIVE' AND code IN ({placeholders})
+                ORDER BY code
+                """,
+                normalized_codes,
+            ).fetchall()
+            found = {str(row["code"]) for row in instruments}
+            missing_codes = sorted(set(normalized_codes) - found)
+            if missing_codes:
+                raise LedgerError(
+                    "RESEARCH_COVERAGE_INSTRUMENT_NOT_FOUND",
+                    "coverage audit contains an unregistered instrument",
+                    details={"instrument_codes": missing_codes},
+                    http_status=404,
+                )
+            connector_rows = connection.execute(
+                """
+                SELECT * FROM research_source_configs
+                WHERE portfolio_id=? AND is_current=1 AND enabled=1
+                ORDER BY connector_key
+                """,
+                (portfolio_id,),
+            ).fetchall()
+            connectors = [
+                {
+                    "connector_key": str(row["connector_key"]),
+                    "display_name": str(row["display_name"]),
+                    "evidence_types": json.loads(str(row["evidence_types_json"])),
+                    "source_lineages": json.loads(str(row["source_lineages_json"])),
+                    "credential_configured": row["credential_ref"] is not None,
+                    "version": int(row["version"]),
+                }
+                for row in connector_rows
+            ]
+            items: list[JsonDict] = []
+            collection_tasks: list[JsonDict] = []
+            complete_count = stale_count = missing_count = blocked_count = 0
+            for instrument in instruments:
+                evidence_items: list[JsonDict] = []
+                for evidence_type in normalized_types:
+                    rows = connection.execute(
+                        """
+                        SELECT * FROM market_research_evidence
+                        WHERE instrument_id=? AND evidence_type=? AND evidence_date<=?
+                        ORDER BY evidence_date DESC, created_at DESC
+                        """,
+                        (instrument["id"], evidence_type, as_of_date.isoformat()),
+                    ).fetchall()
+                    latest = None if not rows else rows[0]
+                    if latest is None:
+                        evidence_state = "MISSING"
+                        age_days = None
+                        missing_count += 1
+                    else:
+                        age_days = (
+                            as_of_date - date.fromisoformat(str(latest["evidence_date"]))
+                        ).days
+                        if age_days > max_age_days:
+                            evidence_state = "STALE"
+                            stale_count += 1
+                        else:
+                            evidence_state = "CURRENT"
+                            complete_count += 1
+                    lineages = sorted(
+                        {
+                            str(row["source_lineage"])
+                            for row in rows
+                            if date.fromisoformat(str(row["evidence_date"]))
+                            >= as_of_date - timedelta(days=max_age_days)
+                        }
+                    )
+                    eligible_connectors = [
+                        {
+                            "connector_key": connector["connector_key"],
+                            "display_name": connector["display_name"],
+                            "source_lineages": connector["source_lineages"],
+                            "credential_configured": connector[
+                                "credential_configured"
+                            ],
+                            "config_version": connector["version"],
+                        }
+                        for connector in connectors
+                        if evidence_type in connector["evidence_types"]
+                    ]
+                    if evidence_state == "CURRENT":
+                        collection_state = "NOT_NEEDED"
+                    elif eligible_connectors:
+                        collection_state = "READY"
+                    else:
+                        collection_state = "BLOCKED_NO_CONNECTOR"
+                        blocked_count += 1
+                    evidence_item: JsonDict = {
+                        "evidence_type": evidence_type,
+                        "state": evidence_state,
+                        "latest_evidence_id": (
+                            None if latest is None else str(latest["id"])
+                        ),
+                        "latest_evidence_date": (
+                            None if latest is None else str(latest["evidence_date"])
+                        ),
+                        "age_days": age_days,
+                        "fresh_lineages": lineages,
+                        "fresh_lineage_count": len(lineages),
+                        "independent_verification": (
+                            "NOT_ESTABLISHED"
+                            if len(lineages) < 2
+                            else "MULTIPLE_LINEAGES_RECORDED_NOT_PROVEN_INDEPENDENT"
+                        ),
+                        "collection_state": collection_state,
+                        "eligible_connectors": eligible_connectors,
+                    }
+                    evidence_items.append(evidence_item)
+                    if collection_state == "READY":
+                        collection_tasks.append(
+                            {
+                                "instrument_code": str(instrument["code"]),
+                                "evidence_type": evidence_type,
+                                "reason": evidence_state,
+                                "eligible_connectors": eligible_connectors,
+                                "task_boundary": (
+                                    "BOUNDED_COLLECTION_REQUEST_NOT_AUTOMATIC_EXECUTION"
+                                ),
+                            }
+                        )
+                item_state = (
+                    "COMPLETE"
+                    if all(item["state"] == "CURRENT" for item in evidence_items)
+                    else (
+                        "DATA_BLOCKED"
+                        if any(
+                            item["collection_state"] == "BLOCKED_NO_CONNECTOR"
+                            for item in evidence_items
+                        )
+                        else "COLLECTION_REQUIRED"
+                    )
+                )
+                items.append(
+                    {
+                        "instrument_code": str(instrument["code"]),
+                        "instrument_name": str(instrument["name"]),
+                        "asset_type": str(instrument["asset_type"]),
+                        "state": item_state,
+                        "evidence": evidence_items,
+                    }
+                )
+
+            candidate_count = len(instruments) * len(normalized_types)
+            if candidate_count == complete_count:
+                status = "COMPLETE"
+                quality = "PASS"
+                reason_code = "RESEARCH_COVERAGE_COMPLETE"
+            elif blocked_count:
+                status = "DATA_BLOCKED"
+                quality = "SOURCE_ERROR"
+                reason_code = "RESEARCH_COVERAGE_CONNECTOR_REQUIRED"
+            else:
+                status = "PARTIAL"
+                quality = "WARNING"
+                reason_code = "RESEARCH_COLLECTION_REQUIRED"
+            facts: JsonDict = {
+                "coverage_contract_version": "research-coverage-v1",
+                "portfolio_id": portfolio_id,
+                "as_of_date": as_of_date.isoformat(),
+                "instrument_codes": normalized_codes,
+                "required_evidence_types": normalized_types,
+                "max_age_days": max_age_days,
+                "status": status,
+                "data_quality": quality,
+                "reason_code": reason_code,
+                "summary": {
+                    "candidate_count": candidate_count,
+                    "current_count": complete_count,
+                    "stale_count": stale_count,
+                    "missing_count": missing_count,
+                    "blocked_count": blocked_count,
+                    "collection_task_count": len(collection_tasks),
+                    "configured_connector_count": len(connectors),
+                },
+                "items": items,
+                "collection_tasks": collection_tasks,
+                "coverage_boundary": (
+                    "EVIDENCE_GAPS_AND_BOUNDED_TASKS_NOT_RANKING_RECOMMENDATION_OR_CRAWL"
+                ),
+                "strategy_changed": False,
+                "contribution_eligibility_changed": False,
+                "transactions_created": False,
+                "automatic_collection": False,
+                "automatic_trade": False,
+            }
+            facts_hash = _hash(facts)
+            existing = connection.execute(
+                "SELECT * FROM research_coverage_snapshots WHERE facts_hash=?",
+                (facts_hash,),
+            ).fetchone()
+            if existing is not None:
+                return self._coverage_snapshot_data(existing, idempotent_replay=True)
+            snapshot_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO research_coverage_snapshots (
+                    id, portfolio_id, as_of_date, max_age_days, status,
+                    data_quality, reason_code, facts_json, facts_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    portfolio_id,
+                    as_of_date.isoformat(),
+                    max_age_days,
+                    status,
+                    quality,
+                    reason_code,
+                    _json(facts),
+                    facts_hash,
+                    _iso(self._now()),
+                ),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM research_coverage_snapshots WHERE id=?",
+                (snapshot_id,),
+            ).fetchone()
+            assert row is not None
+            return self._coverage_snapshot_data(row)
+
+    @staticmethod
+    def _coverage_snapshot_data(
+        row: sqlite3.Row, *, idempotent_replay: bool = False
+    ) -> JsonDict:
+        facts = json.loads(str(row["facts_json"]))
+        return {
+            "id": str(row["id"]),
+            **facts,
+            "facts_hash": str(row["facts_hash"]),
+            "created_at": str(row["created_at"]),
+            "idempotent_replay": idempotent_replay,
+        }
+
+    def list_coverage_snapshots(
+        self, *, portfolio_id: str, limit: int = 100
+    ) -> list[JsonDict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM research_coverage_snapshots
+                WHERE portfolio_id=? ORDER BY as_of_date DESC, created_at DESC LIMIT ?
+                """,
+                (portfolio_id, limit),
+            ).fetchall()
+            return [self._coverage_snapshot_data(row) for row in rows]
 
     def record_evidence(
         self,

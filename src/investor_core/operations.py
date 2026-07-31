@@ -38,6 +38,7 @@ SUPPORTED_JOBS = {
     "WEEKLY_MARKET_DISCOVERY",
     "WATCHLIST_REVIEW_DUE",
     "REVIEW_QUALITY_SNAPSHOT",
+    "RESEARCH_COVERAGE_AUDIT",
 }
 PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
 MANAGED_JOB_PREFIX = "value-dca-"
@@ -166,6 +167,11 @@ class OperationsService:
             "WEEKLY_MARKET_DISCOVERY": {"instrument_codes", "lookback_days"},
             "WATCHLIST_REVIEW_DUE": set(),
             "REVIEW_QUALITY_SNAPSHOT": {"lookback_reviews"},
+            "RESEARCH_COVERAGE_AUDIT": {
+                "instrument_codes",
+                "required_evidence_types",
+                "max_age_days",
+            },
         }
         unknown = set(config) - allowed_common - allowed_by_job[job_name]
         if unknown:
@@ -253,6 +259,48 @@ class OperationsService:
                     "lookback_reviews must be between 1 and 120",
                 )
             normalized["lookback_reviews"] = lookback_reviews
+        if job_name == "RESEARCH_COVERAGE_AUDIT":
+            raw_codes = normalized.get("instrument_codes")
+            raw_types = normalized.get("required_evidence_types")
+            if not isinstance(raw_codes, list) or not isinstance(raw_types, list):
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "research coverage requires explicit instrument_codes and evidence types",
+                )
+            codes = sorted(
+                {str(code).strip().upper() for code in raw_codes if str(code).strip()}
+            )
+            evidence_types = sorted(
+                {str(item).strip().upper() for item in raw_types if str(item).strip()}
+            )
+            supported_types = {
+                "FUND_PROFILE",
+                "HOLDINGS",
+                "MANAGER",
+                "FEES",
+                "BENCHMARK",
+                "MARKET_REGIME",
+                "OTHER",
+            }
+            if not codes or len(codes) > 200:
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "research coverage requires between 1 and 200 instrument codes",
+                )
+            if not evidence_types or not set(evidence_types).issubset(supported_types):
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "research coverage contains unsupported evidence types",
+                )
+            max_age_days = int(normalized.get("max_age_days", 120))
+            if not 1 <= max_age_days <= 730:
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "research coverage max_age_days must be between 1 and 730",
+                )
+            normalized["instrument_codes"] = codes
+            normalized["required_evidence_types"] = evidence_types
+            normalized["max_age_days"] = max_age_days
         return normalized
 
     @staticmethod
@@ -393,7 +441,7 @@ class OperationsService:
                         "active portfolio was not found",
                         http_status=404,
                     )
-            if job == "WEEKLY_MARKET_DISCOVERY":
+            if job in {"WEEKLY_MARKET_DISCOVERY", "RESEARCH_COVERAGE_AUDIT"}:
                 placeholders = ",".join("?" for _ in normalized_config["instrument_codes"])
                 registered = {
                     str(row["code"])
@@ -409,7 +457,7 @@ class OperationsService:
                 if missing:
                     raise LedgerError(
                         "AUTOMATION_DISCOVERY_UNIVERSE_INVALID",
-                        "market discovery policy contains unregistered instruments",
+                        "research automation policy contains unregistered instruments",
                         details={"instrument_codes": missing},
                         http_status=409,
                     )
@@ -1234,6 +1282,21 @@ class OperationsService:
                 portfolio_id=portfolio_id,
                 as_of_date=datetime.fromisoformat(business_date).date(),
                 lookback_reviews=int(config["lookback_reviews"]),
+            )
+            notify = str(result["status"]) == "DATA_BLOCKED"
+            return (
+                result,
+                str(result["data_quality"]),
+                notify,
+                str(result["reason_code"]),
+            )
+        if job_name == "RESEARCH_COVERAGE_AUDIT":
+            result = self._research.build_coverage_snapshot(
+                portfolio_id=portfolio_id,
+                instrument_codes=list(config["instrument_codes"]),
+                required_evidence_types=list(config["required_evidence_types"]),
+                as_of_date=datetime.fromisoformat(business_date).date(),
+                max_age_days=int(config["max_age_days"]),
             )
             notify = str(result["status"]) == "DATA_BLOCKED"
             return (

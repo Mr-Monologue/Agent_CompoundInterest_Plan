@@ -126,3 +126,12 @@ State the as-of date, lookback, status and data quality. Report review continuit
 and outcome coverage, unresolved age, research-run traceability and each strategy context exactly.
 Preserve `INSUFFICIENT_HISTORY` and `OBSERVATIONAL_ONLY`. State `复盘流程质量事实，不是策略得分、
 参数优劣、因果证明或自动调参依据`.
+
+## Research source and evidence coverage
+
+For a research-source configuration, show connector key, display name, enabled state, supported
+evidence types, declared upstream lineages, whether a credential reference exists, version and the
+confirmation boundary. Never display or request a secret value. For a coverage snapshot, report the
+explicit universe, required evidence types, freshness threshold, current/stale/missing totals,
+blocked total and every bounded collection task exactly. State `证据覆盖与待采集任务，不是来源已运行、
+独立验证、基金排名或投资建议`.
