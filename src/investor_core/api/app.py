@@ -30,6 +30,8 @@ from investor_core.api.schemas import (
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     ResearchCollectionRunRequest,
+    ResearchCoverageSnapshotRequest,
+    ResearchSourceConfigDraftRequest,
     ResearchWatchlistReviewSnapshotRequest,
     ResearchWatchlistTransitionDraftRequest,
     ReviewActionDecisionDraftRequest,
@@ -450,8 +452,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/v1/research-source-contract")
-    def research_source_contract_get() -> dict[str, Any]:
-        return success(research.source_contract())
+    def research_source_contract_get(
+        portfolio_id: str | None = None,
+    ) -> dict[str, Any]:
+        return success(research.source_contract(portfolio_id=portfolio_id))
+
+    @app.post("/v1/research-source-config-drafts")
+    def research_source_config_draft_create(
+        request: ResearchSourceConfigDraftRequest,
+    ) -> dict[str, Any]:
+        return success(research.create_source_config_draft(**request.model_dump()))
+
+    @app.get("/v1/research-source-config-drafts/{draft_id}")
+    def research_source_config_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(research.get_source_config_draft(draft_id=draft_id))
+
+    @app.post("/v1/research-source-config-drafts/{draft_id}/commit")
+    def research_source_config_draft_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.commit_source_config_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.get("/v1/research-source-configs")
+    def research_source_config_list(
+        portfolio_id: str,
+        include_disabled: bool = True,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_source_configs(
+                    portfolio_id=portfolio_id,
+                    include_disabled=include_disabled,
+                    limit=limit,
+                )
+            }
+        )
 
     @app.post("/v1/research-collection-runs")
     def research_collection_run_record(
@@ -486,6 +529,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "items": research.list_collection_runs(
                     portfolio_id=portfolio_id,
                     connector_key=connector_key,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.post("/v1/research-coverage-snapshots")
+    def research_coverage_snapshot_build(
+        request: ResearchCoverageSnapshotRequest,
+    ) -> dict[str, Any]:
+        result = research.build_coverage_snapshot(**request.model_dump())
+        return success(
+            result,
+            warnings=(
+                []
+                if result["data_quality"] == "PASS"
+                else ["Research evidence coverage contains missing or stale facts"]
+            ),
+            data_quality=str(result["data_quality"]),
+        )
+
+    @app.get("/v1/research-coverage-snapshots")
+    def research_coverage_snapshot_list(
+        portfolio_id: str,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_coverage_snapshots(
+                    portfolio_id=portfolio_id,
                     limit=limit,
                 )
             }

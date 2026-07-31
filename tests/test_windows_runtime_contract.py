@@ -66,7 +66,7 @@ def test_release_manifest_matches_project_version() -> None:
     assert manifest["schema_version"] == 1
     assert manifest["channel"] == "stable"
     assert manifest["version"] == project["project"]["version"]
-    assert manifest["database_revision"] == "0022_research_collection_review_quality"
+    assert manifest["database_revision"] == "0023_research_source_coverage"
 
 
 def test_windows_installer_copies_console_free_hermes_cron_scripts() -> None:
@@ -87,6 +87,9 @@ def test_windows_installer_copies_console_free_hermes_cron_scripts() -> None:
     assert "return platform" in delivery_helper
     assert (
         PROJECT_ROOT / "runtime/hermes/value_dca_review_quality_snapshot.py"
+    ).exists()
+    assert (
+        PROJECT_ROOT / "runtime/hermes/value_dca_research_coverage_audit.py"
     ).exists()
 
 

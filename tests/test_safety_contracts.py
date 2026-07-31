@@ -120,6 +120,9 @@ def test_market_discovery_and_review_actions_preserve_governance_boundaries() ->
     safety = (PROJECT_ROOT / "skills/value-dca-investor/references/safety-policy.md").read_text(
         encoding="utf-8"
     )
+    templates = (
+        PROJECT_ROOT / "skills/value-dca-investor/references/output-templates.md"
+    ).read_text(encoding="utf-8")
 
     assert "never turn model opinion into source evidence" in skill
     assert "observations, not\nrankings or recommendations" in skill
@@ -139,6 +142,10 @@ def test_market_discovery_and_review_actions_preserve_governance_boundaries() ->
     assert "temporal association across strategy instances is never causal evidence" in skill
     assert "External research collection runs are source-attributed ingestion receipts" in safety
     assert "Review-quality snapshots and `REVIEW_QUALITY_SNAPSHOT` automation" in safety
+    assert "Research-source capability is portfolio-local and empty by default" in skill
+    assert "never place a secret, token or credential value in" in skill
+    assert "Research-source configurations are local capability declarations" in safety
+    assert "证据覆盖与待采集任务" in templates
 
 
 def test_cron_examples_are_disabled() -> None:

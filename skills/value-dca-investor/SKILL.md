@@ -221,6 +221,20 @@ Preserve its connector key, adapter version, source identity, timestamps, item U
 Report every `RECORDED`, `REPLAYED` and `REJECTED` outcome literally. A successful ingestion run
 proves contract-compliant persistence, not independent verification or investment relevance.
 
+Research-source capability is portfolio-local and empty by default. Use
+`research_source_config_draft_create` only when the user explicitly supplies or approves the
+connector identity, supported evidence types, upstream lineages and enabled state. `credential_ref`
+may contain only an environment variable name; never place a secret, token or credential value in
+Core. Show the exact draft and commit only after the matching confirmation token. An enabled source
+configuration describes capability only: it does not authorize crawling or prove availability.
+
+Use `research_coverage_snapshot_build` only with an explicit registered instrument universe,
+required evidence types, as-of date and freshness threshold. Report `CURRENT`, `STALE`, `MISSING`,
+`READY` and `BLOCKED_NO_CONNECTOR` literally. Collection tasks are bounded requests for an external
+adapter, not proof that collection ran. Multiple recorded lineages are not automatically independent
+verification. Never turn a coverage gap into a fund ranking, recommendation, watchlist transition,
+strategy change or trade.
+
 Use `review_action_decision_draft_create` only when the user explicitly chooses to acknowledge or
 resolve one exact review action and supplies a reason. Show the returned previous and proposed
 status and expiry. Call `review_action_decision_draft_commit` only after confirmation with the

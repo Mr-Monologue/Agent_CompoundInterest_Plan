@@ -512,6 +512,35 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
         == "REVIEW_QUALITY_NO_PERIODIC_REVIEWS"
     )
 
+    commit_policy(
+        service,
+        job_name="RESEARCH_COVERAGE_AUDIT",
+        portfolio_id=portfolio_id,
+        config={
+            "instrument_codes": ["FUND001"],
+            "required_evidence_types": ["FEES", "HOLDINGS"],
+            "max_age_days": 120,
+        },
+    )
+    manifest = service.scheduler_manifest(profile="investor")
+    coverage = next(
+        item
+        for item in manifest["jobs"]
+        if item["job_name"] == "RESEARCH_COVERAGE_AUDIT"
+    )
+    assert coverage["script"] == "value_dca_research_coverage_audit.py"
+    assert coverage["no_agent"] is True
+    coverage_run = service.run_job(
+        job_name="RESEARCH_COVERAGE_AUDIT",
+        portfolio_id=portfolio_id,
+        scheduled_for="2026-07-27T00:10:00Z",
+    )
+    assert coverage_run["job_run"]["status"] == "DEGRADED"
+    assert (
+        coverage_run["job_run"]["output"]["reason_code"]
+        == "RESEARCH_COVERAGE_CONNECTOR_REQUIRED"
+    )
+
 
 def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
@@ -542,7 +571,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0022_research_collection_review_quality",)
+    assert revision == ("0023_research_source_coverage",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:

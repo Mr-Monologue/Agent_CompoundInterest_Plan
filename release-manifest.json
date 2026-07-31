@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.25.0",
+  "version": "0.26.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0022_research_collection_review_quality",
+  "database_revision": "0023_research_source_coverage",
   "minimum_current_version": "0.5.3",
-  "notes": "Add audited external-research collection batches with per-item outcomes, immutable review-process quality snapshots, strategy-context observations and governed review-quality scheduling without recommendations, auto-tuning or trading."
+  "notes": "Add confirmation-gated portfolio-local research-source configuration and immutable evidence-coverage audits that produce bounded collection tasks without bundled connectors, recommendations, auto-tuning or trading."
 }

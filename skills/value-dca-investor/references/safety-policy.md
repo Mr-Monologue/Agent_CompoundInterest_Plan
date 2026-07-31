@@ -94,3 +94,9 @@ instrument, expand a discovery universe, alter strategy configuration or create 
 Review-quality snapshots and `REVIEW_QUALITY_SNAPSHOT` automation evaluate the review process, not
 investment performance or strategy merit. Strategy contexts are time associations only. They must
 never rank strategy versions, infer causality, modify parameters, approve proposals or trade.
+
+Research-source configurations are local capability declarations, not executable credentials.
+Core may store an environment-variable name but never a secret value. Enabling a connector does not
+authorize autonomous collection. Evidence-coverage tasks remain unexecuted until an external adapter
+returns a bounded batch through the audited collection-run contract. Recorded source lineages do not
+by themselves prove independence, correctness or suitability.
