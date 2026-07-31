@@ -523,9 +523,98 @@ async def market_research_evidence_record(
 
 
 @mcp.tool()
-async def research_source_contract_get() -> dict[str, Any]:
+async def research_source_contract_get(portfolio_id: str = "") -> dict[str, Any]:
     """Read the generic external-research adapter contract and safety boundary."""
-    return await core_request("GET", "/v1/research-source-contract")
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-source-contract",
+        params={"portfolio_id": resolved_portfolio},
+    )
+
+
+@mcp.tool()
+async def research_source_config_draft_create(
+    connector_key: str,
+    display_name: str,
+    enabled: bool,
+    evidence_types: list[str],
+    source_lineages: list[str],
+    reason: str,
+    credential_ref: str = "",
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Draft a portfolio-local source capability; credential_ref is only an env name."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/research-source-config-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "connector_key": connector_key,
+            "display_name": display_name,
+            "enabled": enabled,
+            "evidence_types": evidence_types,
+            "source_lineages": source_lineages,
+            "credential_ref": credential_ref or None,
+            "reason": reason,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def research_source_config_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read one exact source configuration draft without exposing a confirmation token."""
+    return await core_request("GET", f"/v1/research-source-config-drafts/{draft_id}")
+
+
+@mcp.tool()
+async def research_source_config_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str = "user",
+) -> dict[str, Any]:
+    """Commit one exact local source capability after explicit confirmation."""
+    return await core_request(
+        "POST",
+        f"/v1/research-source-config-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def research_source_config_list(
+    include_disabled: bool = True,
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List current portfolio-local connector capabilities without secrets."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-source-configs",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "include_disabled": include_disabled,
+            "limit": limit,
+        },
+    )
 
 
 @mcp.tool()
@@ -582,6 +671,51 @@ async def research_collection_run_list(
             "connector_key": connector_key or None,
             "limit": limit,
         },
+    )
+
+
+@mcp.tool()
+async def research_coverage_snapshot_build(
+    instrument_codes: list[str],
+    required_evidence_types: list[str],
+    as_of_date: str,
+    max_age_days: int = 120,
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Build immutable evidence gaps and bounded connector tasks without executing them."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/research-coverage-snapshots",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "instrument_codes": instrument_codes,
+            "required_evidence_types": required_evidence_types,
+            "as_of_date": as_of_date,
+            "max_age_days": max_age_days,
+        },
+    )
+
+
+@mcp.tool()
+async def research_coverage_snapshot_list(
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List immutable research evidence-coverage audits without recommendations."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-coverage-snapshots",
+        params={"portfolio_id": resolved_portfolio, "limit": limit},
     )
 
 

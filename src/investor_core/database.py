@@ -37,6 +37,9 @@ REQUIRED_TABLES = {
     "market_nav_verifications",
     "market_research_evidence",
     "research_evidence_changes",
+    "research_coverage_snapshots",
+    "research_source_config_drafts",
+    "research_source_configs",
     "research_watchlist_entries",
     "research_watchlist_review_snapshots",
     "research_watchlist_transition_drafts",
@@ -68,7 +71,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0022_research_collection_review_quality"
+EXPECTED_ALEMBIC_REVISION = "0023_research_source_coverage"
 
 
 def ensure_database_parent(settings: Settings) -> None:

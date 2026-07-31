@@ -52,7 +52,7 @@ def _client(tmp_path: Path) -> tuple[TestClient, Settings, str]:
 def test_sourced_research_and_discovery_are_immutable_facts(tmp_path: Path) -> None:
     client, _settings, portfolio_id = _client(tmp_path)
     source_contract = client.get("/v1/research-source-contract").json()["data"]
-    assert source_contract["contract_version"] == "research-source-v2"
+    assert source_contract["contract_version"] == "research-source-v3"
     assert source_contract["collection_run_tool"] == "research_collection_run_record"
     assert source_contract["configured_connectors"] == []
     assert source_contract["automatic_sync"] is False
@@ -227,6 +227,109 @@ def test_discovery_requires_explicit_registered_universe(tmp_path: Path) -> None
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "DISCOVERY_INSTRUMENT_NOT_FOUND"
+
+
+def test_source_configuration_and_coverage_tasks_are_confirmation_gated(
+    tmp_path: Path,
+) -> None:
+    client, _settings, portfolio_id = _client(tmp_path)
+    draft_response = client.post(
+        "/v1/research-source-config-drafts",
+        json={
+            "portfolio_id": portfolio_id,
+            "connector_key": "official-facts-adapter",
+            "display_name": "基金管理人事实适配器",
+            "enabled": True,
+            "evidence_types": ["FEES", "HOLDINGS"],
+            "source_lineages": ["FUND_MANAGER_OFFICIAL"],
+            "credential_ref": "FUND_RESEARCH_API_KEY",
+            "reason": "为本地研究范围启用已审查适配器能力",
+        },
+    )
+    assert draft_response.status_code == 200
+    draft = draft_response.json()["data"]
+
+    assert client.get(
+        "/v1/research-source-configs",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]["items"] == []
+    read_back = client.get(
+        f"/v1/research-source-config-drafts/{draft['draft']['id']}"
+    ).json()["data"]
+    assert "confirmation_token" not in read_back
+    assert read_back["draft"]["credential_ref"] == "FUND_RESEARCH_API_KEY"
+
+    committed = client.post(
+        f"/v1/research-source-config-drafts/{draft['draft']['id']}/commit",
+        json={
+            "confirmation_token": draft["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    ).json()["data"]
+    assert committed["config"]["version"] == 1
+    assert committed["automatic_collection"] is False
+    assert committed["strategy_changed"] is False
+    assert committed["transactions_created"] is False
+
+    contract = client.get(
+        "/v1/research-source-contract",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]
+    assert contract["contract_version"] == "research-source-v3"
+    assert contract["configured_connectors"][0]["connector_key"] == (
+        "OFFICIAL-FACTS-ADAPTER"
+    )
+    assert contract["configured_connectors"][0]["credential_configured"] is True
+
+    payload = {
+        "portfolio_id": portfolio_id,
+        "instrument_codes": ["FUND001"],
+        "as_of_date": "2026-05-12",
+        "required_evidence_types": ["FEES", "HOLDINGS"],
+        "max_age_days": 120,
+    }
+    first = client.post("/v1/research-coverage-snapshots", json=payload)
+    replay = client.post("/v1/research-coverage-snapshots", json=payload)
+    assert first.status_code == 200
+    coverage = first.json()["data"]
+    assert coverage["status"] == "PARTIAL"
+    assert coverage["reason_code"] == "RESEARCH_COLLECTION_REQUIRED"
+    assert coverage["summary"]["missing_count"] == 2
+    assert coverage["summary"]["collection_task_count"] == 2
+    assert all(
+        task["eligible_connectors"][0]["connector_key"]
+        == "OFFICIAL-FACTS-ADAPTER"
+        for task in coverage["collection_tasks"]
+    )
+    assert coverage["automatic_collection"] is False
+    assert coverage["automatic_trade"] is False
+    assert replay.json()["data"]["idempotent_replay"] is True
+
+    evidence_payload = {
+        "instrument_code": "FUND001",
+        "evidence_date": "2026-05-12",
+        "source_name": "基金管理人",
+        "source_lineage": "FUND_MANAGER_OFFICIAL",
+        "facts": {"available": True},
+    }
+    for evidence_type in ["FEES", "HOLDINGS"]:
+        response = client.post(
+            "/v1/market-research-evidence",
+            json={
+                **evidence_payload,
+                "evidence_type": evidence_type,
+                "source_ref": f"https://official.example/{evidence_type.lower()}",
+            },
+        )
+        assert response.status_code == 200
+    completed = client.post(
+        "/v1/research-coverage-snapshots",
+        json={**payload, "as_of_date": "2026-05-13"},
+    ).json()["data"]
+    assert completed["status"] == "COMPLETE"
+    assert completed["data_quality"] == "PASS"
+    assert completed["summary"]["current_count"] == 2
+    assert completed["collection_tasks"] == []
 
 
 def test_review_action_requires_confirmed_decision(tmp_path: Path) -> None:
