@@ -130,6 +130,11 @@ def test_market_discovery_and_review_actions_preserve_governance_boundaries() ->
     assert "A state transition, added or removed flag" in skill
     assert "Never invent a review score, causal explanation" in skill
     assert "must never\ntranslate that change into a rotation" in safety
+    assert "research watchlist is portfolio-local and empty by default" in skill
+    assert "`ADOPTED` means accepted for continued research" in skill
+    assert "Record a review-action outcome only after" in skill
+    assert "An `ADOPTED` watchlist state is not strategy membership" in safety
+    assert "`COMPLETED` review outcome is not proof that a strategy works" in safety
 
 
 def test_cron_examples_are_disabled() -> None:

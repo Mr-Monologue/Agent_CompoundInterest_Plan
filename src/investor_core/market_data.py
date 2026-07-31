@@ -1166,6 +1166,16 @@ class MarketDataService:
                 "portfolio or account is not active",
                 http_status=404,
             )
+        try:
+            assignment = self._strategy.get_assignment(portfolio_id=portfolio_id)
+            strategy_configs = {
+                str(item["instrument_code"]): item
+                for item in assignment["instruments"]
+            }
+        except LedgerError as exc:
+            if exc.code != "STRATEGY_NOT_ASSIGNED":
+                raise
+            strategy_configs = {}
 
         role_summary: dict[str, JsonDict] = {}
         unassigned: list[JsonDict] = []
@@ -1207,11 +1217,65 @@ class MarketDataService:
                         "mutation_tool": "instrument_role_update",
                     }
                 )
+            config = strategy_configs.get(str(holding["instrument_code"]))
+            if config is None:
+                position["policy_assessment"] = {
+                    "performance": "NOT_AVAILABLE",
+                    "risk": "NOT_AVAILABLE",
+                    "sell_rule": "NOT_EVALUATED",
+                    "reason_code": "INSTRUMENT_NOT_IN_ACTIVE_STRATEGY",
+                    "candidate_rule_count": 10,
+                    "configured_rule_count": 0,
+                    "configured_rule_codes": [],
+                }
+                continue
+            lifecycle_rules = dict(config["lifecycle_rules"])
+            configured_rule_codes = [
+                "THESIS_REVIEW_REQUIRED",
+                "SELL_02_THESIS_INVALID",
+            ]
+            if config["hard_stop_return_bps"] is not None:
+                configured_rule_codes.append("SELL_01_HARD_STOP")
+            if config["maximum_position_weight_bps"] is not None:
+                configured_rule_codes.append("SELL_03_REBALANCE")
+            if {
+                "replacement_min_score_delta_bps",
+                "replacement_min_consecutive_periods",
+            }.issubset(lifecycle_rules):
+                configured_rule_codes.append("SELL_04_REPLACE")
+            if {
+                "underperformance_threshold_bps",
+                "underperformance_min_days",
+            }.issubset(lifecycle_rules):
+                configured_rule_codes.append("SELL_05_UNDERPERFORMANCE")
+            if {
+                "take_profit_return_bps",
+                "take_profit_min_holding_days",
+            }.issubset(lifecycle_rules):
+                configured_rule_codes.append("SELL_06_TAKE_PROFIT")
+            if "objective_sell_fraction_bps" in lifecycle_rules:
+                configured_rule_codes.append("SELL_07_OBJECTIVE_COMPLETE")
+            if any(
+                key in lifecycle_rules
+                for key in ("max_tracking_error_bps", "max_expense_ratio_bps")
+            ):
+                configured_rule_codes.append("CORE_TOOL_QUALITY")
+            if "liquidity_priority" in lifecycle_rules:
+                configured_rule_codes.append("SELL_08_LIQUIDITY")
+            configured_count = len(configured_rule_codes)
+            complete = configured_count == 10
             position["policy_assessment"] = {
                 "performance": "NOT_AVAILABLE",
-                "risk": "NOT_AVAILABLE",
-                "sell_rule": "NOT_EVALUATED",
-                "reason_code": "DETERMINISTIC_RULES_NOT_CONFIGURED",
+                "risk": "CONFIGURED" if complete else "PARTIAL",
+                "sell_rule": "CONFIGURED" if complete else "PARTIALLY_CONFIGURED",
+                "reason_code": (
+                    "DETERMINISTIC_RULES_CONFIGURED"
+                    if complete
+                    else "DETERMINISTIC_RULES_PARTIALLY_CONFIGURED"
+                ),
+                "candidate_rule_count": 10,
+                "configured_rule_count": configured_count,
+                "configured_rule_codes": configured_rule_codes,
             }
 
         for role in ("CORE", "SATELLITE"):

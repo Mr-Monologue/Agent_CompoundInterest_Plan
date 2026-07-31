@@ -40,6 +40,16 @@
 4. Proposal state and `未执行交易` notice.
 5. Available decisions: approve, defer, or reject.
 
+## Risk scan summary
+
+1. Execution: `execution_status`, `state`, `reason_code`, and `data_quality`.
+2. Completeness: candidate, configured, evaluable/evaluated, unconfigured, unavailable,
+   not-applicable and exempt counts.
+3. Outcome: triggered rules and review-only proposal count.
+4. Per-instrument summaries from Core. Do not describe `NOT_CONFIGURED`, `DATA_UNAVAILABLE`, or
+   `NOT_APPLICABLE` as a successful non-hit.
+5. Fetch rule-level pages only when needed. Keep details opt-in and filtered to protect context.
+
 ## Scheduled report
 
 Return `[SILENT]` when the job contract says to remain silent and no qualifying change exists.
@@ -83,3 +93,16 @@ State the as-of date, review type, lookback and included review count. Report qu
 the returned performance series, governance coverage, recurring action codes, unresolved count
 and oldest unresolved age. Preserve null values. Label the result `跨期复盘事实，不是策略评分或投资
 建议`.
+
+## Research watchlist and source changes
+
+For a watchlist transition, show the instrument, previous state, requested state, review date,
+reason, expiry and all unchanged-system flags. State `研究状态，不代表进入策略、获得定投资格或完成交易`.
+For source-content changes, show the two evidence IDs, source lineage, evidence type and exact
+added, removed and changed field paths. Do not infer importance or direction.
+
+## Review action outcomes
+
+Show the action ID, action code, outcome, evidence quality, evidence reference, note and confirmed
+time. For a trend, report outcome coverage, missing outcomes, outcome distribution and resolution
+days exactly. State `复盘结果事实，不是策略评分、因果证明或自动调参依据`.

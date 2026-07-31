@@ -65,7 +65,34 @@ def test_sourced_research_and_discovery_are_immutable_facts(tmp_path: Path) -> N
 
     assert first.status_code == 200
     assert first.json()["data"]["automatic_trade"] is False
+    assert first.json()["data"]["change"]["change_type"] == "INITIAL"
     assert replay.json()["data"]["idempotent_replay"] is True
+
+    changed_evidence = client.post(
+        "/v1/market-research-evidence",
+        json={
+            **evidence_payload,
+            "evidence_date": "2026-05-11",
+            "facts": {"management_fee_bps": 45, "custody_fee_bps": 10},
+        },
+    )
+    assert changed_evidence.status_code == 200
+    assert changed_evidence.json()["data"]["change"]["change_type"] == "CHANGED"
+    assert changed_evidence.json()["data"]["change"]["added_keys"] == [
+        "custody_fee_bps"
+    ]
+    assert changed_evidence.json()["data"]["change"]["changed_keys"] == [
+        "management_fee_bps"
+    ]
+    evidence_changes = client.get(
+        "/v1/market-research-evidence-changes",
+        params={"instrument_code": "FUND001", "change_type": "CHANGED"},
+    ).json()["data"]["items"]
+    assert len(evidence_changes) == 1
+    assert (
+        evidence_changes[0]["change_boundary"]
+        == "SOURCE_FACT_CHANGE_NOT_INVESTMENT_ADVICE"
+    )
 
     payload = {
         "portfolio_id": portfolio_id,
@@ -120,7 +147,7 @@ def test_sourced_research_and_discovery_are_immutable_facts(tmp_path: Path) -> N
     ).json()["data"]["items"]
     assert len(changes) == 1
     assert changes[0]["change_type"] == "CHANGED"
-    assert changes[0]["metric_deltas"]["research_evidence_count"] == 1
+    assert changes[0]["metric_deltas"]["research_evidence_count"] == 2
     assert changes[0]["change_boundary"] == "FACTUAL_CHANGE_NOT_A_RECOMMENDATION"
 
 
@@ -197,3 +224,150 @@ def test_review_action_requires_confirmed_decision(tmp_path: Path) -> None:
     assert committed.json()["data"]["decision"]["new_status"] == "ACKNOWLEDGED"
     assert committed.json()["data"]["holdings_changed"] is False
     assert committed.json()["data"]["transactions_created"] is False
+
+
+def test_watchlist_lifecycle_requires_confirmation_and_never_changes_strategy(
+    tmp_path: Path,
+) -> None:
+    client, _settings, portfolio_id = _client(tmp_path)
+    draft = client.post(
+        "/v1/research-watchlist-transition-drafts",
+        json={
+            "portfolio_id": portfolio_id,
+            "instrument_code": "FUND001",
+            "new_state": "CANDIDATE",
+            "reason": "加入显式研究候选池",
+        },
+    ).json()["data"]
+
+    assert client.get(
+        "/v1/research-watchlist",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]["items"] == []
+
+    committed = client.post(
+        f"/v1/research-watchlist-transition-drafts/{draft['draft']['id']}/commit",
+        json={
+            "confirmation_token": draft["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    ).json()["data"]
+    assert committed["transition"]["new_state"] == "CANDIDATE"
+    assert committed["strategy_changed"] is False
+    assert committed["contribution_eligibility_changed"] is False
+    assert committed["transactions_created"] is False
+
+    observing = client.post(
+        "/v1/research-watchlist-transition-drafts",
+        json={
+            "portfolio_id": portfolio_id,
+            "instrument_code": "FUND001",
+            "new_state": "OBSERVING",
+            "reason": "开始持续观察来源事实",
+            "review_due_date": "2026-08-31",
+        },
+    ).json()["data"]
+    client.post(
+        f"/v1/research-watchlist-transition-drafts/{observing['draft']['id']}/commit",
+        json={
+            "confirmation_token": observing["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    )
+    item = client.get(
+        "/v1/research-watchlist",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]["items"][0]
+    assert item["state"] == "OBSERVING"
+    assert (
+        item["watchlist_boundary"]
+        == "RESEARCH_CLASSIFICATION_ONLY_NO_STRATEGY_OR_TRADE_CHANGE"
+    )
+
+
+def test_resolved_review_action_accepts_confirmed_outcome_and_trend_reports_it(
+    tmp_path: Path,
+) -> None:
+    client, settings, portfolio_id = _client(tmp_path)
+    account_id = client.get("/v1/accounts").json()["data"]["items"][0]["id"]
+    opening = client.post(
+        "/v1/opening-position-drafts",
+        json={
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "instrument_code": "FUND001",
+            "as_of_date": "2026-01-01",
+            "total_shares": "10",
+            "average_cost_nav": "1",
+            "platform": "测试平台",
+            "idempotency_key": "research-outcome-opening",
+        },
+    ).json()["data"]
+    client.post(
+        f"/v1/opening-position-drafts/{opening['draft']['id']}/commit",
+        json={
+            "confirmation_token": opening["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    )
+    review = PerformanceService(settings).prepare_review(
+        portfolio_id=portfolio_id,
+        review_type="MONTHLY",
+        anchor_date=date(2026, 1, 31),
+    )
+    action_id = review["action_items"][0]["id"]
+    resolution = client.post(
+        f"/v1/review-action-items/{action_id}/decision-drafts",
+        json={
+            "decision": "RESOLVE",
+            "reason": "该复盘检查已完成",
+        },
+    ).json()["data"]
+    client.post(
+        f"/v1/review-action-decision-drafts/{resolution['draft']['id']}/commit",
+        json={
+            "confirmation_token": resolution["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    )
+    outcome = client.post(
+        f"/v1/review-action-items/{action_id}/outcome-drafts",
+        json={
+            "outcome": "COMPLETED",
+            "evidence_quality": "VERIFIED",
+            "evidence_ref": "https://evidence.example/review-result",
+            "note": "已核对并补齐对应事实",
+        },
+    ).json()["data"]
+    committed = client.post(
+        f"/v1/review-action-outcome-drafts/{outcome['draft']['id']}/commit",
+        json={
+            "confirmation_token": outcome["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    ).json()["data"]
+    assert committed["outcome"]["outcome"] == "COMPLETED"
+    assert committed["strategy_changed"] is False
+    assert committed["transactions_created"] is False
+
+    listed = client.get(
+        "/v1/review-action-outcomes",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]["items"]
+    assert len(listed) == 1
+    assert listed[0]["evidence_quality"] == "VERIFIED"
+
+    trend = client.post(
+        "/v1/review-trend-snapshots",
+        json={
+            "portfolio_id": portfolio_id,
+            "as_of_date": "2026-07-30",
+            "lookback_reviews": 12,
+        },
+    ).json()["data"]
+    summary = trend["action_summary"]["outcome_summary"]
+    assert summary["resolved_count"] == 1
+    assert summary["recorded_outcome_count"] == 1
+    assert summary["missing_outcome_count"] == 0
+    assert summary["outcome_coverage_bps"] == 10000
+    assert summary["outcome_counts"]["COMPLETED"] == 1

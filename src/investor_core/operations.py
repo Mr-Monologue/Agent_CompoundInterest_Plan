@@ -1293,6 +1293,8 @@ class OperationsService:
                         {
                             "reason_code": reason_code,
                             "data_quality": quality,
+                            "execution_status": "SUCCESS",
+                            "result_quality": quality,
                             "delivery_action": "NOTIFY" if notify else "SILENT",
                             "facts_hash": facts_hash,
                         }
