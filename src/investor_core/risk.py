@@ -1177,7 +1177,8 @@ class RiskService:
             "rule_hits": hits if include_rule_hits else [],
             "sell_proposals": proposals,
             "data_quality": valuation["data_quality"],
-            "execution_status": "NOT_EXECUTED",
+            "execution_status": "SUCCESS",
+            "trade_execution_status": "NOT_EXECUTED",
         }
 
     def _latest_lifecycle_observation(

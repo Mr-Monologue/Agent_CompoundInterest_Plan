@@ -466,6 +466,27 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
     assert discovery["script"] == "value_dca_weekly_market_discovery.py"
     assert discovery["no_agent"] is True
 
+    commit_policy(
+        service,
+        job_name="WATCHLIST_REVIEW_DUE",
+        portfolio_id=portfolio_id,
+    )
+    manifest = service.scheduler_manifest(profile="investor")
+    review = next(
+        item
+        for item in manifest["jobs"]
+        if item["job_name"] == "WATCHLIST_REVIEW_DUE"
+    )
+    assert review["script"] == "value_dca_watchlist_review_due.py"
+    assert review["no_agent"] is True
+    run = service.run_job(
+        job_name="WATCHLIST_REVIEW_DUE",
+        portfolio_id=portfolio_id,
+        scheduled_for="2026-07-27T00:00:00Z",
+    )
+    assert run["job_run"]["status"] == "SUCCESS"
+    assert run["job_run"]["output"]["reason_code"] == "WATCHLIST_EMPTY"
+
 
 def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
@@ -496,7 +517,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0020_watchlist_research_outcomes",)
+    assert revision == ("0021_watchlist_review_cycles",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:

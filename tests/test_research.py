@@ -51,6 +51,11 @@ def _client(tmp_path: Path) -> tuple[TestClient, Settings, str]:
 
 def test_sourced_research_and_discovery_are_immutable_facts(tmp_path: Path) -> None:
     client, _settings, portfolio_id = _client(tmp_path)
+    source_contract = client.get("/v1/research-source-contract").json()["data"]
+    assert source_contract["contract_version"] == "research-source-v1"
+    assert source_contract["configured_connectors"] == []
+    assert source_contract["automatic_sync"] is False
+    assert source_contract["model_may_fill_missing_facts"] is False
     evidence_payload = {
         "instrument_code": "FUND001",
         "evidence_date": "2026-05-10",
@@ -283,6 +288,42 @@ def test_watchlist_lifecycle_requires_confirmation_and_never_changes_strategy(
         item["watchlist_boundary"]
         == "RESEARCH_CLASSIFICATION_ONLY_NO_STRATEGY_OR_TRADE_CHANGE"
     )
+
+    snapshot = client.post(
+        "/v1/research-watchlist-review-snapshots",
+        json={
+            "portfolio_id": portfolio_id,
+            "as_of_date": "2026-09-01",
+        },
+    ).json()["data"]
+    replay = client.post(
+        "/v1/research-watchlist-review-snapshots",
+        json={
+            "portfolio_id": portfolio_id,
+            "as_of_date": "2026-09-01",
+        },
+    ).json()["data"]
+    assert snapshot["status"] == "REVIEW_REQUIRED"
+    assert snapshot["reason_code"] == "WATCHLIST_REVIEW_DUE"
+    assert snapshot["summary"]["due_count"] == 1
+    assert snapshot["items"][0]["due_status"] == "DUE"
+    assert snapshot["items"][0]["observation_started_at"] is not None
+    assert snapshot["items"][0]["observation_days"] is not None
+    assert snapshot["strategy_changed"] is False
+    assert snapshot["transactions_created"] is False
+    assert replay["idempotent_replay"] is True
+
+    unchanged = client.get(
+        "/v1/research-watchlist",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]["items"][0]
+    assert unchanged["state"] == "OBSERVING"
+    listed = client.get(
+        "/v1/research-watchlist-review-snapshots",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]["items"]
+    assert len(listed) == 1
+    assert listed[0]["snapshot_boundary"].startswith("REVIEW_FACTS_ONLY")
 
 
 def test_resolved_review_action_accepts_confirmed_outcome_and_trend_reports_it(

@@ -81,3 +81,7 @@ An `ADOPTED` watchlist state is not strategy membership or contribution eligibil
 `COMPLETED` review outcome is not proof that a strategy works and cannot authorize parameter
 changes. Research evidence field changes must retain their source lineage and must never be
 converted into model-generated market calls or automatic trades.
+
+Watchlist review snapshots and `WATCHLIST_REVIEW_DUE` automation are facts-only. They may identify
+an overdue or unscheduled review and request notification, but they cannot mutate watchlist state,
+adopt or reject an instrument, change strategy membership, create a plan or create a transaction.

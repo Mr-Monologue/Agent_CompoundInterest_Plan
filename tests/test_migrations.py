@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 from alembic import command
@@ -10,6 +11,7 @@ from conftest import PROJECT_ROOT, migrate_database
 from investor_core.config import Environment, Settings
 from investor_core.ledger import LedgerService
 from investor_core.market_data import MarketDataService
+from investor_core.research import ResearchService
 
 
 def migrate_to(database_path: Path, revision: str) -> None:
@@ -47,6 +49,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
             "research_watchlist_entries",
             "research_watchlist_transition_drafts",
             "research_watchlist_transitions",
+            "research_watchlist_review_snapshots",
             "market_discovery_runs",
             "market_discovery_items",
             "market_discovery_changes",
@@ -82,7 +85,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0020_watchlist_research_outcomes",)
+    assert revision == ("0021_watchlist_review_cycles",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -172,7 +175,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0020_watchlist_research_outcomes",
+            "0021_watchlist_review_cycles",
         )
 
 
@@ -209,6 +212,85 @@ def test_source_lineage_migration_backfills_eastmoney_aliases(tmp_path: Path) ->
         ).fetchone() == ("EASTMONEY",)
 
 
+def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0020_watchlist_research_outcomes")
+    settings = Settings(environment=Environment.TEST, db_path=database_path)
+    ledger = LedgerService(settings)
+    portfolio = ledger.create_portfolio(name="迁移研究组合")
+    instrument = ledger.create_instrument(code="FUND001", name="迁移观察基金")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO research_watchlist_entries (
+                id, portfolio_id, instrument_id, state, review_due_date,
+                latest_reason, created_at, updated_at
+            ) VALUES (
+                'entry-1', ?, ?, 'OBSERVING', '2026-08-31',
+                '已有观察状态', '2026-07-01T00:00:00Z',
+                '2026-07-02T00:00:00Z'
+            )
+            """,
+            (portfolio["id"], instrument["id"]),
+        )
+        connection.execute(
+            """
+            INSERT INTO research_watchlist_transition_drafts (
+                id, portfolio_id, instrument_id, previous_state, new_state,
+                review_due_date, reason, status, confirmation_token_digest,
+                facts_hash, created_by, created_at, expires_at, committed_at
+            ) VALUES (
+                'draft-1', ?, ?, 'CANDIDATE', 'OBSERVING', '2026-08-31',
+                '已有确认观察', 'COMMITTED', 'digest', 'facts',
+                'user', '2026-07-02T00:00:00Z',
+                '2026-07-02T00:15:00Z', '2026-07-02T00:01:00Z'
+            )
+            """,
+            (portfolio["id"], instrument["id"]),
+        )
+        connection.execute(
+            """
+            INSERT INTO research_watchlist_transitions (
+                id, draft_id, entry_id, previous_state, new_state,
+                review_due_date, reason, facts_hash, confirmed_by, confirmed_at
+            ) VALUES (
+                'transition-1', 'draft-1', 'entry-1', 'CANDIDATE',
+                'OBSERVING', '2026-08-31', '已有确认观察', 'facts',
+                'user', '2026-07-02T00:01:00Z'
+            )
+            """
+        )
+        connection.commit()
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT state, review_due_date, observation_started_at, last_reviewed_at
+            FROM research_watchlist_entries WHERE id='entry-1'
+            """
+        ).fetchone()
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()
+    assert row == (
+        "OBSERVING",
+        "2026-08-31",
+        "2026-07-02T00:01:00Z",
+        None,
+    )
+    assert revision == ("0021_watchlist_review_cycles",)
+    snapshot = ResearchService(settings).build_watchlist_review_snapshot(
+        portfolio_id=str(portfolio["id"]),
+        as_of_date=date(2026, 9, 1),
+    )
+    assert snapshot["summary"]["due_count"] == 1
+    assert snapshot["holdings_changed"] is False
+
+
 def test_delivery_receipt_migration_upgrades_existing_operations_schema(
     tmp_path: Path,
 ) -> None:
@@ -230,7 +312,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0020_watchlist_research_outcomes",)
+    assert revision == ("0021_watchlist_review_cycles",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(

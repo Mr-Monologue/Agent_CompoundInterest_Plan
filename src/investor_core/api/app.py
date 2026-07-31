@@ -29,6 +29,7 @@ from investor_core.api.schemas import (
     OfficialNavBackfillRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
+    ResearchWatchlistReviewSnapshotRequest,
     ResearchWatchlistTransitionDraftRequest,
     ReviewActionDecisionDraftRequest,
     ReviewActionOutcomeDraftRequest,
@@ -417,6 +418,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         )
 
+    @app.get("/v1/research-source-contract")
+    def research_source_contract_get() -> dict[str, Any]:
+        return success(research.source_contract())
+
     @app.get("/v1/market-research-evidence-changes")
     def market_research_evidence_change_list(
         instrument_code: str | None = None,
@@ -530,6 +535,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "items": research.list_watchlist(
                     portfolio_id=portfolio_id,
                     state=state,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.post("/v1/research-watchlist-review-snapshots")
+    def research_watchlist_review_snapshot_build(
+        request: ResearchWatchlistReviewSnapshotRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.build_watchlist_review_snapshot(**request.model_dump())
+        )
+
+    @app.get("/v1/research-watchlist-review-snapshots")
+    def research_watchlist_review_snapshot_list(
+        portfolio_id: str,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_watchlist_review_snapshots(
+                    portfolio_id=portfolio_id,
                     limit=limit,
                 )
             }

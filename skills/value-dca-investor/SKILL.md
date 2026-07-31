@@ -212,6 +212,10 @@ list of already registered instrument codes supplied by the user or an approved 
 policy. Its returns, drawdown, volatility, freshness and evidence coverage are observations, not
 rankings or recommendations. `OBSERVE`, `REVIEW` and `DATA_BLOCKED` never change an instrument's
 role, thesis, contribution eligibility or strategy membership.
+Read `research_source_contract_get` before using an external research connector. Preserve the
+upstream publisher as `source_lineage` even when a browser, plugin or API proxy fetched the
+content. The public contract does not authorize autonomous crawling, default candidates, ranking,
+verification claims or strategy changes.
 
 Use `review_action_decision_draft_create` only when the user explicitly chooses to acknowledge or
 resolve one exact review action and supplies a reason. Show the returned previous and proposed
@@ -236,6 +240,13 @@ when the user explicitly names one registered instrument, the requested state an
 only after confirmation with the matching token. `ADOPTED` means accepted for continued research;
 it does not add the instrument to a strategy, assign a role, make it contribution-eligible or
 create a transaction.
+
+Use `research_watchlist_review_snapshot_build` for an explicit as-of date to create an immutable
+due-review fact package. Report observation tenure, due status, evidence coverage, latest
+discovery facts and quality flags exactly as returned. Building a snapshot never changes an entry
+to `REVIEW_DUE`; a state transition still requires the user's explicit request, a draft and the
+matching confirmation token. Use `research_watchlist_review_snapshot_list` for history. Never
+turn `DUE`, missing evidence, or a discovery flag into a ranking, adoption, rotation or trade.
 
 Record a review-action outcome only after the exact action is `RESOLVED` and the user supplies the
 outcome, evidence quality and note. `VERIFIED` requires a source reference. Show the draft and
@@ -302,6 +313,9 @@ transaction, alter strategy configuration, or replay a user mutation after resta
 - For risk scans, report `evaluation_summary` literally. `NO_SELL_RULE_HIT` is returned only when
   at least one rule was genuinely evaluated and none triggered. `RISK_SCAN_PARTIAL` means some
   candidate rules were unconfigured or lacked required data; never collapse it into "no risk".
+- A successful risk scan reports `execution_status=SUCCESS`; the separate
+  `trade_execution_status=NOT_EXECUTED` states that no investment transaction occurred. Never
+  describe the latter as a scan that did not run.
 - Automation `job_run.status=DEGRADED` may reflect `result_quality=WARNING` even when
   `output.execution_status=SUCCESS`. Report execution and evidence quality as separate facts.
 
