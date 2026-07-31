@@ -174,3 +174,49 @@ def test_review_trend_preserves_cross_period_facts_and_action_backlog(
     assert first["automatic_trade"] is False
     assert replay["id"] == first["id"]
     assert replay["idempotent_replay"] is True
+
+
+def test_review_quality_snapshot_is_descriptive_and_immutable(tmp_path: Path) -> None:
+    settings, portfolio_id = _portfolio_with_navs(tmp_path)
+    service = PerformanceService(
+        settings,
+        now=lambda: datetime(2026, 8, 1, 1, 0, tzinfo=UTC),
+    )
+    service.prepare_review(
+        portfolio_id=portfolio_id,
+        review_type="MONTHLY",
+        anchor_date=date(2026, 7, 31),
+    )
+
+    first = service.build_review_quality_snapshot(
+        portfolio_id=portfolio_id,
+        as_of_date=date(2026, 8, 1),
+        lookback_reviews=12,
+    )
+    replay = service.build_review_quality_snapshot(
+        portfolio_id=portfolio_id,
+        as_of_date=date(2026, 8, 1),
+        lookback_reviews=12,
+    )
+
+    assert first["status"] == "PARTIAL"
+    assert first["data_quality"] == "WARNING"
+    assert first["review_history"]["review_count"] == 1
+    assert first["review_history"]["continuity_status"] == "LIMITED"
+    assert first["research_traceability"]["traceability_status"] == "NOT_AVAILABLE"
+    assert (
+        first["strategy_parameter_observation"]["status"]
+        == "INSUFFICIENT_HISTORY"
+    )
+    assert (
+        first["strategy_parameter_observation"]["boundary"]
+        == "TEMPORAL_ASSOCIATION_ONLY_NOT_CAUSAL_EFFECT_OR_PARAMETER_ADVICE"
+    )
+    assert (
+        first["quality_boundary"]
+        == "REVIEW_PROCESS_FACTS_NOT_STRATEGY_SCORE_INVESTMENT_ADVICE_OR_AUTO_TUNING"
+    )
+    assert first["strategy_changed"] is False
+    assert first["transactions_created"] is False
+    assert replay["id"] == first["id"]
+    assert replay["idempotent_replay"] is True

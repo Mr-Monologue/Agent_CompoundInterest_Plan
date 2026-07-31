@@ -8,7 +8,7 @@ import math
 import secrets
 import sqlite3
 from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 from statistics import pstdev
@@ -73,7 +73,8 @@ def _token_digest(value: str) -> str:
 
 
 def _iso(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "Z")
+    normalized = value if value.tzinfo is None else value.astimezone(UTC)
+    return normalized.isoformat().replace("+00:00", "Z")
 
 
 def _flatten(value: object, prefix: str = "") -> dict[str, object]:
@@ -115,8 +116,9 @@ class ResearchService:
     def source_contract() -> JsonDict:
         """Describe the public sourced-research ingestion boundary."""
         return {
-            "contract_version": "research-source-v1",
+            "contract_version": "research-source-v2",
             "ingestion_tool": "market_research_evidence_record",
+            "collection_run_tool": "research_collection_run_record",
             "supported_evidence_types": sorted(EVIDENCE_TYPES),
             "required_fields": [
                 "instrument_code",
@@ -130,6 +132,7 @@ class ResearchService:
             "configured_connectors": [],
             "automatic_sync": False,
             "idempotency": "CONTENT_HASH",
+            "collection_run_idempotency": "EXACT_MANIFEST_HASH",
             "lineage_rule": (
                 "SOURCE_LINEAGE_IDENTIFIES_THE_UPSTREAM_PUBLISHER_NOT_THE_FETCH_TOOL"
             ),
@@ -141,6 +144,284 @@ class ResearchService:
             ),
             "model_may_fill_missing_facts": False,
             "strategy_changed": False,
+            "automatic_trade": False,
+        }
+
+    def record_collection_run(
+        self,
+        *,
+        portfolio_id: str,
+        connector_key: str,
+        adapter_version: str,
+        source_name: str,
+        source_lineage: str,
+        started_at: datetime,
+        finished_at: datetime,
+        items: list[JsonDict],
+        actor_ref: str,
+    ) -> JsonDict:
+        """Ingest one external adapter batch and persist exact per-item outcomes."""
+        if finished_at < started_at:
+            raise LedgerError(
+                "RESEARCH_COLLECTION_TIME_INVALID",
+                "finished_at must not be earlier than started_at",
+            )
+        normalized_connector = connector_key.strip().upper()
+        normalized_lineage = source_lineage.strip().upper()
+        if not normalized_connector or not adapter_version.strip():
+            raise LedgerError(
+                "RESEARCH_CONNECTOR_IDENTITY_REQUIRED",
+                "connector_key and adapter_version are required",
+            )
+        if not source_name.strip() or not normalized_lineage:
+            raise LedgerError(
+                "RESEARCH_SOURCE_REQUIRED",
+                "source_name and source_lineage are required",
+            )
+        if not items:
+            raise LedgerError(
+                "RESEARCH_COLLECTION_ITEMS_REQUIRED",
+                "at least one research item is required",
+            )
+        manifest: JsonDict = {
+            "portfolio_id": portfolio_id,
+            "connector_key": normalized_connector,
+            "adapter_version": adapter_version.strip(),
+            "source_name": source_name.strip(),
+            "source_lineage": normalized_lineage,
+            "started_at": _iso(started_at),
+            "finished_at": _iso(finished_at),
+            "items": items,
+        }
+        manifest_hash = _hash(manifest)
+        with self._connect() as connection:
+            portfolio = connection.execute(
+                "SELECT id FROM portfolios WHERE id=?",
+                (portfolio_id,),
+            ).fetchone()
+            if portfolio is None:
+                raise LedgerError(
+                    "PORTFOLIO_NOT_FOUND",
+                    "portfolio was not found",
+                    http_status=404,
+                )
+            existing = connection.execute(
+                "SELECT * FROM research_collection_runs WHERE manifest_hash=?",
+                (manifest_hash,),
+            ).fetchone()
+            if existing is not None:
+                return self._collection_run_data(
+                    connection,
+                    existing,
+                    idempotent_replay=True,
+                )
+
+        outcomes: list[JsonDict] = []
+        for ordinal, item in enumerate(items):
+            normalized_item: JsonDict = {
+                "instrument_code": str(item["instrument_code"]).strip().upper(),
+                "evidence_date": str(item["evidence_date"]),
+                "evidence_type": str(item["evidence_type"]).strip().upper(),
+                "source_ref": str(item["source_ref"]).strip(),
+                "facts": dict(item["facts"]),
+            }
+            source_content_hash = _hash(
+                {
+                    **normalized_item,
+                    "source_lineage": normalized_lineage,
+                }
+            )
+            try:
+                evidence = self.record_evidence(
+                    instrument_code=str(normalized_item["instrument_code"]),
+                    evidence_date=date.fromisoformat(
+                        str(normalized_item["evidence_date"])
+                    ),
+                    evidence_type=str(normalized_item["evidence_type"]),
+                    source_name=source_name,
+                    source_ref=str(normalized_item["source_ref"]),
+                    source_lineage=normalized_lineage,
+                    facts=dict(normalized_item["facts"]),
+                    actor_ref=actor_ref,
+                )
+                ingestion_status = (
+                    "REPLAYED" if evidence["idempotent_replay"] else "RECORDED"
+                )
+                evidence_id: str | None = str(evidence["id"])
+                error_code: str | None = None
+                evidence_facts_hash = str(evidence["facts_hash"])
+            except (LedgerError, ValueError) as exc:
+                ingestion_status = "REJECTED"
+                evidence_id = None
+                error_code = exc.code if isinstance(exc, LedgerError) else "DATE_INVALID"
+                evidence_facts_hash = _hash(normalized_item["facts"])
+            outcomes.append(
+                {
+                    "ordinal": ordinal,
+                    **normalized_item,
+                    "source_content_hash": source_content_hash,
+                    "ingestion_status": ingestion_status,
+                    "evidence_id": evidence_id,
+                    "error_code": error_code,
+                    "facts_hash": evidence_facts_hash,
+                }
+            )
+
+        recorded_count = sum(
+            item["ingestion_status"] == "RECORDED" for item in outcomes
+        )
+        replayed_count = sum(
+            item["ingestion_status"] == "REPLAYED" for item in outcomes
+        )
+        rejected_count = sum(
+            item["ingestion_status"] == "REJECTED" for item in outcomes
+        )
+        if rejected_count == len(outcomes):
+            execution_status = "FAILED"
+            reason_code = "RESEARCH_COLLECTION_REJECTED"
+        elif rejected_count:
+            execution_status = "PARTIAL"
+            reason_code = "RESEARCH_COLLECTION_PARTIAL"
+        else:
+            execution_status = "SUCCESS"
+            reason_code = "RESEARCH_COLLECTION_COMPLETED"
+        run_id = str(uuid4())
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO research_collection_runs (
+                    id, portfolio_id, connector_key, adapter_version,
+                    source_name, source_lineage, started_at, finished_at,
+                    execution_status, item_count, recorded_count, replayed_count,
+                    rejected_count, reason_code, manifest_json, manifest_hash,
+                    created_by, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    portfolio_id,
+                    normalized_connector,
+                    adapter_version.strip(),
+                    source_name.strip(),
+                    normalized_lineage,
+                    _iso(started_at),
+                    _iso(finished_at),
+                    execution_status,
+                    len(outcomes),
+                    recorded_count,
+                    replayed_count,
+                    rejected_count,
+                    reason_code,
+                    _json(manifest),
+                    manifest_hash,
+                    actor_ref,
+                    _iso(self._now()),
+                ),
+            )
+            for outcome in outcomes:
+                connection.execute(
+                    """
+                    INSERT INTO research_collection_items (
+                        id, run_id, ordinal, instrument_code, evidence_type,
+                        evidence_date, source_ref, source_content_hash,
+                        ingestion_status, evidence_id, error_code, facts_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        run_id,
+                        outcome["ordinal"],
+                        outcome["instrument_code"],
+                        outcome["evidence_type"],
+                        outcome["evidence_date"],
+                        outcome["source_ref"],
+                        outcome["source_content_hash"],
+                        outcome["ingestion_status"],
+                        outcome["evidence_id"],
+                        outcome["error_code"],
+                        outcome["facts_hash"],
+                    ),
+                )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM research_collection_runs WHERE id=?",
+                (run_id,),
+            ).fetchone()
+            assert row is not None
+            return self._collection_run_data(connection, row)
+
+    def list_collection_runs(
+        self,
+        *,
+        portfolio_id: str,
+        connector_key: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = "SELECT * FROM research_collection_runs WHERE portfolio_id=?"
+        params: list[object] = [portfolio_id]
+        if connector_key:
+            query += " AND connector_key=?"
+            params.append(connector_key.strip().upper())
+        query += " ORDER BY finished_at DESC, created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+            return [self._collection_run_data(connection, row) for row in rows]
+
+    @staticmethod
+    def _collection_run_data(
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        idempotent_replay: bool = False,
+    ) -> JsonDict:
+        items = connection.execute(
+            """
+            SELECT * FROM research_collection_items
+            WHERE run_id=? ORDER BY ordinal
+            """,
+            (row["id"],),
+        ).fetchall()
+        return {
+            "id": str(row["id"]),
+            "portfolio_id": str(row["portfolio_id"]),
+            "connector_key": str(row["connector_key"]),
+            "adapter_version": str(row["adapter_version"]),
+            "source_name": str(row["source_name"]),
+            "source_lineage": str(row["source_lineage"]),
+            "started_at": str(row["started_at"]),
+            "finished_at": str(row["finished_at"]),
+            "execution_status": str(row["execution_status"]),
+            "item_count": int(row["item_count"]),
+            "recorded_count": int(row["recorded_count"]),
+            "replayed_count": int(row["replayed_count"]),
+            "rejected_count": int(row["rejected_count"]),
+            "reason_code": str(row["reason_code"]),
+            "manifest_hash": str(row["manifest_hash"]),
+            "items": [
+                {
+                    "ordinal": int(item["ordinal"]),
+                    "instrument_code": str(item["instrument_code"]),
+                    "evidence_type": str(item["evidence_type"]),
+                    "evidence_date": str(item["evidence_date"]),
+                    "source_ref": str(item["source_ref"]),
+                    "source_content_hash": str(item["source_content_hash"]),
+                    "ingestion_status": str(item["ingestion_status"]),
+                    "evidence_id": item["evidence_id"],
+                    "error_code": item["error_code"],
+                    "facts_hash": str(item["facts_hash"]),
+                }
+                for item in items
+            ],
+            "created_by": str(row["created_by"]),
+            "created_at": str(row["created_at"]),
+            "idempotent_replay": idempotent_replay,
+            "evidence_verification": "SOURCE_ATTRIBUTED_NOT_INDEPENDENTLY_VERIFIED",
+            "collection_boundary": (
+                "AUDITED_FACT_INGESTION_NO_RANKING_STRATEGY_PLAN_PROPOSAL_OR_TRADE"
+            ),
+            "strategy_changed": False,
+            "transactions_created": False,
             "automatic_trade": False,
         }
 

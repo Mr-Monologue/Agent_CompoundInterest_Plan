@@ -37,6 +37,7 @@ SUPPORTED_JOBS = {
     "ANNUAL_REVIEW",
     "WEEKLY_MARKET_DISCOVERY",
     "WATCHLIST_REVIEW_DUE",
+    "REVIEW_QUALITY_SNAPSHOT",
 }
 PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
 MANAGED_JOB_PREFIX = "value-dca-"
@@ -164,6 +165,7 @@ class OperationsService:
             "ANNUAL_REVIEW": set(),
             "WEEKLY_MARKET_DISCOVERY": {"instrument_codes", "lookback_days"},
             "WATCHLIST_REVIEW_DUE": set(),
+            "REVIEW_QUALITY_SNAPSHOT": {"lookback_reviews"},
         }
         unknown = set(config) - allowed_common - allowed_by_job[job_name]
         if unknown:
@@ -243,6 +245,14 @@ class OperationsService:
                 )
             normalized["instrument_codes"] = codes
             normalized["lookback_days"] = lookback
+        if job_name == "REVIEW_QUALITY_SNAPSHOT":
+            lookback_reviews = int(normalized.get("lookback_reviews", 12))
+            if not 1 <= lookback_reviews <= 120:
+                raise LedgerError(
+                    "AUTOMATION_CONFIG_INVALID",
+                    "lookback_reviews must be between 1 and 120",
+                )
+            normalized["lookback_reviews"] = lookback_reviews
         return normalized
 
     @staticmethod
@@ -1213,6 +1223,19 @@ class OperationsService:
                 as_of_date=datetime.fromisoformat(business_date).date(),
             )
             notify = int(result["summary"]["due_count"]) > 0
+            return (
+                result,
+                str(result["data_quality"]),
+                notify,
+                str(result["reason_code"]),
+            )
+        if job_name == "REVIEW_QUALITY_SNAPSHOT":
+            result = self._performance.build_review_quality_snapshot(
+                portfolio_id=portfolio_id,
+                as_of_date=datetime.fromisoformat(business_date).date(),
+                lookback_reviews=int(config["lookback_reviews"]),
+            )
+            notify = str(result["status"]) == "DATA_BLOCKED"
             return (
                 result,
                 str(result["data_quality"]),

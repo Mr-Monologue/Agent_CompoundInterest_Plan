@@ -29,10 +29,12 @@ from investor_core.api.schemas import (
     OfficialNavBackfillRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
+    ResearchCollectionRunRequest,
     ResearchWatchlistReviewSnapshotRequest,
     ResearchWatchlistTransitionDraftRequest,
     ReviewActionDecisionDraftRequest,
     ReviewActionOutcomeDraftRequest,
+    ReviewQualitySnapshotRequest,
     ReviewTrendSnapshotRequest,
     RiskScanRequest,
     SellDecisionDraftCreateRequest,
@@ -396,6 +398,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         )
 
+    @app.post("/v1/review-quality-snapshots")
+    def review_quality_snapshot_build(
+        request: ReviewQualitySnapshotRequest,
+    ) -> dict[str, Any]:
+        result = performance.build_review_quality_snapshot(**request.model_dump())
+        return success(
+            result,
+            warnings=(
+                ["Review-process quality contains incomplete or limited facts"]
+                if result["data_quality"] != "PASS"
+                else []
+            ),
+            data_quality=str(result["data_quality"]),
+        )
+
+    @app.get("/v1/review-quality-snapshots")
+    def review_quality_snapshot_list(
+        portfolio_id: str,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": performance.list_review_quality_snapshots(
+                    portfolio_id=portfolio_id,
+                    limit=limit,
+                )
+            }
+        )
+
     @app.post("/v1/market-research-evidence")
     def market_research_evidence_record(
         request: MarketResearchEvidenceRequest,
@@ -421,6 +452,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/research-source-contract")
     def research_source_contract_get() -> dict[str, Any]:
         return success(research.source_contract())
+
+    @app.post("/v1/research-collection-runs")
+    def research_collection_run_record(
+        request: ResearchCollectionRunRequest,
+    ) -> dict[str, Any]:
+        payload = request.model_dump(exclude={"items"})
+        payload["items"] = [item.model_dump(mode="json") for item in request.items]
+        result = research.record_collection_run(**payload)
+        quality = {
+            "SUCCESS": "PASS",
+            "PARTIAL": "WARNING",
+            "FAILED": "SOURCE_ERROR",
+        }[str(result["execution_status"])]
+        return success(
+            result,
+            warnings=(
+                []
+                if quality == "PASS"
+                else ["One or more sourced research items were rejected"]
+            ),
+            data_quality=quality,
+        )
+
+    @app.get("/v1/research-collection-runs")
+    def research_collection_run_list(
+        portfolio_id: str,
+        connector_key: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_collection_runs(
+                    portfolio_id=portfolio_id,
+                    connector_key=connector_key,
+                    limit=limit,
+                )
+            }
+        )
 
     @app.get("/v1/market-research-evidence-changes")
     def market_research_evidence_change_list(

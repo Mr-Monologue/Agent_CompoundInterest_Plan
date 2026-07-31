@@ -487,6 +487,31 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
     assert run["job_run"]["status"] == "SUCCESS"
     assert run["job_run"]["output"]["reason_code"] == "WATCHLIST_EMPTY"
 
+    commit_policy(
+        service,
+        job_name="REVIEW_QUALITY_SNAPSHOT",
+        portfolio_id=portfolio_id,
+        config={"lookback_reviews": 12},
+    )
+    manifest = service.scheduler_manifest(profile="investor")
+    quality = next(
+        item
+        for item in manifest["jobs"]
+        if item["job_name"] == "REVIEW_QUALITY_SNAPSHOT"
+    )
+    assert quality["script"] == "value_dca_review_quality_snapshot.py"
+    assert quality["no_agent"] is True
+    quality_run = service.run_job(
+        job_name="REVIEW_QUALITY_SNAPSHOT",
+        portfolio_id=portfolio_id,
+        scheduled_for="2026-07-27T00:05:00Z",
+    )
+    assert quality_run["job_run"]["status"] == "DEGRADED"
+    assert (
+        quality_run["job_run"]["output"]["reason_code"]
+        == "REVIEW_QUALITY_NO_PERIODIC_REVIEWS"
+    )
+
 
 def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
@@ -517,7 +542,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0021_watchlist_review_cycles",)
+    assert revision == ("0022_research_collection_review_quality",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:
