@@ -231,6 +231,7 @@ class AutomationPolicyDraftCreateRequest(RequestModel):
         "WEEKLY_MARKET_DISCOVERY",
         "WATCHLIST_REVIEW_DUE",
         "REVIEW_QUALITY_SNAPSHOT",
+        "RESEARCH_COVERAGE_AUDIT",
     ]
     enabled: bool
     schedule: str = Field(min_length=1, max_length=120)
@@ -254,6 +255,7 @@ class AutomationJobRunRequest(RequestModel):
         "WEEKLY_MARKET_DISCOVERY",
         "WATCHLIST_REVIEW_DUE",
         "REVIEW_QUALITY_SNAPSHOT",
+        "RESEARCH_COVERAGE_AUDIT",
     ]
     scheduled_for: str | None = Field(default=None, min_length=1, max_length=80)
     actor_ref: str = Field(default="operations-runner", min_length=1, max_length=120)
@@ -381,6 +383,46 @@ class ResearchCollectionRunRequest(RequestModel):
         if self.finished_at < self.started_at:
             raise ValueError("finished_at must not be earlier than started_at")
         return self
+
+
+class ResearchSourceConfigDraftRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    connector_key: str = Field(min_length=1, max_length=120)
+    display_name: str = Field(min_length=1, max_length=200)
+    enabled: bool
+    evidence_types: list[
+        Literal[
+            "FUND_PROFILE",
+            "HOLDINGS",
+            "MANAGER",
+            "FEES",
+            "BENCHMARK",
+            "MARKET_REGIME",
+            "OTHER",
+        ]
+    ] = Field(min_length=1, max_length=7)
+    source_lineages: list[str] = Field(min_length=1, max_length=20)
+    credential_ref: str | None = Field(default=None, min_length=3, max_length=120)
+    reason: str = Field(min_length=1, max_length=1000)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ResearchCoverageSnapshotRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    instrument_codes: list[str] = Field(min_length=1, max_length=200)
+    as_of_date: date
+    required_evidence_types: list[
+        Literal[
+            "FUND_PROFILE",
+            "HOLDINGS",
+            "MANAGER",
+            "FEES",
+            "BENCHMARK",
+            "MARKET_REGIME",
+            "OTHER",
+        ]
+    ] = Field(min_length=1, max_length=7)
+    max_age_days: int = Field(default=120, ge=1, le=730)
 
 
 class MarketDiscoveryScanRequest(RequestModel):
