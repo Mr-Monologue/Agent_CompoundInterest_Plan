@@ -38,6 +38,7 @@ REQUIRED_TABLES = {
     "market_research_evidence",
     "research_evidence_changes",
     "research_watchlist_entries",
+    "research_watchlist_review_snapshots",
     "research_watchlist_transition_drafts",
     "research_watchlist_transitions",
     "notification_delivery_attempts",
@@ -67,7 +68,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0020_watchlist_research_outcomes"
+EXPECTED_ALEMBIC_REVISION = "0021_watchlist_review_cycles"
 
 
 def ensure_database_parent(settings: Settings) -> None:
@@ -143,7 +144,7 @@ def check_database(settings: Settings) -> list[CheckResult]:
                 "run `investor db migrate`"
             )
         else:
-            schema_message = "Capital, official backfill and runtime-mode schema is current"
+            schema_message = "Database schema is current"
         checks.append(
             CheckResult(
                 name="database-schema",

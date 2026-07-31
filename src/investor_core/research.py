@@ -111,6 +111,39 @@ class ResearchService:
         connection.execute("PRAGMA journal_mode=WAL")
         return connection
 
+    @staticmethod
+    def source_contract() -> JsonDict:
+        """Describe the public sourced-research ingestion boundary."""
+        return {
+            "contract_version": "research-source-v1",
+            "ingestion_tool": "market_research_evidence_record",
+            "supported_evidence_types": sorted(EVIDENCE_TYPES),
+            "required_fields": [
+                "instrument_code",
+                "evidence_date",
+                "evidence_type",
+                "source_name",
+                "source_ref",
+                "source_lineage",
+                "facts",
+            ],
+            "configured_connectors": [],
+            "automatic_sync": False,
+            "idempotency": "CONTENT_HASH",
+            "lineage_rule": (
+                "SOURCE_LINEAGE_IDENTIFIES_THE_UPSTREAM_PUBLISHER_NOT_THE_FETCH_TOOL"
+            ),
+            "verification_rule": (
+                "SOURCE_ATTRIBUTION_DOES_NOT_IMPLY_INDEPENDENT_VERIFICATION"
+            ),
+            "connector_boundary": (
+                "PUBLIC_ADAPTER_CONTRACT_NO_DEFAULT_SOURCE_UNIVERSE_RANKING_OR_TRADE"
+            ),
+            "model_may_fill_missing_facts": False,
+            "strategy_changed": False,
+            "automatic_trade": False,
+        }
+
     def record_evidence(
         self,
         *,
@@ -1025,8 +1058,9 @@ class ResearchService:
                     """
                     INSERT INTO research_watchlist_entries (
                         id, portfolio_id, instrument_id, state, review_due_date,
-                        latest_reason, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        latest_reason, observation_started_at, last_reviewed_at,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                     """,
                     (
                         entry_id,
@@ -1035,6 +1069,7 @@ class ResearchService:
                         draft["new_state"],
                         draft["review_due_date"],
                         draft["reason"],
+                        now if str(draft["new_state"]) == "OBSERVING" else None,
                         now,
                         now,
                     ),
@@ -1044,13 +1079,26 @@ class ResearchService:
                 connection.execute(
                     """
                     UPDATE research_watchlist_entries
-                    SET state=?, review_due_date=?, latest_reason=?, updated_at=?
+                    SET state=?, review_due_date=?, latest_reason=?,
+                        observation_started_at=CASE
+                            WHEN ?='OBSERVING' THEN ?
+                            ELSE observation_started_at
+                        END,
+                        last_reviewed_at=CASE
+                            WHEN state='REVIEW_DUE' AND ?<>'REVIEW_DUE' THEN ?
+                            ELSE last_reviewed_at
+                        END,
+                        updated_at=?
                     WHERE id=?
                     """,
                     (
                         draft["new_state"],
                         draft["review_due_date"],
                         draft["reason"],
+                        draft["new_state"],
+                        now,
+                        draft["new_state"],
+                        now,
                         now,
                         entry_id,
                     ),
@@ -1164,6 +1212,8 @@ class ResearchService:
                     "asset_type": str(row["asset_type"]),
                     "state": str(row["state"]),
                     "review_due_date": row["review_due_date"],
+                    "observation_started_at": row["observation_started_at"],
+                    "last_reviewed_at": row["last_reviewed_at"],
                     "latest_reason": str(row["latest_reason"]),
                     "created_at": str(row["created_at"]),
                     "updated_at": str(row["updated_at"]),
@@ -1172,6 +1222,315 @@ class ResearchService:
                     ),
                     "automatic_trade": False,
                 }
+                for row in rows
+            ]
+
+    def build_watchlist_review_snapshot(
+        self,
+        *,
+        portfolio_id: str,
+        as_of_date: date,
+    ) -> JsonDict:
+        """Build one immutable due-review fact package without changing watchlist state."""
+        with self._connect() as connection:
+            portfolio = connection.execute(
+                "SELECT id FROM portfolios WHERE id=?",
+                (portfolio_id,),
+            ).fetchone()
+            if portfolio is None:
+                raise LedgerError(
+                    "PORTFOLIO_NOT_FOUND",
+                    "portfolio was not found",
+                    http_status=404,
+                )
+            rows = connection.execute(
+                """
+                SELECT e.*, i.code, i.name, i.asset_type
+                FROM research_watchlist_entries e
+                JOIN instruments i ON i.id=e.instrument_id
+                WHERE e.portfolio_id=?
+                ORDER BY i.code
+                """,
+                (portfolio_id,),
+            ).fetchall()
+            items: list[JsonDict] = []
+            for row in rows:
+                state = str(row["state"])
+                due_date = (
+                    None
+                    if row["review_due_date"] is None
+                    else date.fromisoformat(str(row["review_due_date"]))
+                )
+                closed = state in {"REJECTED", "ARCHIVED"}
+                if closed:
+                    due_status = "CLOSED"
+                elif state == "REVIEW_DUE":
+                    due_status = "DUE"
+                elif due_date is None:
+                    due_status = "NOT_SCHEDULED"
+                elif due_date <= as_of_date:
+                    due_status = "DUE"
+                else:
+                    due_status = "UPCOMING"
+
+                evidence_rows = connection.execute(
+                    """
+                    SELECT evidence_type, COUNT(*) AS evidence_count,
+                           MAX(evidence_date) AS latest_evidence_date
+                    FROM market_research_evidence
+                    WHERE instrument_id=? AND evidence_date<=?
+                    GROUP BY evidence_type
+                    ORDER BY evidence_type
+                    """,
+                    (row["instrument_id"], as_of_date.isoformat()),
+                ).fetchall()
+                evidence_by_type = {
+                    str(item["evidence_type"]): {
+                        "count": int(item["evidence_count"]),
+                        "latest_evidence_date": str(item["latest_evidence_date"]),
+                    }
+                    for item in evidence_rows
+                }
+                evidence_count = sum(
+                    int(item["evidence_count"]) for item in evidence_rows
+                )
+                latest_discovery = connection.execute(
+                    """
+                    SELECT di.facts_json, dr.id AS run_id, dr.as_of_date,
+                           dr.data_quality
+                    FROM market_discovery_items di
+                    JOIN market_discovery_runs dr ON dr.id=di.run_id
+                    WHERE dr.portfolio_id=? AND di.instrument_id=?
+                      AND dr.as_of_date<=?
+                    ORDER BY dr.as_of_date DESC, dr.created_at DESC LIMIT 1
+                    """,
+                    (portfolio_id, row["instrument_id"], as_of_date.isoformat()),
+                ).fetchone()
+                discovery_facts: JsonDict = (
+                    {}
+                    if latest_discovery is None
+                    else json.loads(str(latest_discovery["facts_json"]))
+                )
+                observation_started_at = (
+                    None
+                    if row["observation_started_at"] is None
+                    else str(row["observation_started_at"])
+                )
+                observation_days = (
+                    None
+                    if observation_started_at is None
+                    else max(
+                        0,
+                        (
+                            as_of_date
+                            - datetime.fromisoformat(
+                                observation_started_at.replace("Z", "+00:00")
+                            ).date()
+                        ).days,
+                    )
+                )
+                quality_flags: list[str] = []
+                if not closed and due_date is None:
+                    quality_flags.append("REVIEW_DATE_NOT_SCHEDULED")
+                if not evidence_by_type:
+                    quality_flags.append("RESEARCH_EVIDENCE_MISSING")
+                if latest_discovery is None:
+                    quality_flags.append("DISCOVERY_SNAPSHOT_MISSING")
+                elif str(latest_discovery["data_quality"]) != "PASS":
+                    quality_flags.append("DISCOVERY_DATA_QUALITY_LIMITED")
+                if due_status == "DUE":
+                    quality_flags.append("WATCHLIST_REVIEW_DUE")
+                items.append(
+                    {
+                        "entry_id": str(row["id"]),
+                        "instrument_code": str(row["code"]),
+                        "instrument_name": str(row["name"]),
+                        "asset_type": str(row["asset_type"]),
+                        "watchlist_state": state,
+                        "review_due_date": (
+                            None if due_date is None else due_date.isoformat()
+                        ),
+                        "due_status": due_status,
+                        "days_until_review": (
+                            None
+                            if due_date is None
+                            else (due_date - as_of_date).days
+                        ),
+                        "observation_started_at": observation_started_at,
+                        "observation_days": observation_days,
+                        "last_reviewed_at": row["last_reviewed_at"],
+                        "research_evidence_count": evidence_count,
+                        "research_evidence_by_type": evidence_by_type,
+                        "latest_discovery": (
+                            None
+                            if latest_discovery is None
+                            else {
+                                "run_id": str(latest_discovery["run_id"]),
+                                "as_of_date": str(latest_discovery["as_of_date"]),
+                                "data_quality": str(
+                                    latest_discovery["data_quality"]
+                                ),
+                                "state": discovery_facts["state"],
+                                "review_flags": discovery_facts["review_flags"],
+                                "latest_nav_date": discovery_facts[
+                                    "latest_nav_date"
+                                ],
+                                "return_20d_bps": discovery_facts[
+                                    "return_20d_bps"
+                                ],
+                                "return_60d_bps": discovery_facts[
+                                    "return_60d_bps"
+                                ],
+                                "return_120d_bps": discovery_facts[
+                                    "return_120d_bps"
+                                ],
+                                "max_drawdown_bps": discovery_facts[
+                                    "max_drawdown_bps"
+                                ],
+                            }
+                        ),
+                        "quality_flags": sorted(quality_flags),
+                        "review_boundary": (
+                            "FACTS_ONLY_REQUIRES_CONFIRMED_WATCHLIST_TRANSITION"
+                        ),
+                    }
+                )
+
+            due_count = sum(item["due_status"] == "DUE" for item in items)
+            scheduled_count = sum(
+                item["due_status"] in {"DUE", "UPCOMING"} for item in items
+            )
+            limited_count = sum(bool(item["quality_flags"]) for item in items)
+            status = "REVIEW_REQUIRED" if due_count else "COMPLETED"
+            quality = "WARNING" if limited_count else "PASS"
+            reason_code = (
+                "WATCHLIST_EMPTY"
+                if not items
+                else (
+                    "WATCHLIST_REVIEW_DUE"
+                    if due_count
+                    else (
+                        "WATCHLIST_REVIEW_CURRENT_WITH_LIMITS"
+                        if quality == "WARNING"
+                        else "WATCHLIST_REVIEW_CURRENT"
+                    )
+                )
+            )
+            facts: JsonDict = {
+                "portfolio_id": portfolio_id,
+                "as_of_date": as_of_date.isoformat(),
+                "status": status,
+                "reason_code": reason_code,
+                "data_quality": quality,
+                "summary": {
+                    "entry_count": len(items),
+                    "active_count": sum(
+                        item["due_status"] != "CLOSED" for item in items
+                    ),
+                    "scheduled_count": scheduled_count,
+                    "due_count": due_count,
+                    "upcoming_count": sum(
+                        item["due_status"] == "UPCOMING" for item in items
+                    ),
+                    "not_scheduled_count": sum(
+                        item["due_status"] == "NOT_SCHEDULED" for item in items
+                    ),
+                    "closed_count": sum(
+                        item["due_status"] == "CLOSED" for item in items
+                    ),
+                    "limited_count": limited_count,
+                },
+                "items": items,
+                "snapshot_boundary": (
+                    "REVIEW_FACTS_ONLY_NO_AUTOMATIC_STATE_STRATEGY_PLAN_OR_TRADE_CHANGE"
+                ),
+                "strategy_changed": False,
+                "contribution_eligibility_changed": False,
+                "holdings_changed": False,
+                "transactions_created": False,
+                "automatic_trade": False,
+            }
+            facts_hash = _hash(facts)
+            existing = connection.execute(
+                """
+                SELECT * FROM research_watchlist_review_snapshots
+                WHERE facts_hash=?
+                """,
+                (facts_hash,),
+            ).fetchone()
+            if existing is not None:
+                return self._watchlist_review_snapshot_data(
+                    existing,
+                    idempotent_replay=True,
+                )
+            snapshot_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO research_watchlist_review_snapshots (
+                    id, portfolio_id, as_of_date, status, data_quality,
+                    reason_code, due_count, facts_json, facts_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    portfolio_id,
+                    as_of_date.isoformat(),
+                    status,
+                    quality,
+                    reason_code,
+                    due_count,
+                    _json(facts),
+                    facts_hash,
+                    _iso(self._now()),
+                ),
+            )
+            connection.commit()
+            created = connection.execute(
+                """
+                SELECT * FROM research_watchlist_review_snapshots WHERE id=?
+                """,
+                (snapshot_id,),
+            ).fetchone()
+            assert created is not None
+            return self._watchlist_review_snapshot_data(
+                created,
+                idempotent_replay=False,
+            )
+
+    @staticmethod
+    def _watchlist_review_snapshot_data(
+        row: sqlite3.Row,
+        *,
+        idempotent_replay: bool,
+    ) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            **json.loads(str(row["facts_json"])),
+            "facts_hash": str(row["facts_hash"]),
+            "created_at": str(row["created_at"]),
+            "idempotent_replay": idempotent_replay,
+        }
+
+    def list_watchlist_review_snapshots(
+        self,
+        *,
+        portfolio_id: str,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM research_watchlist_review_snapshots
+                WHERE portfolio_id=?
+                ORDER BY as_of_date DESC, created_at DESC LIMIT ?
+                """,
+                (portfolio_id, limit),
+            ).fetchall()
+            return [
+                self._watchlist_review_snapshot_data(
+                    row,
+                    idempotent_replay=False,
+                )
                 for row in rows
             ]
 

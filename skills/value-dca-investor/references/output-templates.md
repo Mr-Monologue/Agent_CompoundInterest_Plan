@@ -101,6 +101,13 @@ reason, expiry and all unchanged-system flags. State `研究状态，不代表�
 For source-content changes, show the two evidence IDs, source lineage, evidence type and exact
 added, removed and changed field paths. Do not infer importance or direction.
 
+## Watchlist review cycle
+
+State the snapshot date, status, reason code, data quality and due-status counts. For each entry,
+report the current watchlist state, observation days, review due date, due status, evidence
+coverage, latest discovery facts and quality flags exactly. State `到期复核事实，不代表自动改变观察池
+状态、采用标的、轮换或交易`.
+
 ## Review action outcomes
 
 Show the action ID, action code, outcome, evidence quality, evidence reference, note and confirmed
