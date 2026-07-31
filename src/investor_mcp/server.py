@@ -170,6 +170,8 @@ async def automation_policy_draft_create(
         "MONTHLY_REVIEW",
         "QUARTERLY_REVIEW",
         "ANNUAL_REVIEW",
+        "WEEKLY_MARKET_DISCOVERY",
+        "WATCHLIST_REVIEW_DUE",
     ],
     enabled: bool,
     schedule: str,
@@ -479,6 +481,12 @@ async def market_research_evidence_record(
 
 
 @mcp.tool()
+async def research_source_contract_get() -> dict[str, Any]:
+    """Read the generic external-research adapter contract and safety boundary."""
+    return await core_request("GET", "/v1/research-source-contract")
+
+
+@mcp.tool()
 async def market_research_evidence_list(
     instrument_code: str = "",
     evidence_type: str = "",
@@ -662,6 +670,45 @@ async def research_watchlist_list(
             "state": state or None,
             "limit": limit,
         },
+    )
+
+
+@mcp.tool()
+async def research_watchlist_review_snapshot_build(
+    as_of_date: str,
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Build immutable due-review facts; this never changes watchlist state or investments."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/research-watchlist-review-snapshots",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "as_of_date": as_of_date,
+        },
+    )
+
+
+@mcp.tool()
+async def research_watchlist_review_snapshot_list(
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List immutable watchlist review packages without ranking or recommendations."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-watchlist-review-snapshots",
+        params={"portfolio_id": resolved_portfolio, "limit": limit},
     )
 
 

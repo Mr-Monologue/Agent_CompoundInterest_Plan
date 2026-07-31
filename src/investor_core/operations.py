@@ -36,6 +36,7 @@ SUPPORTED_JOBS = {
     "QUARTERLY_REVIEW",
     "ANNUAL_REVIEW",
     "WEEKLY_MARKET_DISCOVERY",
+    "WATCHLIST_REVIEW_DUE",
 }
 PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
 MANAGED_JOB_PREFIX = "value-dca-"
@@ -162,6 +163,7 @@ class OperationsService:
             "QUARTERLY_REVIEW": set(),
             "ANNUAL_REVIEW": set(),
             "WEEKLY_MARKET_DISCOVERY": {"instrument_codes", "lookback_days"},
+            "WATCHLIST_REVIEW_DUE": set(),
         }
         unknown = set(config) - allowed_common - allowed_by_job[job_name]
         if unknown:
@@ -1199,6 +1201,18 @@ class OperationsService:
             )
             change_summary = dict(result["change_summary"])
             notify = bool(change_summary["attention_count"])
+            return (
+                result,
+                str(result["data_quality"]),
+                notify,
+                str(result["reason_code"]),
+            )
+        if job_name == "WATCHLIST_REVIEW_DUE":
+            result = self._research.build_watchlist_review_snapshot(
+                portfolio_id=portfolio_id,
+                as_of_date=datetime.fromisoformat(business_date).date(),
+            )
+            notify = int(result["summary"]["due_count"]) > 0
             return (
                 result,
                 str(result["data_quality"]),

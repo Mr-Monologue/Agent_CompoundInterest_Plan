@@ -207,6 +207,8 @@ def test_scan_distinguishes_unconfigured_rules_and_defaults_to_compact_output(
     assert compact["rule_hits_included"] is False
     assert compact["rule_hits"] == []
     assert compact["instrument_summaries"][0]["assessment"] == "PARTIAL"
+    assert compact["execution_status"] == "SUCCESS"
+    assert compact["trade_execution_status"] == "NOT_EXECUTED"
 
     detailed = risk.scan(
         portfolio_id=portfolio_id,
