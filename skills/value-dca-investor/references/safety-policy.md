@@ -42,6 +42,11 @@ Maintain these states separately:
 Only step 4 changes holdings. Always state `未成交` when the context reports
 `execution_status = NOT_EXECUTED`.
 
+For rule evaluation, a missing threshold, missing verified observation, or non-applicable rule is
+never a successful non-hit. Preserve Core's `NOT_CONFIGURED`, `DATA_UNAVAILABLE`, and
+`NOT_APPLICABLE` states. Use compact scan summaries by default and request a filtered, paginated
+`risk_rule_hit_list` only when rule-level evidence is required.
+
 Step 4 must link the separately confirmed SELL draft to the exact approved proposal. A proposal
 cannot be linked twice, a BUY cannot carry a sell proposal ID, and a recorded amount cannot exceed
 the approved deterministic amount. The resulting six-month follow-up is read-only evaluation
@@ -70,3 +75,9 @@ or create a plan or transaction.
 Discovery-change and review-trend snapshots are immutable descriptive facts. A scheduled job may
 notify on a persisted state, flag, evidence or verification-coverage change, but it must never
 translate that change into a rotation, contribution, sell or strategy action.
+
+Research-watchlist changes and review-action outcomes are confirmation-gated governance records.
+An `ADOPTED` watchlist state is not strategy membership or contribution eligibility. A
+`COMPLETED` review outcome is not proof that a strategy works and cannot authorize parameter
+changes. Research evidence field changes must retain their source lineage and must never be
+converted into model-generated market calls or automatic trades.

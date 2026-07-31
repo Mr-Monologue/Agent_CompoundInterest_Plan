@@ -121,6 +121,13 @@ means lower percentile.
 
 Use `risk_scan_run` to evaluate only rules explicitly approved in the current strategy instance.
 Never turn a loss, return, weight, valuation state, news item, or model concern into a rule hit.
+The default response is intentionally compact. Report `candidate_rule_count`,
+`configured_rule_count`, `evaluated_rule_count`, `not_configured_count`,
+`data_unavailable_count`, `not_applicable_count`, `triggered_rule_count`, and
+`sell_proposal_count` literally. Use `risk_rule_hit_list` with filters and pagination only when
+rule-level evidence is needed; request `include_details=true` only for a small selected page.
+`NOT_CONFIGURED`, `DATA_UNAVAILABLE`, and `NOT_APPLICABLE` are not safe results and must never be
+described as rules that were evaluated without a hit.
 Replacement, sustained-underperformance, objective-completion and core-tool-quality rules require
 exact sourced facts recorded through `lifecycle_observation_record`. An `UNVERIFIED` observation is
 auditable context but cannot trigger a sell proposal. Liquidity scans require both the user's exact
@@ -220,6 +227,21 @@ Report recurring action codes, unresolved backlog age, quality continuity, gover
 performance fields as Core returns them. Never invent a review score, causal explanation or
 strategy conclusion that Core did not return.
 
+Use `market_research_evidence_change_list` only to report persisted field-path changes between
+comparable sourced evidence records. A changed manager, fee, holding, benchmark or market-regime
+field is not itself a buy, sell, rotation or contribution signal.
+
+The research watchlist is portfolio-local and empty by default. Create a transition draft only
+when the user explicitly names one registered instrument, the requested state and a reason. Commit
+only after confirmation with the matching token. `ADOPTED` means accepted for continued research;
+it does not add the instrument to a strategy, assign a role, make it contribution-eligible or
+create a transaction.
+
+Record a review-action outcome only after the exact action is `RESOLVED` and the user supplies the
+outcome, evidence quality and note. `VERIFIED` requires a source reference. Show the draft and
+commit only after confirmation. Outcome coverage, closure time and evidence-quality distributions
+are descriptive review facts, never a strategy score or permission to alter investment rules.
+
 When the user asks to install, repair, reconcile, or verify automation scheduling, call
 `automation_scheduler_manifest_get` first. Reconcile only jobs whose names begin with the returned
 managed prefix, using the Hermes Cron tool and the manifest's exact name, five-field schedule,
@@ -277,8 +299,11 @@ transaction, alter strategy configuration, or replay a user mutation after resta
 - When explaining allocation transition exit, read every item in
   `transition_exit_requirements`. The exit requires all reported conditions; do not invert the
   comparisons or infer them from target deviation.
-- For risk scans, report `evaluation_summary` literally. `NO_SELL_RULE_HIT` means no evaluated
-  rule triggered; it does not prove that no rule was configured.
+- For risk scans, report `evaluation_summary` literally. `NO_SELL_RULE_HIT` is returned only when
+  at least one rule was genuinely evaluated and none triggered. `RISK_SCAN_PARTIAL` means some
+  candidate rules were unconfigured or lacked required data; never collapse it into "no risk".
+- Automation `job_run.status=DEGRADED` may reflect `result_quality=WARNING` even when
+  `output.execution_status=SUCCESS`. Report execution and evidence quality as separate facts.
 
 Read [safety-policy.md](references/safety-policy.md) before any mutation, sell, rebalance, or transition request.
 

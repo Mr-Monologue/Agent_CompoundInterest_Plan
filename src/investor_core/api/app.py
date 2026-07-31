@@ -29,7 +29,9 @@ from investor_core.api.schemas import (
     OfficialNavBackfillRequest,
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
+    ResearchWatchlistTransitionDraftRequest,
     ReviewActionDecisionDraftRequest,
+    ReviewActionOutcomeDraftRequest,
     ReviewTrendSnapshotRequest,
     RiskScanRequest,
     SellDecisionDraftCreateRequest,
@@ -415,6 +417,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
         )
 
+    @app.get("/v1/market-research-evidence-changes")
+    def market_research_evidence_change_list(
+        instrument_code: str | None = None,
+        change_type: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_evidence_changes(
+                    instrument_code=instrument_code,
+                    change_type=change_type,
+                    limit=limit,
+                )
+            }
+        )
+
     @app.post("/v1/market-discovery-runs")
     def market_discovery_run(request: MarketDiscoveryScanRequest) -> dict[str, Any]:
         result = research.scan(**request.model_dump())
@@ -478,6 +496,82 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 confirmation_token=request.confirmation_token,
                 confirmed_by=request.confirmed_by,
             )
+        )
+
+    @app.post("/v1/research-watchlist-transition-drafts")
+    def research_watchlist_transition_draft_create(
+        request: ResearchWatchlistTransitionDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.create_watchlist_transition_draft(**request.model_dump())
+        )
+
+    @app.post("/v1/research-watchlist-transition-drafts/{draft_id}/commit")
+    def research_watchlist_transition_draft_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.commit_watchlist_transition(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.get("/v1/research-watchlist")
+    def research_watchlist_list(
+        portfolio_id: str,
+        state: str | None = None,
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_watchlist(
+                    portfolio_id=portfolio_id,
+                    state=state,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.post("/v1/review-action-items/{action_item_id}/outcome-drafts")
+    def review_action_outcome_draft_create(
+        action_item_id: str,
+        request: ReviewActionOutcomeDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.create_action_outcome_draft(
+                action_item_id=action_item_id,
+                **request.model_dump(),
+            )
+        )
+
+    @app.post("/v1/review-action-outcome-drafts/{draft_id}/commit")
+    def review_action_outcome_draft_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.commit_action_outcome(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.get("/v1/review-action-outcomes")
+    def review_action_outcome_list(
+        portfolio_id: str,
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_action_outcomes(
+                    portfolio_id=portfolio_id,
+                    limit=limit,
+                )
+            }
         )
 
     @app.post("/v1/cash-event-drafts")
@@ -1069,14 +1163,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 str(request.liquidity_amount) if request.liquidity_amount is not None else None
             ),
             liquidity_destination=request.liquidity_destination,
+            include_rule_hits=request.include_rule_hits,
         )
         return success(
             result,
             warnings=(
-                ["Risk scan was data-blocked"] if result["data_quality"] == "SOURCE_ERROR" else []
+                ["Risk scan was data-blocked"]
+                if result["data_quality"] == "SOURCE_ERROR"
+                else (
+                    ["Risk scan used single-source or unverified valuation evidence"]
+                    if result["data_quality"] == "WARNING"
+                    else []
+                )
             ),
             data_quality=result["data_quality"],
         )
+
+    @app.get("/v1/rule-hits")
+    def rule_hit_list(
+        portfolio_id: str,
+        instrument_code: str | None = None,
+        rule_code: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_details: bool = False,
+    ) -> dict[str, Any]:
+        if limit < 1 or limit > 200 or offset < 0:
+            raise LedgerError(
+                "INVALID_PAGINATION",
+                "limit must be between 1 and 200 and offset must be non-negative",
+            )
+        result = risk.list_rule_hits(
+            portfolio_id=portfolio_id,
+            instrument_code=instrument_code,
+            rule_code=rule_code,
+            status=status,
+            limit=limit,
+            offset=offset,
+            include_details=include_details,
+        )
+        return success(result)
 
     @app.post("/v1/lifecycle-observations")
     def lifecycle_observation_create(

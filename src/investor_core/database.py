@@ -36,6 +36,10 @@ REQUIRED_TABLES = {
     "market_sync_runs",
     "market_nav_verifications",
     "market_research_evidence",
+    "research_evidence_changes",
+    "research_watchlist_entries",
+    "research_watchlist_transition_drafts",
+    "research_watchlist_transitions",
     "notification_delivery_attempts",
     "notification_outbox",
     "notification_test_requests",
@@ -47,6 +51,8 @@ REQUIRED_TABLES = {
     "review_action_items",
     "review_action_decision_drafts",
     "review_action_decisions",
+    "review_action_outcome_drafts",
+    "review_action_outcomes",
     "review_trend_snapshots",
     "runtime_mode_snapshots",
     "schema_meta",
@@ -61,7 +67,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0019_review_trends_discovery_changes"
+EXPECTED_ALEMBIC_REVISION = "0020_watchlist_research_outcomes"
 
 
 def ensure_database_parent(settings: Settings) -> None:
