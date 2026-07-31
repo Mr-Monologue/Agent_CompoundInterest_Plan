@@ -18,6 +18,7 @@ from investor_core.ledger import JsonDict, LedgerError, utc_now
 
 CALCULATION_VERSION = "performance-v2"
 REVIEW_TREND_VERSION = "review-trend-v1"
+REVIEW_QUALITY_VERSION = "review-quality-v1"
 
 
 def _json(value: object) -> str:
@@ -1242,6 +1243,285 @@ class PerformanceService:
                 (portfolio_id, limit),
             ).fetchall()
             return [self._review_trend_data(row) for row in rows]
+
+    def build_review_quality_snapshot(
+        self,
+        *,
+        portfolio_id: str,
+        as_of_date: date,
+        lookback_reviews: int = 12,
+    ) -> JsonDict:
+        """Describe review-process quality without scoring strategy effectiveness."""
+        trend = self.build_review_trend(
+            portfolio_id=portfolio_id,
+            as_of_date=as_of_date,
+            review_type="ALL",
+            lookback_reviews=lookback_reviews,
+        )
+        quality_summary = dict(trend["quality_summary"])
+        action_summary = dict(trend["action_summary"])
+        outcome_summary = dict(action_summary["outcome_summary"])
+        review_series = list(trend["review_series"])
+        with self._connect() as connection:
+            collection_rows = connection.execute(
+                """
+                SELECT connector_key, source_lineage, execution_status,
+                       item_count, recorded_count, replayed_count, rejected_count,
+                       finished_at
+                FROM research_collection_runs
+                WHERE portfolio_id=? AND finished_at<=?
+                ORDER BY finished_at
+                """,
+                (portfolio_id, f"{as_of_date.isoformat()}T23:59:59Z"),
+            ).fetchall()
+            assignment_rows = connection.execute(
+                """
+                SELECT a.id, a.instance_config_hash, a.status, a.approved_at,
+                       a.retired_at, d.strategy_key, v.version
+                FROM strategy_assignments a
+                JOIN strategy_versions v ON v.id=a.strategy_version_id
+                JOIN strategy_definitions d ON d.id=v.strategy_definition_id
+                WHERE a.portfolio_id=? AND a.approved_at<=?
+                ORDER BY a.approved_at
+                """,
+                (portfolio_id, f"{as_of_date.isoformat()}T23:59:59Z"),
+            ).fetchall()
+
+            assignment_contexts: list[JsonDict] = []
+            for assignment in assignment_rows:
+                approved_date = datetime.fromisoformat(
+                    str(assignment["approved_at"]).replace("Z", "+00:00")
+                ).date()
+                retired_date = (
+                    None
+                    if assignment["retired_at"] is None
+                    else datetime.fromisoformat(
+                        str(assignment["retired_at"]).replace("Z", "+00:00")
+                    ).date()
+                )
+                associated_reviews = [
+                    item
+                    for item in review_series
+                    if date.fromisoformat(str(item["period_start"])) >= approved_date
+                    and (
+                        retired_date is None
+                        or date.fromisoformat(str(item["period_end"])) <= retired_date
+                    )
+                ]
+                assignment_contexts.append(
+                    {
+                        "strategy_assignment_id": str(assignment["id"]),
+                        "strategy_key": str(assignment["strategy_key"]),
+                        "strategy_version": str(assignment["version"]),
+                        "instance_config_hash": str(assignment["instance_config_hash"]),
+                        "status": str(assignment["status"]),
+                        "approved_at": str(assignment["approved_at"]),
+                        "retired_at": assignment["retired_at"],
+                        "calendar_contained_review_count": len(associated_reviews),
+                        "review_observations": associated_reviews,
+                    }
+                )
+
+        resolved_count = int(outcome_summary["resolved_count"])
+        missing_outcome_count = int(outcome_summary["missing_outcome_count"])
+        if not review_series:
+            status = "DATA_BLOCKED"
+            data_quality = "SOURCE_ERROR"
+            reason_code = "REVIEW_QUALITY_NO_PERIODIC_REVIEWS"
+        elif quality_summary["SOURCE_ERROR"]:
+            status = "DATA_BLOCKED"
+            data_quality = "SOURCE_ERROR"
+            reason_code = "REVIEW_QUALITY_SOURCE_BLOCKED"
+        elif quality_summary["WARNING"] or missing_outcome_count:
+            status = "PARTIAL"
+            data_quality = "WARNING"
+            reason_code = "REVIEW_QUALITY_PARTIAL"
+        else:
+            status = "COMPLETE"
+            data_quality = "PASS"
+            reason_code = "REVIEW_QUALITY_COMPLETE"
+
+        connector_keys = sorted({str(row["connector_key"]) for row in collection_rows})
+        source_lineages = sorted({str(row["source_lineage"]) for row in collection_rows})
+        successful_collection_count = sum(
+            str(row["execution_status"]) == "SUCCESS" for row in collection_rows
+        )
+        rejected_item_count = sum(int(row["rejected_count"]) for row in collection_rows)
+        comparable_assignment_count = sum(
+            int(item["calendar_contained_review_count"]) > 0
+            for item in assignment_contexts
+        )
+        facts: JsonDict = {
+            "portfolio_id": portfolio_id,
+            "as_of_date": as_of_date.isoformat(),
+            "lookback_reviews": lookback_reviews,
+            "status": status,
+            "data_quality": data_quality,
+            "reason_code": reason_code,
+            "review_history": {
+                "review_count": len(review_series),
+                "review_types": sorted(
+                    {str(item["review_type"]) for item in review_series}
+                ),
+                "period_start": (
+                    None if not review_series else review_series[0]["period_start"]
+                ),
+                "period_end": (
+                    None if not review_series else review_series[-1]["period_end"]
+                ),
+                "quality_counts": quality_summary,
+                "continuity_status": (
+                    "MISSING"
+                    if not review_series
+                    else (
+                        "SOURCE_BLOCKED"
+                        if quality_summary["SOURCE_ERROR"]
+                        else (
+                            "LIMITED"
+                            if quality_summary["WARNING"]
+                            else "COMPLETE"
+                        )
+                    )
+                ),
+            },
+            "action_closure": {
+                "total_count": int(action_summary["total_count"]),
+                "status_counts": action_summary["status_counts"],
+                "unresolved_count": int(action_summary["unresolved_count"]),
+                "oldest_unresolved_age_days": action_summary[
+                    "oldest_unresolved_age_days"
+                ],
+                "resolved_count": resolved_count,
+                "recorded_outcome_count": int(
+                    outcome_summary["recorded_outcome_count"]
+                ),
+                "missing_outcome_count": missing_outcome_count,
+                "outcome_coverage_bps": outcome_summary["outcome_coverage_bps"],
+                "outcome_evidence_quality_counts": outcome_summary[
+                    "evidence_quality_counts"
+                ],
+                "closure_quality_status": (
+                    "NOT_APPLICABLE"
+                    if resolved_count == 0
+                    else (
+                        "COMPLETE"
+                        if missing_outcome_count == 0
+                        else (
+                            "PARTIAL"
+                            if int(outcome_summary["recorded_outcome_count"]) > 0
+                            else "MISSING"
+                        )
+                    )
+                ),
+            },
+            "research_traceability": {
+                "collection_run_count": len(collection_rows),
+                "successful_run_count": successful_collection_count,
+                "partial_or_failed_run_count": (
+                    len(collection_rows) - successful_collection_count
+                ),
+                "rejected_item_count": rejected_item_count,
+                "connector_keys": connector_keys,
+                "source_lineages": source_lineages,
+                "latest_finished_at": (
+                    None
+                    if not collection_rows
+                    else str(collection_rows[-1]["finished_at"])
+                ),
+                "traceability_status": (
+                    "NOT_AVAILABLE"
+                    if not collection_rows
+                    else ("PARTIAL" if rejected_item_count else "RECORDED")
+                ),
+            },
+            "strategy_contexts": assignment_contexts,
+            "strategy_parameter_observation": {
+                "assignment_count": len(assignment_contexts),
+                "comparable_assignment_count": comparable_assignment_count,
+                "status": (
+                    "OBSERVATIONAL_ONLY"
+                    if comparable_assignment_count >= 2
+                    else "INSUFFICIENT_HISTORY"
+                ),
+                "boundary": (
+                    "TEMPORAL_ASSOCIATION_ONLY_NOT_CAUSAL_EFFECT_OR_PARAMETER_ADVICE"
+                ),
+            },
+            "calculation_version": REVIEW_QUALITY_VERSION,
+            "quality_boundary": (
+                "REVIEW_PROCESS_FACTS_NOT_STRATEGY_SCORE_INVESTMENT_ADVICE_OR_AUTO_TUNING"
+            ),
+            "strategy_changed": False,
+            "transactions_created": False,
+            "automatic_trade": False,
+        }
+        facts_hash = _hash(facts)
+        with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT * FROM review_quality_snapshots WHERE facts_hash=?",
+                (facts_hash,),
+            ).fetchone()
+            if existing is not None:
+                return self._review_quality_data(existing, idempotent_replay=True)
+            snapshot_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO review_quality_snapshots (
+                    id, portfolio_id, as_of_date, lookback_reviews, status,
+                    data_quality, reason_code, facts_json, facts_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot_id,
+                    portfolio_id,
+                    as_of_date.isoformat(),
+                    lookback_reviews,
+                    status,
+                    data_quality,
+                    reason_code,
+                    _json(facts),
+                    facts_hash,
+                    _iso(self._now()),
+                ),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM review_quality_snapshots WHERE id=?",
+                (snapshot_id,),
+            ).fetchone()
+            assert row is not None
+            return self._review_quality_data(row)
+
+    def list_review_quality_snapshots(
+        self,
+        *,
+        portfolio_id: str,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM review_quality_snapshots
+                WHERE portfolio_id=?
+                ORDER BY as_of_date DESC, created_at DESC LIMIT ?
+                """,
+                (portfolio_id, limit),
+            ).fetchall()
+            return [self._review_quality_data(row) for row in rows]
+
+    @staticmethod
+    def _review_quality_data(
+        row: sqlite3.Row,
+        *,
+        idempotent_replay: bool = False,
+    ) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            **json.loads(str(row["facts_json"])),
+            "facts_hash": str(row["facts_hash"]),
+            "created_at": str(row["created_at"]),
+            "idempotent_replay": idempotent_replay,
+        }
 
     @staticmethod
     def _review_trend_data(

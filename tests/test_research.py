@@ -52,7 +52,8 @@ def _client(tmp_path: Path) -> tuple[TestClient, Settings, str]:
 def test_sourced_research_and_discovery_are_immutable_facts(tmp_path: Path) -> None:
     client, _settings, portfolio_id = _client(tmp_path)
     source_contract = client.get("/v1/research-source-contract").json()["data"]
-    assert source_contract["contract_version"] == "research-source-v1"
+    assert source_contract["contract_version"] == "research-source-v2"
+    assert source_contract["collection_run_tool"] == "research_collection_run_record"
     assert source_contract["configured_connectors"] == []
     assert source_contract["automatic_sync"] is False
     assert source_contract["model_may_fill_missing_facts"] is False
@@ -154,6 +155,63 @@ def test_sourced_research_and_discovery_are_immutable_facts(tmp_path: Path) -> N
     assert changes[0]["change_type"] == "CHANGED"
     assert changes[0]["metric_deltas"]["research_evidence_count"] == 2
     assert changes[0]["change_boundary"] == "FACTUAL_CHANGE_NOT_A_RECOMMENDATION"
+
+
+def test_external_research_collection_run_records_exact_item_outcomes(
+    tmp_path: Path,
+) -> None:
+    client, _settings, portfolio_id = _client(tmp_path)
+    payload = {
+        "portfolio_id": portfolio_id,
+        "connector_key": "official-facts-adapter",
+        "adapter_version": "1.0.0",
+        "source_name": "基金管理人",
+        "source_lineage": "FUND_MANAGER_OFFICIAL",
+        "started_at": "2026-05-12T01:00:00Z",
+        "finished_at": "2026-05-12T01:00:05Z",
+        "items": [
+            {
+                "instrument_code": "FUND001",
+                "evidence_date": "2026-05-12",
+                "evidence_type": "FUND_PROFILE",
+                "source_ref": "https://official.example/fund001/profile",
+                "facts": {"fund_type": "混合型"},
+            },
+            {
+                "instrument_code": "UNKNOWN",
+                "evidence_date": "2026-05-12",
+                "evidence_type": "FEES",
+                "source_ref": "https://official.example/unknown/fees",
+                "facts": {"management_fee_bps": 50},
+            },
+        ],
+    }
+
+    first = client.post("/v1/research-collection-runs", json=payload)
+    replay = client.post("/v1/research-collection-runs", json=payload)
+
+    assert first.status_code == 200
+    result = first.json()["data"]
+    assert result["execution_status"] == "PARTIAL"
+    assert result["recorded_count"] == 1
+    assert result["replayed_count"] == 0
+    assert result["rejected_count"] == 1
+    assert [item["ingestion_status"] for item in result["items"]] == [
+        "RECORDED",
+        "REJECTED",
+    ]
+    assert result["items"][1]["error_code"] == "INSTRUMENT_NOT_FOUND"
+    assert result["strategy_changed"] is False
+    assert result["transactions_created"] is False
+    assert replay.json()["data"]["id"] == result["id"]
+    assert replay.json()["data"]["idempotent_replay"] is True
+
+    listed = client.get(
+        "/v1/research-collection-runs",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]["items"]
+    assert len(listed) == 1
+    assert listed[0]["connector_key"] == "OFFICIAL-FACTS-ADAPTER"
 
 
 def test_discovery_requires_explicit_registered_universe(tmp_path: Path) -> None:

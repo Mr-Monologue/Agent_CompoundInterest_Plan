@@ -135,6 +135,10 @@ def test_market_discovery_and_review_actions_preserve_governance_boundaries() ->
     assert "Record a review-action outcome only after" in skill
     assert "An `ADOPTED` watchlist state is not strategy membership" in safety
     assert "`COMPLETED` review outcome is not proof that a strategy works" in safety
+    assert "Use `research_collection_run_record` only after" in skill
+    assert "temporal association across strategy instances is never causal evidence" in skill
+    assert "External research collection runs are source-attributed ingestion receipts" in safety
+    assert "Review-quality snapshots and `REVIEW_QUALITY_SNAPSHOT` automation" in safety
 
 
 def test_cron_examples_are_disabled() -> None:

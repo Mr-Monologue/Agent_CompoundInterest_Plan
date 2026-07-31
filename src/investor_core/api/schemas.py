@@ -230,6 +230,7 @@ class AutomationPolicyDraftCreateRequest(RequestModel):
         "ANNUAL_REVIEW",
         "WEEKLY_MARKET_DISCOVERY",
         "WATCHLIST_REVIEW_DUE",
+        "REVIEW_QUALITY_SNAPSHOT",
     ]
     enabled: bool
     schedule: str = Field(min_length=1, max_length=120)
@@ -252,6 +253,7 @@ class AutomationJobRunRequest(RequestModel):
         "ANNUAL_REVIEW",
         "WEEKLY_MARKET_DISCOVERY",
         "WATCHLIST_REVIEW_DUE",
+        "REVIEW_QUALITY_SNAPSHOT",
     ]
     scheduled_for: str | None = Field(default=None, min_length=1, max_length=80)
     actor_ref: str = Field(default="operations-runner", min_length=1, max_length=120)
@@ -345,6 +347,42 @@ class MarketResearchEvidenceRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
+class ResearchCollectionItemRequest(RequestModel):
+    instrument_code: str = Field(min_length=1, max_length=40)
+    evidence_date: date
+    evidence_type: Literal[
+        "FUND_PROFILE",
+        "HOLDINGS",
+        "MANAGER",
+        "FEES",
+        "BENCHMARK",
+        "MARKET_REGIME",
+        "OTHER",
+    ]
+    source_ref: str = Field(min_length=1, max_length=1000)
+    facts: dict[str, Any] = Field(min_length=1)
+
+
+class ResearchCollectionRunRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    connector_key: str = Field(min_length=1, max_length=120)
+    adapter_version: str = Field(min_length=1, max_length=120)
+    source_name: str = Field(min_length=1, max_length=200)
+    source_lineage: str = Field(min_length=1, max_length=120)
+    started_at: datetime
+    finished_at: datetime
+    items: list[ResearchCollectionItemRequest] = Field(min_length=1, max_length=100)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_collection_times(self) -> Self:
+        if self.started_at.utcoffset() is None or self.finished_at.utcoffset() is None:
+            raise ValueError("research collection timestamps must include a timezone")
+        if self.finished_at < self.started_at:
+            raise ValueError("finished_at must not be earlier than started_at")
+        return self
+
+
 class MarketDiscoveryScanRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     instrument_codes: list[str] = Field(min_length=1, max_length=200)
@@ -356,6 +394,12 @@ class ReviewTrendSnapshotRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     as_of_date: date
     review_type: Literal["ALL", "MONTHLY", "QUARTERLY", "ANNUAL"] = "ALL"
+    lookback_reviews: int = Field(default=12, ge=1, le=120)
+
+
+class ReviewQualitySnapshotRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    as_of_date: date
     lookback_reviews: int = Field(default=12, ge=1, le=120)
 
 
