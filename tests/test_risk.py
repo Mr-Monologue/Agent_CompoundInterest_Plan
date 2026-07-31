@@ -152,6 +152,114 @@ def test_sell_rule_creates_proposal_but_approval_never_changes_holding(
     assert ledger.list_holdings(portfolio_id=portfolio_id, account_id=account_id) == before
 
 
+def test_scan_distinguishes_unconfigured_rules_and_defaults_to_compact_output(
+    tmp_path: Path,
+) -> None:
+    _ledger, risk, portfolio_id, account_id = configured_risk_services(
+        tmp_path / "investor.db"
+    )
+    strategy = StrategyService(
+        Settings(environment=Environment.TEST, db_path=tmp_path / "investor.db")
+    )
+    strategy.configure_instrument(
+        portfolio_id=portfolio_id,
+        instrument_code="FUND001",
+        role="SATELLITE",
+        contribution_eligible=False,
+        target_weight_bps=None,
+        priority=100,
+        minimum_amount_minor=1,
+        maximum_amount_minor=None,
+        benchmark_code="INDEX001",
+        proxy_suitability="WEAK",
+        thesis_status="ACTIVE",
+        hard_stop_return_bps=None,
+        maximum_position_weight_bps=None,
+        lifecycle_rules={},
+        redemption_policy={},
+        exposure_profile={},
+        fund_destination=None,
+        approved_by="test-user",
+        reason="remove optional rules to verify honest scan semantics",
+    )
+
+    compact = risk.scan(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        as_of_date="2026-07-21",
+    )
+
+    assert compact["state"] == "PARTIAL"
+    assert compact["reason_code"] == "RISK_SCAN_PARTIAL"
+    assert compact["rule_contract_version"] == "risk-rules-v2"
+    assert compact["evaluation_summary"] == {
+        "candidate_rule_count": 10,
+        "configured_rule_count": 2,
+        "evaluable_rule_count": 2,
+        "evaluated_rule_count": 2,
+        "not_configured_count": 7,
+        "data_unavailable_count": 0,
+        "not_applicable_count": 1,
+        "exempt_count": 0,
+        "triggered_rule_count": 0,
+        "sell_proposal_count": 0,
+    }
+    assert compact["rule_hits_included"] is False
+    assert compact["rule_hits"] == []
+    assert compact["instrument_summaries"][0]["assessment"] == "PARTIAL"
+
+    detailed = risk.scan(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        as_of_date="2026-07-21",
+        include_rule_hits=True,
+    )
+    assert len(detailed["rule_hits"]) == 10
+    assert {item["status"] for item in detailed["rule_hits"]} == {
+        "EVALUATED_NOT_HIT",
+        "NOT_CONFIGURED",
+        "NOT_APPLICABLE",
+    }
+    page = risk.list_rule_hits(
+        portfolio_id=portfolio_id,
+        status="NOT_CONFIGURED",
+        limit=3,
+        offset=0,
+    )
+    assert page["page"]["total_count"] == 7
+    assert page["page"]["returned_count"] == 3
+    assert page["page"]["has_more"] is True
+    assert all(item["status"] == "NOT_CONFIGURED" for item in page["items"])
+    assert all("inputs" not in item for item in page["items"])
+
+
+def test_portfolio_brief_reports_strategy_rule_configuration(
+    tmp_path: Path,
+) -> None:
+    _ledger, _risk, portfolio_id, account_id = configured_risk_services(
+        tmp_path / "investor.db"
+    )
+    market = MarketDataService(
+        Settings(environment=Environment.TEST, db_path=tmp_path / "investor.db")
+    )
+
+    brief = market.portfolio_brief(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        as_of_date_value="2026-07-21",
+    )
+
+    assessment = brief["valuation"]["positions"][0]["policy_assessment"]
+    assert assessment["risk"] == "PARTIAL"
+    assert assessment["sell_rule"] == "PARTIALLY_CONFIGURED"
+    assert assessment["configured_rule_count"] == 3
+    assert assessment["configured_rule_codes"] == [
+        "THESIS_REVIEW_REQUIRED",
+        "SELL_02_THESIS_INVALID",
+        "SELL_01_HARD_STOP",
+    ]
+
+
 def test_verified_lifecycle_evidence_and_linked_sell_complete_the_lifecycle(
     tmp_path: Path,
 ) -> None:

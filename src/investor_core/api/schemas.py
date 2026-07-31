@@ -203,6 +203,7 @@ class RiskScanRequest(RequestModel):
     as_of_date: date | None = None
     liquidity_amount: Decimal | None = Field(default=None, gt=0)
     liquidity_destination: str | None = Field(default=None, min_length=1, max_length=200)
+    include_rule_hits: bool = False
 
 
 class SellDecisionDraftCreateRequest(RequestModel):
@@ -359,6 +360,30 @@ class ReviewTrendSnapshotRequest(RequestModel):
 class ReviewActionDecisionDraftRequest(RequestModel):
     decision: Literal["ACKNOWLEDGE", "RESOLVE"]
     reason: str = Field(min_length=1, max_length=1000)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ResearchWatchlistTransitionDraftRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    instrument_code: str = Field(min_length=1, max_length=40)
+    new_state: Literal[
+        "CANDIDATE",
+        "OBSERVING",
+        "REVIEW_DUE",
+        "ADOPTED",
+        "REJECTED",
+        "ARCHIVED",
+    ]
+    reason: str = Field(min_length=1, max_length=1000)
+    review_due_date: date | None = None
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ReviewActionOutcomeDraftRequest(RequestModel):
+    outcome: Literal["COMPLETED", "PARTIAL", "NOT_COMPLETED", "NOT_APPLICABLE"]
+    evidence_quality: Literal["VERIFIED", "USER_REPORTED", "UNVERIFIED"]
+    evidence_ref: str | None = Field(default=None, max_length=1000)
+    note: str = Field(min_length=1, max_length=2000)
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
