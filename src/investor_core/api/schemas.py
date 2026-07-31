@@ -229,6 +229,7 @@ class AutomationPolicyDraftCreateRequest(RequestModel):
         "QUARTERLY_REVIEW",
         "ANNUAL_REVIEW",
         "WEEKLY_MARKET_DISCOVERY",
+        "WATCHLIST_REVIEW_DUE",
     ]
     enabled: bool
     schedule: str = Field(min_length=1, max_length=120)
@@ -250,6 +251,7 @@ class AutomationJobRunRequest(RequestModel):
         "QUARTERLY_REVIEW",
         "ANNUAL_REVIEW",
         "WEEKLY_MARKET_DISCOVERY",
+        "WATCHLIST_REVIEW_DUE",
     ]
     scheduled_for: str | None = Field(default=None, min_length=1, max_length=80)
     actor_ref: str = Field(default="operations-runner", min_length=1, max_length=120)
@@ -377,6 +379,11 @@ class ResearchWatchlistTransitionDraftRequest(RequestModel):
     reason: str = Field(min_length=1, max_length=1000)
     review_due_date: date | None = None
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ResearchWatchlistReviewSnapshotRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    as_of_date: date
 
 
 class ReviewActionOutcomeDraftRequest(RequestModel):
