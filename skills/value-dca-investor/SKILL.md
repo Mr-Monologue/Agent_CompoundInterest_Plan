@@ -216,6 +216,10 @@ Read `research_source_contract_get` before using an external research connector.
 upstream publisher as `source_lineage` even when a browser, plugin or API proxy fetched the
 content. The public contract does not authorize autonomous crawling, default candidates, ranking,
 verification claims or strategy changes.
+Use `research_collection_run_record` only after the connector has returned an exact bounded batch.
+Preserve its connector key, adapter version, source identity, timestamps, item URLs and facts.
+Report every `RECORDED`, `REPLAYED` and `REJECTED` outcome literally. A successful ingestion run
+proves contract-compliant persistence, not independent verification or investment relevance.
 
 Use `review_action_decision_draft_create` only when the user explicitly chooses to acknowledge or
 resolve one exact review action and supplies a reason. Show the returned previous and proposed
@@ -230,6 +234,10 @@ coverage change or metric delta is a fact, not a buy, sell, rotation or ranking 
 Report recurring action codes, unresolved backlog age, quality continuity, governance coverage and
 performance fields as Core returns them. Never invent a review score, causal explanation or
 strategy conclusion that Core did not return.
+Use `review_quality_snapshot_build` to report review-history continuity, action-outcome coverage,
+research-run traceability and strategy-instance context. Preserve `INSUFFICIENT_HISTORY` and
+`OBSERVATIONAL_ONLY`; temporal association across strategy instances is never causal evidence,
+parameter advice or permission to auto-tune the strategy.
 
 Use `market_research_evidence_change_list` only to report persisted field-path changes between
 comparable sourced evidence records. A changed manager, fee, holding, benchmark or market-regime

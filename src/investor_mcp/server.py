@@ -172,6 +172,7 @@ async def automation_policy_draft_create(
         "ANNUAL_REVIEW",
         "WEEKLY_MARKET_DISCOVERY",
         "WATCHLIST_REVIEW_DUE",
+        "REVIEW_QUALITY_SNAPSHOT",
     ],
     enabled: bool,
     schedule: str,
@@ -446,6 +447,47 @@ async def review_trend_snapshot_list(
 
 
 @mcp.tool()
+async def review_quality_snapshot_build(
+    as_of_date: str,
+    lookback_reviews: int = 12,
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Build immutable review-process quality facts, never a strategy score."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/review-quality-snapshots",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "as_of_date": as_of_date,
+            "lookback_reviews": lookback_reviews,
+        },
+    )
+
+
+@mcp.tool()
+async def review_quality_snapshot_list(
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List immutable review continuity, closure and traceability facts."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/review-quality-snapshots",
+        params={"portfolio_id": resolved_portfolio, "limit": limit},
+    )
+
+
+@mcp.tool()
 async def market_research_evidence_record(
     instrument_code: str,
     evidence_date: str,
@@ -484,6 +526,63 @@ async def market_research_evidence_record(
 async def research_source_contract_get() -> dict[str, Any]:
     """Read the generic external-research adapter contract and safety boundary."""
     return await core_request("GET", "/v1/research-source-contract")
+
+
+@mcp.tool()
+async def research_collection_run_record(
+    connector_key: str,
+    adapter_version: str,
+    source_name: str,
+    source_lineage: str,
+    started_at: str,
+    finished_at: str,
+    items: list[dict[str, Any]],
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Record one audited external-research batch with exact per-item outcomes."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/research-collection-runs",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "connector_key": connector_key,
+            "adapter_version": adapter_version,
+            "source_name": source_name,
+            "source_lineage": source_lineage,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "items": items,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def research_collection_run_list(
+    connector_key: str = "",
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List audited connector batches without inferring recommendations."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-collection-runs",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "connector_key": connector_key or None,
+            "limit": limit,
+        },
+    )
 
 
 @mcp.tool()

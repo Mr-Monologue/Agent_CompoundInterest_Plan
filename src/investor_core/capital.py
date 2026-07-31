@@ -673,7 +673,9 @@ class CapitalService:
                 "watchlist_review_cycle": level in {"L0", "L1", "L2"},
                 "research_content_change": level in {"L0", "L1", "L2"},
                 "research_source_contract": level in {"L0", "L1", "L2"},
+                "research_collection_runs": level in {"L0", "L1", "L2"},
                 "review_action_outcome": level in {"L0", "L1", "L2"},
+                "review_quality_snapshot": level in {"L0", "L1", "L2"},
                 "model_may_fill_missing_facts": False,
                 "automatic_trade": False,
             }
