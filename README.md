@@ -362,6 +362,17 @@ Core 保存连接器标识、适配器版本、来源谱系、起止时间、清
 `display_text`，不追加模型总结、建议或追问。该工作台不写审计、运行快照或财务状态，数据库
 修订继续保持 `0024_research_collection_orchestration`。
 
+0.28.1 修复 V1 就绪度中的两个事实缺口。`investor db backup --output <PATH>` 在 SQLite
+一致性备份通过 `quick_check` 后，会计算文件大小与 SHA-256，并把数据库修订和验证时间写入
+`backups` 证据表；备份文件创建失败或验证失败时不会产生 PASS 记录。该记录属于运维证据，
+不会改变持仓、现金、计划或交易账本。
+
+策略就绪度不再只检查全局是否存在任意一只定投准入标的，而是读取当前分配政策中目标比例
+大于零的 CORE、SATELLITE 舱位，并逐舱核对活动、论点有效的准入标的。任一目标舱位没有
+可执行标的时返回 `CONTRIBUTION_ROLE_ALLOWLIST_INCOMPLETE`；这不会把候选基金自动设为准入，
+也不会用估值或模型意见绕过显式配置。数据库修订仍为
+`0024_research_collection_orchestration`。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
