@@ -99,6 +99,21 @@ def test_readiness_reports_strategy_and_v1_operations_literally(tmp_path: Path) 
         approved_by="test-user",
         reason="显式批准测试标的",
     )
+    ledger.create_instrument(code="FUND002", name="测试卫星基金")
+    strategy.configure_instrument(
+        portfolio_id=portfolio_id,
+        instrument_code="FUND002",
+        role="SATELLITE",
+        contribution_eligible=True,
+        target_weight_bps=10000,
+        priority=1,
+        minimum_amount_minor=100,
+        maximum_amount_minor=None,
+        benchmark_code=None,
+        thesis_status="ACTIVE",
+        approved_by="test-user",
+        reason="显式批准卫星测试标的",
+    )
 
     result = WorkspaceService(settings, now=fixed_now).get(
         portfolio_id=portfolio_id,
@@ -110,7 +125,12 @@ def test_readiness_reports_strategy_and_v1_operations_literally(tmp_path: Path) 
 
     assert checks["INVESTMENT_CONTEXT"]["status"] == "PASS"
     assert checks["STRATEGY_INSTANCE"]["status"] == "PASS"
-    assert checks["STRATEGY_INSTANCE"]["facts"]["eligible_instrument_count"] == 1
+    assert checks["STRATEGY_INSTANCE"]["facts"]["eligible_instrument_count"] == 2
+    assert checks["STRATEGY_INSTANCE"]["facts"]["eligible_by_role"] == {
+        "CORE": 1,
+        "SATELLITE": 1,
+    }
+    assert checks["STRATEGY_INSTANCE"]["facts"]["missing_roles"] == []
     assert checks["AUTOMATION_SCHEDULER"]["status"] == "NOT_CONFIGURED"
     assert checks["NOTIFICATION_DELIVERY"]["status"] == "NOT_TESTED"
     assert checks["VERIFIED_BACKUP"]["status"] == "NOT_TESTED"
@@ -118,6 +138,74 @@ def test_readiness_reports_strategy_and_v1_operations_literally(tmp_path: Path) 
     assert checks["RESEARCH_CONNECTOR"]["required_for_v1"] is False
     assert result["display_text"].startswith("Value DCA V1 就绪度")
     assert "只评价产品运行条件" in result["display_text"]
+
+
+def test_readiness_requires_allowlist_coverage_for_each_target_role(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    settings, portfolio_id, account_id = create_context(database_path)
+    ledger = LedgerService(settings, now=fixed_now)
+    ledger.create_instrument(code="CORE001", name="核心基金")
+    ledger.create_instrument(code="SAT001", name="卫星候选基金")
+    strategy = StrategyService(settings, now=fixed_now)
+    strategy.assign(
+        portfolio_id=portfolio_id,
+        strategy_key="value-dca",
+        strategy_version="1.6",
+        instance_config={},
+        approved_by="test-user",
+        reason="测试按目标舱位检查准入覆盖",
+    )
+    strategy.configure_instrument(
+        portfolio_id=portfolio_id,
+        instrument_code="CORE001",
+        role="CORE",
+        contribution_eligible=True,
+        target_weight_bps=10000,
+        priority=1,
+        minimum_amount_minor=100,
+        maximum_amount_minor=None,
+        benchmark_code=None,
+        thesis_status="ACTIVE",
+        approved_by="test-user",
+        reason="核心舱允许定投",
+    )
+    strategy.configure_instrument(
+        portfolio_id=portfolio_id,
+        instrument_code="SAT001",
+        role="SATELLITE",
+        contribution_eligible=False,
+        target_weight_bps=None,
+        priority=1,
+        minimum_amount_minor=100,
+        maximum_amount_minor=None,
+        benchmark_code=None,
+        thesis_status="ACTIVE",
+        approved_by="test-user",
+        reason="卫星舱等待信号门控",
+    )
+
+    result = WorkspaceService(settings, now=fixed_now).get(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        as_of_date=date(2026, 8, 4),
+        view="READINESS",
+    )
+    check = next(
+        item for item in result["v1_readiness"]["checks"] if item["code"] == "STRATEGY_INSTANCE"
+    )
+
+    assert check["status"] == "NOT_CONFIGURED"
+    assert check["reason_code"] == "CONTRIBUTION_ROLE_ALLOWLIST_INCOMPLETE"
+    assert check["facts"] == {
+        "active": True,
+        "eligible_instrument_count": 1,
+        "eligible_by_role": {"CORE": 1, "SATELLITE": 0},
+        "required_roles": ["CORE", "SATELLITE"],
+        "missing_roles": ["SATELLITE"],
+        "target_pct_by_role": {"CORE": "65.00", "SATELLITE": "35.00"},
+    }
+    assert result["next_actions"][0]["code"] == "CONTRIBUTION_ROLE_ALLOWLIST_INCOMPLETE"
+    assert result["next_actions"][0]["facts"]["missing_roles"] == ["SATELLITE"]
 
 
 def test_workspace_api_preserves_valuation_quality_and_boundaries(tmp_path: Path) -> None:

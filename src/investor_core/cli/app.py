@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sqlite3
 from contextlib import closing
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, NoReturn
 from uuid import uuid4
@@ -123,6 +124,14 @@ def migrate() -> None:
     typer.echo("Database migration complete.")
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 @db_app.command("backup")
 def backup_database(
     output: Annotated[
@@ -130,7 +139,7 @@ def backup_database(
         typer.Option("--output", help="Destination path for a consistent SQLite backup."),
     ],
 ) -> None:
-    """Create and verify a consistent SQLite backup without changing the ledger."""
+    """Create a consistent SQLite backup and record its verification evidence."""
     settings = get_settings()
     source = settings.db_path.resolve()
     destination = output.resolve()
@@ -143,6 +152,7 @@ def backup_database(
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    database_schema_version = ""
     try:
         with (
             closing(sqlite3.connect(source)) as source_connection,
@@ -152,9 +162,46 @@ def backup_database(
             quick_check = backup_connection.execute("PRAGMA quick_check").fetchone()
             if quick_check != ("ok",):
                 raise RuntimeError(f"backup integrity check failed: {quick_check}")
+            schema_row = backup_connection.execute(
+                "SELECT version_num FROM alembic_version"
+            ).fetchone()
+            if schema_row is None:
+                raise RuntimeError("backup schema version is unavailable")
+            database_schema_version = str(schema_row[0])
         os.replace(temporary, destination)
     finally:
         temporary.unlink(missing_ok=True)
+
+    file_size_bytes = destination.stat().st_size
+    sha256 = _file_sha256(destination)
+    evidence_id = str(uuid4())
+    verified_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    try:
+        with closing(sqlite3.connect(source)) as evidence_connection:
+            evidence_connection.execute(
+                """
+                INSERT INTO backups (
+                    id, created_at, database_schema_version, file_name,
+                    file_size_bytes, sha256, encrypted, verification_status,
+                    verified_at, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, 'PASS', ?, ?)
+                """,
+                (
+                    evidence_id,
+                    verified_at,
+                    database_schema_version,
+                    destination.name,
+                    file_size_bytes,
+                    sha256,
+                    verified_at,
+                    "CLI_SQLITE_BACKUP_QUICK_CHECK_OK",
+                ),
+            )
+            evidence_connection.commit()
+    except sqlite3.Error as exc:
+        raise RuntimeError(
+            f"backup created at {destination}, but verification evidence was not recorded"
+        ) from exc
 
     typer.echo(
         json.dumps(
@@ -163,6 +210,11 @@ def backup_database(
                 "source": str(source),
                 "backup": str(destination),
                 "quick_check": "ok",
+                "evidence_id": evidence_id,
+                "database_schema_version": database_schema_version,
+                "file_size_bytes": file_size_bytes,
+                "sha256": sha256,
+                "verification_status": "PASS",
             },
             ensure_ascii=False,
         )
