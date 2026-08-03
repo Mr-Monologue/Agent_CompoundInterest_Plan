@@ -149,6 +149,10 @@ def test_market_discovery_and_review_actions_preserve_governance_boundaries() ->
     assert "Never expose its `claim_token`" in skill
     assert "Research task claims are short-lived connector leases" in safety
     assert "连接器健康不是来源独立性" in templates
+    assert "call `investment_workspace_get` first" in skill
+    assert "workspace is a read-only projection" in safety
+    assert "Hermes investment workspace" in templates
+    assert "not permission to call that tool" in templates
 
 
 def test_cron_examples_are_disabled() -> None:
