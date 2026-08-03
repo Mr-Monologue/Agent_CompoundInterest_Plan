@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.28.0",
+  "version": "0.28.1",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
   "database_revision": "0024_research_collection_orchestration",
   "minimum_current_version": "0.5.3",
-  "notes": "Add one deterministic read-only Hermes investment workspace for daily action facts and V1 operational readiness, preserving exact narration, source quality and every confirmation and no-trade boundary."
+  "notes": "Record verified SQLite CLI backups as operational evidence and require contribution allowlist coverage for every positive-target allocation role, without changing the database schema or financial state."
 }
