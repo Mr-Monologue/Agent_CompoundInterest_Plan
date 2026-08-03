@@ -100,3 +100,9 @@ Core may store an environment-variable name but never a secret value. Enabling a
 authorize autonomous collection. Evidence-coverage tasks remain unexecuted until an external adapter
 returns a bounded batch through the audited collection-run contract. Recorded source lineages do not
 by themselves prove independence, correctness or suitability.
+
+Research collection task leases authorize one bounded connector attempt only. They never authorize
+discovery expansion, ranking, recommendations, strategy changes, plans, proposals or trades. A
+failed attempt records no evidence. A successful receipt proves contract-compliant persistence;
+only a separately rebuilt coverage snapshot can show whether the exact gap closed, and even a
+closed gap is not independent verification or investment advice.

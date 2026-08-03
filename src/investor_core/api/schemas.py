@@ -425,6 +425,41 @@ class ResearchCoverageSnapshotRequest(RequestModel):
     max_age_days: int = Field(default=120, ge=1, le=730)
 
 
+class ResearchCollectionTaskBuildRequest(RequestModel):
+    coverage_snapshot_id: str = Field(min_length=1, max_length=80)
+    max_tasks: int = Field(default=100, ge=1, le=200)
+
+
+class ResearchCollectionTaskClaimRequest(RequestModel):
+    connector_key: str = Field(min_length=1, max_length=120)
+    executor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+    lease_minutes: int = Field(default=15, ge=1, le=60)
+
+
+class ResearchCollectionTaskResultRequest(RequestModel):
+    lease_token: str = Field(min_length=20, max_length=200)
+    adapter_version: str = Field(min_length=1, max_length=120)
+    source_name: str = Field(min_length=1, max_length=200)
+    source_lineage: str = Field(min_length=1, max_length=120)
+    started_at: datetime
+    finished_at: datetime
+    items: list[ResearchCollectionItemRequest] = Field(default_factory=list, max_length=20)
+    failure_code: str | None = Field(default=None, min_length=3, max_length=120)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_task_result(self) -> Self:
+        if self.started_at.utcoffset() is None or self.finished_at.utcoffset() is None:
+            raise ValueError("research collection timestamps must include a timezone")
+        if self.finished_at < self.started_at:
+            raise ValueError("finished_at must not be earlier than started_at")
+        if self.failure_code is None and not self.items:
+            raise ValueError("successful task result requires at least one evidence item")
+        if self.failure_code is not None and self.items:
+            raise ValueError("failed task result must not include evidence items")
+        return self
+
+
 class MarketDiscoveryScanRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     instrument_codes: list[str] = Field(min_length=1, max_length=200)

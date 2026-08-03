@@ -720,6 +720,109 @@ async def research_coverage_snapshot_list(
 
 
 @mcp.tool()
+async def research_collection_task_build(
+    coverage_snapshot_id: str,
+    max_tasks: int = 100,
+) -> dict[str, Any]:
+    """Persist bounded collection tasks from one exact immutable coverage snapshot."""
+    return await core_request(
+        "POST",
+        "/v1/research-collection-tasks/build",
+        payload={"coverage_snapshot_id": coverage_snapshot_id, "max_tasks": max_tasks},
+    )
+
+
+@mcp.tool()
+async def research_collection_task_list(
+    status: str = "",
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List governed research tasks without claiming or executing them."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    params: dict[str, Any] = {"portfolio_id": resolved_portfolio, "limit": limit}
+    if status:
+        params["status"] = status
+    return await core_request("GET", "/v1/research-collection-tasks", params=params)
+
+
+@mcp.tool()
+async def research_collection_task_get(task_id: str) -> dict[str, Any]:
+    """Read one exact collection task, its attempts and coverage lineage."""
+    return await core_request("GET", f"/v1/research-collection-tasks/{task_id}")
+
+
+@mcp.tool()
+async def research_collection_runtime_status_get(
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Read factual task, lease and connector-run health without executing work."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-collection-runtime-status",
+        params={"portfolio_id": resolved_portfolio},
+    )
+
+
+@mcp.tool()
+async def research_collection_task_claim(
+    task_id: str,
+    connector_key: str,
+    executor_ref: str = "hermes",
+    lease_minutes: int = 15,
+) -> dict[str, Any]:
+    """Atomically claim one bounded task for an eligible configured connector."""
+    return await core_request(
+        "POST",
+        f"/v1/research-collection-tasks/{task_id}/claim",
+        payload={
+            "connector_key": connector_key,
+            "executor_ref": executor_ref,
+            "lease_minutes": lease_minutes,
+        },
+    )
+
+
+@mcp.tool()
+async def research_collection_task_result_record(
+    task_id: str,
+    lease_token: str,
+    adapter_version: str,
+    source_name: str,
+    source_lineage: str,
+    started_at: str,
+    finished_at: str,
+    items: list[dict[str, Any]],
+    failure_code: str = "",
+) -> dict[str, Any]:
+    """Record one claimed task result and rebuild its exact coverage scope."""
+    return await core_request(
+        "POST",
+        f"/v1/research-collection-tasks/{task_id}/result",
+        payload={
+            "lease_token": lease_token,
+            "adapter_version": adapter_version,
+            "source_name": source_name,
+            "source_lineage": source_lineage,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "items": items,
+            "failure_code": failure_code or None,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
 async def market_research_evidence_list(
     instrument_code: str = "",
     evidence_type: str = "",

@@ -52,7 +52,7 @@ def _client(tmp_path: Path) -> tuple[TestClient, Settings, str]:
 def test_sourced_research_and_discovery_are_immutable_facts(tmp_path: Path) -> None:
     client, _settings, portfolio_id = _client(tmp_path)
     source_contract = client.get("/v1/research-source-contract").json()["data"]
-    assert source_contract["contract_version"] == "research-source-v3"
+    assert source_contract["contract_version"] == "research-source-v4"
     assert source_contract["collection_run_tool"] == "research_collection_run_record"
     assert source_contract["configured_connectors"] == []
     assert source_contract["automatic_sync"] is False
@@ -275,7 +275,7 @@ def test_source_configuration_and_coverage_tasks_are_confirmation_gated(
         "/v1/research-source-contract",
         params={"portfolio_id": portfolio_id},
     ).json()["data"]
-    assert contract["contract_version"] == "research-source-v3"
+    assert contract["contract_version"] == "research-source-v4"
     assert contract["configured_connectors"][0]["connector_key"] == (
         "OFFICIAL-FACTS-ADAPTER"
     )
@@ -330,6 +330,220 @@ def test_source_configuration_and_coverage_tasks_are_confirmation_gated(
     assert completed["data_quality"] == "PASS"
     assert completed["summary"]["current_count"] == 2
     assert completed["collection_tasks"] == []
+
+
+def test_collection_task_claim_result_and_coverage_closure_are_audited(
+    tmp_path: Path,
+) -> None:
+    client, _settings, portfolio_id = _client(tmp_path)
+    draft = client.post(
+        "/v1/research-source-config-drafts",
+        json={
+            "portfolio_id": portfolio_id,
+            "connector_key": "official-facts-adapter",
+            "display_name": "基金管理人事实适配器",
+            "enabled": True,
+            "evidence_types": ["FEES"],
+            "source_lineages": ["FUND_MANAGER_OFFICIAL"],
+            "credential_ref": "FUND_RESEARCH_API_KEY",
+            "reason": "为研究采集任务启用已审查事实来源",
+        },
+    ).json()["data"]
+    client.post(
+        f"/v1/research-source-config-drafts/{draft['draft']['id']}/commit",
+        json={
+            "confirmation_token": draft["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    )
+    coverage = client.post(
+        "/v1/research-coverage-snapshots",
+        json={
+            "portfolio_id": portfolio_id,
+            "instrument_codes": ["FUND001"],
+            "as_of_date": "2026-05-12",
+            "required_evidence_types": ["FEES"],
+            "max_age_days": 120,
+        },
+    ).json()["data"]
+
+    built = client.post(
+        "/v1/research-collection-tasks/build",
+        json={"coverage_snapshot_id": coverage["id"]},
+    ).json()["data"]
+    replayed = client.post(
+        "/v1/research-collection-tasks/build",
+        json={"coverage_snapshot_id": coverage["id"]},
+    ).json()["data"]
+    assert built["created_count"] == 1
+    assert replayed["created_count"] == 0
+    assert replayed["idempotent_replay"] is True
+    task_id = built["items"][0]["id"]
+
+    claim = client.post(
+        f"/v1/research-collection-tasks/{task_id}/claim",
+        json={
+            "connector_key": "official-facts-adapter",
+            "executor_ref": "test-connector",
+            "lease_minutes": 15,
+        },
+    )
+    assert claim.status_code == 200
+    lease = claim.json()["data"]
+    assert lease["task"]["status"] == "CLAIMED"
+    assert lease["task_package"]["maximum_items"] == 20
+    assert "FUND_RESEARCH_API_KEY" not in str(lease)
+    duplicate_claim = client.post(
+        f"/v1/research-collection-tasks/{task_id}/claim",
+        json={
+            "connector_key": "official-facts-adapter",
+            "executor_ref": "other-connector",
+        },
+    )
+    assert duplicate_claim.status_code == 409
+    assert duplicate_claim.json()["error"]["code"] == (
+        "RESEARCH_COLLECTION_TASK_ALREADY_CLAIMED"
+    )
+
+    base_result = {
+        "lease_token": lease["lease_token"],
+        "adapter_version": "1.0.0",
+        "source_name": "基金管理人",
+        "source_lineage": "FUND_MANAGER_OFFICIAL",
+        "started_at": "2026-05-12T01:00:00Z",
+        "finished_at": "2026-05-12T01:00:05Z",
+    }
+    out_of_scope = client.post(
+        f"/v1/research-collection-tasks/{task_id}/result",
+        json={
+            **base_result,
+            "items": [
+                {
+                    "instrument_code": "FUND001",
+                    "evidence_date": "2026-05-12",
+                    "evidence_type": "HOLDINGS",
+                    "source_ref": "https://official.example/fund001/holdings",
+                    "facts": {"top_holding_count": 10},
+                }
+            ],
+        },
+    )
+    assert out_of_scope.status_code == 409
+    assert out_of_scope.json()["error"]["code"] == (
+        "RESEARCH_COLLECTION_RESULT_OUT_OF_SCOPE"
+    )
+
+    result_payload = {
+        **base_result,
+        "items": [
+            {
+                "instrument_code": "FUND001",
+                "evidence_date": "2026-05-12",
+                "evidence_type": "FEES",
+                "source_ref": "https://official.example/fund001/fees",
+                "facts": {"management_fee_bps": 50},
+            }
+        ],
+    }
+    result = client.post(
+        f"/v1/research-collection-tasks/{task_id}/result",
+        json=result_payload,
+    )
+    assert result.status_code == 200
+    completed = result.json()["data"]
+    assert completed["task"]["status"] == "COMPLETED"
+    assert completed["attempt"]["status"] == "SUCCEEDED"
+    assert completed["collection_run"]["recorded_count"] == 1
+    assert completed["coverage_change"]["gap_closed"] is True
+    assert completed["coverage_change"]["previous_snapshot_id"] == coverage["id"]
+    assert completed["coverage_change"]["followup_snapshot_id"] != coverage["id"]
+    assert completed["automatic_trade"] is False
+
+    result_replay = client.post(
+        f"/v1/research-collection-tasks/{task_id}/result",
+        json=result_payload,
+    ).json()["data"]
+    assert result_replay["idempotent_replay"] is True
+    assert result_replay["collection_run"]["id"] == completed["collection_run"]["id"]
+    listed = client.get(
+        "/v1/research-collection-tasks",
+        params={"portfolio_id": portfolio_id, "status": "COMPLETED"},
+    ).json()["data"]["items"]
+    assert [item["id"] for item in listed] == [task_id]
+    runtime = client.get(
+        "/v1/research-collection-runtime-status",
+        params={"portfolio_id": portfolio_id},
+    ).json()["data"]
+    assert runtime["task_counts"]["COMPLETED"] == 1
+    assert runtime["active_lease_count"] == 0
+    assert runtime["connectors"][0]["success_count"] == 1
+    assert runtime["automatic_trade"] is False
+
+
+def test_collection_task_failure_is_retryable_without_fake_evidence(
+    tmp_path: Path,
+) -> None:
+    client, _settings, portfolio_id = _client(tmp_path)
+    draft = client.post(
+        "/v1/research-source-config-drafts",
+        json={
+            "portfolio_id": portfolio_id,
+            "connector_key": "official-facts-adapter",
+            "display_name": "基金管理人事实适配器",
+            "enabled": True,
+            "evidence_types": ["FEES"],
+            "source_lineages": ["FUND_MANAGER_OFFICIAL"],
+            "reason": "测试采集失败回执",
+        },
+    ).json()["data"]
+    client.post(
+        f"/v1/research-source-config-drafts/{draft['draft']['id']}/commit",
+        json={
+            "confirmation_token": draft["confirmation_token"],
+            "confirmed_by": "test-user",
+        },
+    )
+    coverage = client.post(
+        "/v1/research-coverage-snapshots",
+        json={
+            "portfolio_id": portfolio_id,
+            "instrument_codes": ["FUND001"],
+            "as_of_date": "2026-05-12",
+            "required_evidence_types": ["FEES"],
+        },
+    ).json()["data"]
+    task = client.post(
+        "/v1/research-collection-tasks/build",
+        json={"coverage_snapshot_id": coverage["id"]},
+    ).json()["data"]["items"][0]
+    claim = client.post(
+        f"/v1/research-collection-tasks/{task['id']}/claim",
+        json={"connector_key": "official-facts-adapter"},
+    ).json()["data"]
+    failed = client.post(
+        f"/v1/research-collection-tasks/{task['id']}/result",
+        json={
+            "lease_token": claim["lease_token"],
+            "adapter_version": "1.0.0",
+            "source_name": "基金管理人",
+            "source_lineage": "FUND_MANAGER_OFFICIAL",
+            "started_at": "2026-05-12T01:00:00Z",
+            "finished_at": "2026-05-12T01:00:05Z",
+            "items": [],
+            "failure_code": "SOURCE_UNAVAILABLE",
+        },
+    )
+    assert failed.status_code == 200
+    data = failed.json()["data"]
+    assert data["task"]["status"] == "PENDING"
+    assert data["attempt"]["status"] == "FAILED"
+    assert data["collection_run"] is None
+    assert data["coverage_change"] is None
+    assert data["evidence_recorded"] is False
+    assert client.get(
+        "/v1/market-research-evidence",
+        params={"instrument_code": "FUND001", "evidence_type": "FEES"},
+    ).json()["data"]["items"] == []
 
 
 def test_review_action_requires_confirmed_decision(tmp_path: Path) -> None:

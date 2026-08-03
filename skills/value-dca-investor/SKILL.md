@@ -235,6 +235,14 @@ adapter, not proof that collection ran. Multiple recorded lineages are not autom
 verification. Never turn a coverage gap into a fund ranking, recommendation, watchlist transition,
 strategy change or trade.
 
+Use `research_collection_task_build` only for one exact saved coverage snapshot. A built task is
+still unexecuted. Claim only with a connector listed by the task and report the lease expiry
+literally. Submit only facts inside the task's instrument and evidence-type boundary. A failed
+connector attempt must use `failure_code` with no evidence items; never invent placeholder facts.
+After a result, report the collection run and previous/follow-up coverage snapshot IDs separately.
+`COMPLETED` means the exact gap became current, not that the source is independent or the instrument
+is suitable. `research_collection_runtime_status_get` is operational health only.
+
 Use `review_action_decision_draft_create` only when the user explicitly chooses to acknowledge or
 resolve one exact review action and supplies a reason. Show the returned previous and proposed
 status and expiry. Call `review_action_decision_draft_commit` only after confirmation with the

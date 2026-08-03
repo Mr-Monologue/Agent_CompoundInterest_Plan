@@ -30,6 +30,9 @@ from investor_core.api.schemas import (
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     ResearchCollectionRunRequest,
+    ResearchCollectionTaskBuildRequest,
+    ResearchCollectionTaskClaimRequest,
+    ResearchCollectionTaskResultRequest,
     ResearchCoverageSnapshotRequest,
     ResearchSourceConfigDraftRequest,
     ResearchWatchlistReviewSnapshotRequest,
@@ -561,6 +564,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     limit=limit,
                 )
             }
+        )
+
+    @app.post("/v1/research-collection-tasks/build")
+    def research_collection_task_build(
+        request: ResearchCollectionTaskBuildRequest,
+    ) -> dict[str, Any]:
+        return success(research.build_collection_tasks(**request.model_dump()))
+
+    @app.get("/v1/research-collection-tasks")
+    def research_collection_task_list(
+        portfolio_id: str,
+        status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_collection_tasks(
+                    portfolio_id=portfolio_id,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/research-collection-tasks/{task_id}")
+    def research_collection_task_get(task_id: str) -> dict[str, Any]:
+        return success(research.get_collection_task(task_id=task_id))
+
+    @app.get("/v1/research-collection-runtime-status")
+    def research_collection_runtime_status_get(portfolio_id: str) -> dict[str, Any]:
+        return success(research.collection_runtime_status(portfolio_id=portfolio_id))
+
+    @app.post("/v1/research-collection-tasks/{task_id}/claim")
+    def research_collection_task_claim(
+        task_id: str,
+        request: ResearchCollectionTaskClaimRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.claim_collection_task(task_id=task_id, **request.model_dump())
+        )
+
+    @app.post("/v1/research-collection-tasks/{task_id}/result")
+    def research_collection_task_result_record(
+        task_id: str,
+        request: ResearchCollectionTaskResultRequest,
+    ) -> dict[str, Any]:
+        payload = request.model_dump(exclude={"items"})
+        payload["items"] = [item.model_dump(mode="json") for item in request.items]
+        result = research.complete_collection_task(task_id=task_id, **payload)
+        task_status = str(result["task"]["status"])
+        quality = {
+            "COMPLETED": "PASS",
+            "PENDING": "WARNING",
+            "PARTIAL": "WARNING",
+            "FAILED": "SOURCE_ERROR",
+        }.get(task_status, "WARNING")
+        return success(
+            result,
+            warnings=[] if quality == "PASS" else ["Research collection gap remains open"],
+            data_quality=quality,
         )
 
     @app.get("/v1/market-research-evidence-changes")
