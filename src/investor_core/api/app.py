@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -68,6 +69,7 @@ from investor_core.research import ResearchService
 from investor_core.risk import RiskService
 from investor_core.strategy import StrategyService
 from investor_core.version import __version__
+from investor_core.workspace import WorkspaceService
 
 
 def success(
@@ -96,6 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     performance = PerformanceService(runtime_settings)
     capital = CapitalService(runtime_settings)
     research = ResearchService(runtime_settings)
+    workspace = WorkspaceService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -1196,6 +1199,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result,
             warnings=result["valuation"]["warnings"],
             data_quality=result["valuation"]["data_quality"],
+        )
+
+    @app.get("/v1/investment-workspace")
+    def investment_workspace_get(
+        portfolio_id: str,
+        account_id: str,
+        view: str = "DAILY",
+        as_of_date: date | None = None,
+    ) -> dict[str, Any]:
+        business_date = as_of_date or datetime.now(
+            ZoneInfo(runtime_settings.timezone)
+        ).date()
+        result = workspace.get(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            as_of_date=business_date,
+            view=view,
+        )
+        quality = str(result["valuation_summary"]["data_quality"])
+        return success(
+            result,
+            warnings=list(result["valuation_summary"]["warnings"]),
+            data_quality=quality,
         )
 
     @app.get("/v1/weekly-plan-preview")
