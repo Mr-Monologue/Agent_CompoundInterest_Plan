@@ -425,6 +425,35 @@ class ResearchCoverageSnapshotRequest(RequestModel):
     max_age_days: int = Field(default=120, ge=1, le=730)
 
 
+class ResearchCollectionTaskClaimRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    connector_key: str = Field(min_length=1, max_length=120)
+    adapter_version: str = Field(min_length=1, max_length=120)
+    max_tasks: int = Field(default=20, ge=1, le=100)
+    lease_seconds: int = Field(default=300, ge=30, le=3600)
+
+
+class ResearchCollectionTaskCompleteRequest(RequestModel):
+    claim_token: str = Field(min_length=20, max_length=200)
+    collection_run_id: str = Field(min_length=1, max_length=80)
+
+
+class ResearchConnectorHealthRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    connector_key: str = Field(min_length=1, max_length=120)
+    adapter_version: str = Field(min_length=1, max_length=120)
+    observed_at: datetime
+    state: Literal["HEALTHY", "DEGRADED", "UNAVAILABLE"]
+    reason_code: str = Field(min_length=1, max_length=120)
+    latency_ms: int | None = Field(default=None, ge=0, le=3_600_000)
+
+    @model_validator(mode="after")
+    def validate_connector_health_time(self) -> Self:
+        if self.observed_at.utcoffset() is None:
+            raise ValueError("connector health observed_at must include a timezone")
+        return self
+
+
 class MarketDiscoveryScanRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     instrument_codes: list[str] = Field(min_length=1, max_length=200)

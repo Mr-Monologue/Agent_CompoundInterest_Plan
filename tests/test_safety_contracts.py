@@ -146,6 +146,9 @@ def test_market_discovery_and_review_actions_preserve_governance_boundaries() ->
     assert "never place a secret, token or credential value in" in skill
     assert "Research-source configurations are local capability declarations" in safety
     assert "证据覆盖与待采集任务" in templates
+    assert "Never expose its `claim_token`" in skill
+    assert "Research task claims are short-lived connector leases" in safety
+    assert "连接器健康不是来源独立性" in templates
 
 
 def test_cron_examples_are_disabled() -> None:

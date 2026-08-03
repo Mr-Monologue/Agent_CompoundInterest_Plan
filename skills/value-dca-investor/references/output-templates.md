@@ -135,3 +135,16 @@ confirmation boundary. Never display or request a secret value. For a coverage s
 explicit universe, required evidence types, freshness threshold, current/stale/missing totals,
 blocked total and every bounded collection task exactly. State `证据覆盖与待采集任务，不是来源已运行、
 独立验证、基金排名或投资建议`.
+
+## Research collection orchestration
+
+For tasks, show the instrument, evidence type, reason, state, attempt count, availability and eligible
+connector identities. For a claim, never display `claim_token`; show claim ID, connector, adapter,
+lease times, task count and state. For completion, report each immutable receipt and exact
+`RECORDED`, `REPLAYED`, `REJECTED` or `MISSING` result. State `领取只是短期租约，只有关联到已审计
+采集批次的完成回执才证明任务结算`.
+
+For connector health, show observed time, adapter version, runtime state, reason and latency. State
+`连接器健康不是来源独立性、事实正确性或投资适用性验证`. For coverage changes, report the two
+snapshot IDs, instrument, evidence type, previous/current states and exact change kind. State
+`覆盖改善或退化只是资料状态变化，不是市场信号或买卖建议`.

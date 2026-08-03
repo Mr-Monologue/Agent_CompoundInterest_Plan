@@ -336,6 +336,20 @@ Core 保存连接器标识、适配器版本、来源谱系、起止时间、清
 时效阈值生成覆盖事实包，仅在缺口因没有已批准连接器而阻塞时请求通知；不会启动连接器、
 改变观察池、选择基金、调整策略或创建交易。
 
+0.27.0 把这些有界描述推进成可审计的外部采集编排。覆盖快照会为 `READY` 缺口持久化任务；
+已批准连接器通过 `research_collection_task_claim` 领取短期租约，完成后必须先用既有
+`research_collection_run_record` 保存精确采集批次，再用
+`research_collection_task_complete` 把批次逐项关联到任务。Core 保存领取次数、租约过期、
+逐任务 `RECORDED`、`REPLAYED`、`REJECTED` 或 `MISSING` 回执；过期租约可以重新领取，达到
+最大尝试次数后保持 `EXHAUSTED` 等待人工处理。认领只授权外部连接器处理指定证据缺口，
+不授权 Agent 自行浏览、补写来源事实或采取投资行动。
+
+连接器可以通过 `research_connector_health_record` 保存不可变运行健康回执；Core 从最新回执
+区分 `HEALTHY`、`DEGRADED`、`UNAVAILABLE`、`STALE` 和 `NOT_REPORTED`。健康只证明适配器
+运行状态，不证明上游来源独立、资料正确或适合投资。可比覆盖快照之间的证据状态变化会保存
+为 `IMPROVED`、`REGRESSED` 或 `CHANGED`，并纳入复盘质量事实；这些仍然只是资料覆盖变化，
+不是买卖、轮换、排名或策略参数效果。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash
@@ -374,6 +388,6 @@ uv run investor strategy instrument-configure --portfolio-id <PORTFOLIO_ID> --in
 ## 后续开发顺序
 
 1. 继续深化复盘：跨策略实例的可比期间约束、人工决定结果长期对照和质量连续性。
-2. 继续深化市场发现：采集任务认领/回执、连接器运行健康与覆盖变化闭环。
+2. 继续深化市场发现：连接器契约符合性测试、采集运行观测与跨期研究连续性。
 3. 大阶段四：通用初始化向导、干净安装验收、备份恢复和迁移工具。
 4. 大阶段四收口：14 天连续运行验收、公共分发文档和 V1 发布候选。

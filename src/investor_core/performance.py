@@ -1274,6 +1274,63 @@ class PerformanceService:
                 """,
                 (portfolio_id, f"{as_of_date.isoformat()}T23:59:59Z"),
             ).fetchall()
+            task_rows = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM research_collection_tasks
+                WHERE portfolio_id=? AND created_at<=?
+                GROUP BY status
+                """,
+                (portfolio_id, f"{as_of_date.isoformat()}T23:59:59Z"),
+            ).fetchall()
+            claim_rows = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM research_collection_claims
+                WHERE portfolio_id=? AND claimed_at<=?
+                GROUP BY status
+                """,
+                (portfolio_id, f"{as_of_date.isoformat()}T23:59:59Z"),
+            ).fetchall()
+            receipt_count = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM research_collection_task_receipts r
+                    JOIN research_collection_claims c ON c.id=r.claim_id
+                    WHERE c.portfolio_id=? AND r.completed_at<=?
+                    """,
+                    (portfolio_id, f"{as_of_date.isoformat()}T23:59:59Z"),
+                ).fetchone()[0]
+            )
+            health_rows = connection.execute(
+                """
+                SELECT h.* FROM research_connector_health_receipts h
+                WHERE h.portfolio_id=? AND h.observed_at<=?
+                  AND h.id=(
+                    SELECT h2.id FROM research_connector_health_receipts h2
+                    WHERE h2.portfolio_id=h.portfolio_id
+                      AND h2.connector_key=h.connector_key
+                      AND h2.observed_at<=?
+                    ORDER BY h2.observed_at DESC, h2.created_at DESC LIMIT 1
+                  )
+                ORDER BY h.connector_key
+                """,
+                (
+                    portfolio_id,
+                    f"{as_of_date.isoformat()}T23:59:59Z",
+                    f"{as_of_date.isoformat()}T23:59:59Z",
+                ),
+            ).fetchall()
+            coverage_change_rows = connection.execute(
+                """
+                SELECT change_kind, COUNT(*) AS count
+                FROM research_coverage_changes
+                WHERE portfolio_id=? AND created_at<=?
+                GROUP BY change_kind
+                """,
+                (portfolio_id, f"{as_of_date.isoformat()}T23:59:59Z"),
+            ).fetchall()
             assignment_rows = connection.execute(
                 """
                 SELECT a.id, a.instance_config_hash, a.status, a.approved_at,
@@ -1324,6 +1381,19 @@ class PerformanceService:
 
         resolved_count = int(outcome_summary["resolved_count"])
         missing_outcome_count = int(outcome_summary["missing_outcome_count"])
+        task_status_counts = {str(row["status"]): int(row["count"]) for row in task_rows}
+        claim_status_counts = {
+            str(row["status"]): int(row["count"]) for row in claim_rows
+        }
+        connector_health_counts: dict[str, int] = {}
+        for row in health_rows:
+            state = str(row["state"])
+            connector_health_counts[state] = connector_health_counts.get(state, 0) + 1
+        exhausted_task_count = task_status_counts.get("EXHAUSTED", 0)
+        unhealthy_connector_count = sum(
+            connector_health_counts.get(state, 0)
+            for state in ("DEGRADED", "UNAVAILABLE")
+        )
         if not review_series:
             status = "DATA_BLOCKED"
             data_quality = "SOURCE_ERROR"
@@ -1332,7 +1402,12 @@ class PerformanceService:
             status = "DATA_BLOCKED"
             data_quality = "SOURCE_ERROR"
             reason_code = "REVIEW_QUALITY_SOURCE_BLOCKED"
-        elif quality_summary["WARNING"] or missing_outcome_count:
+        elif (
+            quality_summary["WARNING"]
+            or missing_outcome_count
+            or exhausted_task_count
+            or unhealthy_connector_count
+        ):
             status = "PARTIAL"
             data_quality = "WARNING"
             reason_code = "REVIEW_QUALITY_PARTIAL"
@@ -1433,6 +1508,47 @@ class PerformanceService:
                     if not collection_rows
                     else ("PARTIAL" if rejected_item_count else "RECORDED")
                 ),
+            },
+            "research_collection_orchestration": {
+                "task_status_counts": task_status_counts,
+                "claim_status_counts": claim_status_counts,
+                "completed_task_count": task_status_counts.get("COMPLETED", 0),
+                "exhausted_task_count": exhausted_task_count,
+                "receipt_count": receipt_count,
+                "orchestration_status": (
+                    "DATA_BLOCKED"
+                    if exhausted_task_count
+                    else (
+                        "IN_PROGRESS"
+                        if task_status_counts.get("PENDING", 0)
+                        or task_status_counts.get("CLAIMED", 0)
+                        else "SETTLED"
+                    )
+                ),
+                "boundary": "TASK_EXECUTION_FACTS_NOT_RESEARCH_QUALITY_OR_INVESTMENT_SIGNAL",
+            },
+            "research_connector_runtime": {
+                "latest_state_counts": connector_health_counts,
+                "unhealthy_connector_count": unhealthy_connector_count,
+                "connectors": [
+                    {
+                        "connector_key": str(row["connector_key"]),
+                        "adapter_version": str(row["adapter_version"]),
+                        "observed_at": str(row["observed_at"]),
+                        "state": str(row["state"]),
+                        "reason_code": str(row["reason_code"]),
+                    }
+                    for row in health_rows
+                ],
+                "boundary": "RUNTIME_HEALTH_NOT_SOURCE_INDEPENDENCE_OR_FACT_CORRECTNESS",
+            },
+            "research_coverage_changes": {
+                "counts": {
+                    str(row["change_kind"]): int(row["count"])
+                    for row in coverage_change_rows
+                },
+                "change_count": sum(int(row["count"]) for row in coverage_change_rows),
+                "boundary": "COVERAGE_DELTA_NOT_CAUSAL_EFFECT_OR_INVESTMENT_SIGNAL",
             },
             "strategy_contexts": assignment_contexts,
             "strategy_parameter_observation": {
