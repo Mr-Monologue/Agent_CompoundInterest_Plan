@@ -235,6 +235,18 @@ adapter, not proof that collection ran. Multiple recorded lineages are not autom
 verification. Never turn a coverage gap into a fund ranking, recommendation, watchlist transition,
 strategy change or trade.
 
+`research_collection_task_claim` is a connector-runtime operation, not an interactive research
+shortcut. Call it only when the current configured adapter can immediately process the returned
+bounded tasks. Never expose its `claim_token` in chat, logs or reports. The connector must first
+record the exact sourced batch with `research_collection_run_record`, then link that run through
+`research_collection_task_complete` before the lease expires. Report `PENDING`, `CLAIMED`,
+`COMPLETED`, `EXHAUSTED`, `EXPIRED` and every receipt literally; never claim success from a lease.
+
+Use `research_connector_health_record` only for an observed adapter runtime probe. `HEALTHY` proves
+only that the adapter probe passed; it does not verify upstream independence, source correctness or
+investment relevance. Use `research_coverage_change_list` to report persisted `IMPROVED`,
+`REGRESSED` and `CHANGED` evidence coverage only. Coverage movement is not a market signal.
+
 Use `review_action_decision_draft_create` only when the user explicitly chooses to acknowledge or
 resolve one exact review action and supplies a reason. Show the returned previous and proposed
 status and expiry. Call `review_action_decision_draft_commit` only after confirmation with the

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.26.0",
+  "version": "0.27.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0023_research_source_coverage",
+  "database_revision": "0024_research_collection_orchestration",
   "minimum_current_version": "0.5.3",
-  "notes": "Add confirmation-gated portfolio-local research-source configuration and immutable evidence-coverage audits that produce bounded collection tasks without bundled connectors, recommendations, auto-tuning or trading."
+  "notes": "Add governed research collection task leases, immutable completion receipts, connector runtime-health facts, coverage deltas and review integration without bundled connectors, model-filled facts, recommendations or trading."
 }

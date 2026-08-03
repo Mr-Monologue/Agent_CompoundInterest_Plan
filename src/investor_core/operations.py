@@ -2492,7 +2492,9 @@ class OperationsService:
                 WHERE job_name IN (
                     'DAILY_MARKET_SYNC','DAILY_RISK_SCAN','WEEKLY_PLAN_PREPARE',
                     'SELL_FOLLOWUP_DUE','SYSTEM_DOCTOR','MONTHLY_REVIEW',
-                    'QUARTERLY_REVIEW','ANNUAL_REVIEW'
+                    'QUARTERLY_REVIEW','ANNUAL_REVIEW','WEEKLY_MARKET_DISCOVERY',
+                    'WATCHLIST_REVIEW_DUE','REVIEW_QUALITY_SNAPSHOT',
+                    'RESEARCH_COVERAGE_AUDIT'
                 )
                 ORDER BY started_at DESC LIMIT 20
                 """
@@ -2518,6 +2520,31 @@ class OperationsService:
                     (_iso(self._now()),),
                 ).fetchone()[0]
             )
+            research_task_counts = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM research_collection_tasks GROUP BY status
+                """
+            ).fetchall()
+            research_claim_counts = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count
+                FROM research_collection_claims GROUP BY status
+                """
+            ).fetchall()
+            connector_health_counts = connection.execute(
+                """
+                SELECT h.state, COUNT(*) AS count
+                FROM research_connector_health_receipts h
+                WHERE h.id=(
+                    SELECT h2.id FROM research_connector_health_receipts h2
+                    WHERE h2.portfolio_id=h.portfolio_id
+                      AND h2.connector_key=h.connector_key
+                    ORDER BY h2.observed_at DESC, h2.created_at DESC LIMIT 1
+                )
+                GROUP BY h.state
+                """
+            ).fetchall()
         scheduler_snapshot = self.latest_scheduler_snapshot()
         missed_runs = self.list_missed_runs()
         return {
@@ -2541,6 +2568,21 @@ class OperationsService:
                 str(row["status"]): int(row["count"]) for row in outbox_counts
             },
             "due_retry_count": due_retries,
+            "research_collection": {
+                "task_counts": {
+                    str(row["status"]): int(row["count"])
+                    for row in research_task_counts
+                },
+                "claim_counts": {
+                    str(row["status"]): int(row["count"])
+                    for row in research_claim_counts
+                },
+                "latest_connector_health_counts": {
+                    str(row["state"]): int(row["count"])
+                    for row in connector_health_counts
+                },
+                "automatic_collection": False,
+            },
             "missed_run_count": len(missed_runs),
             "missed_runs": missed_runs,
             "scheduler_manifest": self.scheduler_manifest(),

@@ -30,6 +30,9 @@ from investor_core.api.schemas import (
     OpeningPositionDraftCreateRequest,
     PortfolioCreateRequest,
     ResearchCollectionRunRequest,
+    ResearchCollectionTaskClaimRequest,
+    ResearchCollectionTaskCompleteRequest,
+    ResearchConnectorHealthRequest,
     ResearchCoverageSnapshotRequest,
     ResearchSourceConfigDraftRequest,
     ResearchWatchlistReviewSnapshotRequest,
@@ -558,6 +561,103 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {
                 "items": research.list_coverage_snapshots(
                     portfolio_id=portfolio_id,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.post("/v1/research-collection-task-claims")
+    def research_collection_task_claim(
+        request: ResearchCollectionTaskClaimRequest,
+    ) -> dict[str, Any]:
+        return success(research.claim_collection_tasks(**request.model_dump()))
+
+    @app.post("/v1/research-collection-task-claims/{claim_id}/complete")
+    def research_collection_task_complete(
+        claim_id: str,
+        request: ResearchCollectionTaskCompleteRequest,
+    ) -> dict[str, Any]:
+        return success(
+            research.complete_collection_claim(
+                claim_id=claim_id,
+                **request.model_dump(),
+            )
+        )
+
+    @app.get("/v1/research-collection-tasks")
+    def research_collection_task_list(
+        portfolio_id: str,
+        status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_collection_tasks(
+                    portfolio_id=portfolio_id,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/research-collection-task-claims")
+    def research_collection_task_claim_list(
+        portfolio_id: str,
+        connector_key: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_collection_claims(
+                    portfolio_id=portfolio_id,
+                    connector_key=connector_key,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.post("/v1/research-connector-health-receipts")
+    def research_connector_health_record(
+        request: ResearchConnectorHealthRequest,
+    ) -> dict[str, Any]:
+        result = research.record_connector_health(**request.model_dump())
+        return success(
+            result,
+            warnings=(
+                []
+                if result["state"] == "HEALTHY"
+                else ["Research connector reported a non-healthy runtime state"]
+            ),
+            data_quality=("PASS" if result["state"] == "HEALTHY" else "WARNING"),
+        )
+
+    @app.get("/v1/research-connector-health")
+    def research_connector_health_list(
+        portfolio_id: str,
+        stale_after_seconds: int = Query(default=900, ge=60, le=86_400),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_connector_health(
+                    portfolio_id=portfolio_id,
+                    stale_after_seconds=stale_after_seconds,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/research-coverage-changes")
+    def research_coverage_change_list(
+        portfolio_id: str,
+        instrument_code: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": research.list_coverage_changes(
+                    portfolio_id=portfolio_id,
+                    instrument_code=instrument_code,
                     limit=limit,
                 )
             }

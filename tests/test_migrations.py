@@ -56,6 +56,11 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
             "research_source_config_drafts",
             "research_source_configs",
             "research_coverage_snapshots",
+            "research_coverage_changes",
+            "research_collection_tasks",
+            "research_collection_claims",
+            "research_collection_task_receipts",
+            "research_connector_health_receipts",
             "market_discovery_runs",
             "market_discovery_items",
             "market_discovery_changes",
@@ -91,7 +96,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0023_research_source_coverage",)
+    assert revision == ("0024_research_collection_orchestration",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -181,7 +186,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0023_research_source_coverage",
+            "0024_research_collection_orchestration",
         )
 
 
@@ -288,7 +293,7 @@ def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
         "2026-07-02T00:01:00Z",
         None,
     )
-    assert revision == ("0023_research_source_coverage",)
+    assert revision == ("0024_research_collection_orchestration",)
     snapshot = ResearchService(settings).build_watchlist_review_snapshot(
         portfolio_id=str(portfolio["id"]),
         as_of_date=date(2026, 9, 1),
@@ -318,7 +323,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0023_research_source_coverage",)
+    assert revision == ("0024_research_collection_orchestration",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(
