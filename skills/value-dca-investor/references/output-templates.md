@@ -6,6 +6,14 @@
 2. Key facts with the as-of date.
 3. Data quality and limitations.
 
+## Hermes investment workspace
+
+For `DAILY`, `READINESS` or `FULL`, return Core's `display_text` exactly. Do not add a greeting,
+summary, recommendation, question or automatic follow-up call. Treat each next-action item as a
+fixed workflow fact with a read-tool pointer, not permission to call that tool or perform a mutation.
+State `工作台优先级不是基金排名、投资建议或交易执行` only when Core does not already include its
+exact boundary text.
+
 ## Confirmation preview
 
 1. Action and target.
