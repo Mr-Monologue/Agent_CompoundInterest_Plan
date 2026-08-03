@@ -36,6 +36,14 @@ description: Operate a personal long-term value-DCA investment assistant through
     fund code, role, benchmark mapping, target weight, contribution eligibility, holding, or plan
     as a public default unless Core returns it from the current portfolio assignment.
 
+For broad requests such as “今天需要处理什么”, “当前状态”, “系统准备好了吗” or a general
+check-in, call `investment_workspace_get` first instead of assembling state from many tools. Use
+`DAILY` for the action centre, `READINESS` for V1 operational acceptance, and `FULL` only when the
+user explicitly needs both. Its priorities order existing operational and human-review facts; they
+are not investment recommendations. When its `narrative_contract.mode` is `EXACT_TEXT`, return
+`display_text` verbatim as the entire answer. Do not automatically call any suggested tool or turn a
+workspace item into a mutation.
+
 Portfolio, account, and instrument setup may use their exact `*_create` tools only when the user
 has supplied the identifying attributes. Instrument registration records master data only; it
 does not assign a portfolio role or make the instrument eligible for contributions. Treat `INDEX`

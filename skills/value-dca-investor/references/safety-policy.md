@@ -109,3 +109,9 @@ settle a task. Expired or exhausted tasks cannot be represented as successfully 
 Connector health and coverage changes are operational facts only. `HEALTHY` does not verify the
 publisher or evidence, while `IMPROVED` does not imply a better investment. Neither may trigger a
 watchlist transition, recommendation, strategy mutation, plan, proposal or transaction.
+
+The Hermes investment workspace is a read-only projection over existing Core facts. Its fixed
+priority order may identify operational blockers, workflow states and facts awaiting human review;
+it must never rank instruments, calculate a contribution, infer a sell trigger, execute a suggested
+tool or mutate financial state. V1 readiness evaluates product operation only, not portfolio quality,
+strategy merit or investment performance.

@@ -106,6 +106,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "sell_followup_evaluate",
         "portfolio_valuation_get",
         "portfolio_brief_get",
+        "investment_workspace_get",
         "weekly_plan_preview",
         "weekly_plan_draft_create",
         "weekly_plan_list",
@@ -449,5 +450,46 @@ def test_portfolio_brief_uses_default_context(monkeypatch) -> None:  # type: ign
             "portfolio_id": "portfolio-default",
             "account_id": "account-default",
             "as_of_date": "2026-07-22",
+        },
+    )
+
+
+def test_investment_workspace_uses_default_context_and_exact_view(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+        timeout_seconds: float = 10.0,
+    ) -> dict[str, Any]:
+        del payload, timeout_seconds
+        calls.append((method, path, params))
+        if path == "/v1/investment-context":
+            return {
+                "ok": True,
+                "data": {
+                    "portfolio": {"id": "portfolio-default"},
+                    "account": {"id": "account-default"},
+                },
+            }
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+    result = asyncio.run(
+        server.investment_workspace_get(view="READINESS", as_of_date="2026-08-04")
+    )
+
+    assert result == {"ok": True}
+    assert calls[-1] == (
+        "GET",
+        "/v1/investment-workspace",
+        {
+            "portfolio_id": "portfolio-default",
+            "account_id": "account-default",
+            "view": "READINESS",
+            "as_of_date": "2026-08-04",
         },
     )

@@ -2072,6 +2072,29 @@ async def portfolio_brief_get(
 
 
 @mcp.tool()
+async def investment_workspace_get(
+    view: Literal["DAILY", "READINESS", "FULL"] = "DAILY",
+    as_of_date: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Get the deterministic Hermes workbench; return data.display_text exactly."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "account_id": resolved_account_id,
+        "view": view,
+    }
+    if as_of_date:
+        params["as_of_date"] = as_of_date
+    return await core_request("GET", "/v1/investment-workspace", params=params)
+
+
+@mcp.tool()
 async def weekly_plan_preview(
     contribution_amount: str,
     as_of_date: str = "",
