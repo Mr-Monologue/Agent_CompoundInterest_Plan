@@ -168,6 +168,8 @@ def test_healthy_system_doctor_creates_silent_fact_bundle_once(tmp_path: Path) -
     summary = service.status_summary()
     assert summary["run_counts"]["SUCCESS"] == 1
     assert summary["open_alert_count"] == 0
+    assert summary["research_collection"]["task_counts"] == {}
+    assert summary["research_collection"]["automatic_collection"] is False
     assert summary["automatic_trade"] is False
     assert service.retry_due()["display_text"] == "[SILENT]"
 
@@ -571,7 +573,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0023_research_source_coverage",)
+    assert revision == ("0024_research_collection_orchestration",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:

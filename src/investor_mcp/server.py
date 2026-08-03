@@ -720,6 +720,173 @@ async def research_coverage_snapshot_list(
 
 
 @mcp.tool()
+async def research_collection_task_claim(
+    connector_key: str,
+    adapter_version: str,
+    max_tasks: int = 20,
+    lease_seconds: int = 300,
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Lease bounded evidence tasks to one configured external connector."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/research-collection-task-claims",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "connector_key": connector_key,
+            "adapter_version": adapter_version,
+            "max_tasks": max_tasks,
+            "lease_seconds": lease_seconds,
+        },
+    )
+
+
+@mcp.tool()
+async def research_collection_task_complete(
+    claim_id: str,
+    claim_token: str,
+    collection_run_id: str,
+) -> dict[str, Any]:
+    """Link one exact audited collection run to a live task claim."""
+    return await core_request(
+        "POST",
+        f"/v1/research-collection-task-claims/{claim_id}/complete",
+        payload={
+            "claim_token": claim_token,
+            "collection_run_id": collection_run_id,
+        },
+    )
+
+
+@mcp.tool()
+async def research_collection_task_list(
+    status: str = "",
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List persisted collection tasks and lease state without executing them."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-collection-tasks",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "status": status or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def research_collection_task_claim_list(
+    connector_key: str = "",
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List immutable task claims and completion receipts without claim tokens."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-collection-task-claims",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "connector_key": connector_key or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def research_connector_health_record(
+    connector_key: str,
+    adapter_version: str,
+    observed_at: str,
+    state: Literal["HEALTHY", "DEGRADED", "UNAVAILABLE"],
+    reason_code: str,
+    latency_ms: int | None = None,
+    portfolio_id: str = "",
+) -> dict[str, Any]:
+    """Record one immutable external connector runtime-health receipt."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "POST",
+        "/v1/research-connector-health-receipts",
+        payload={
+            "portfolio_id": resolved_portfolio,
+            "connector_key": connector_key,
+            "adapter_version": adapter_version,
+            "observed_at": observed_at,
+            "state": state,
+            "reason_code": reason_code,
+            "latency_ms": latency_ms,
+        },
+    )
+
+
+@mcp.tool()
+async def research_connector_health_list(
+    stale_after_seconds: int = 900,
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List current connector runtime facts; STALE is not source verification."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-connector-health",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "stale_after_seconds": stale_after_seconds,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def research_coverage_change_list(
+    instrument_code: str = "",
+    portfolio_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List factual evidence-coverage improvements and regressions without signals."""
+    resolved_portfolio = portfolio_id
+    if not resolved_portfolio:
+        resolved_portfolio, _account_id, error = await resolve_investment_context()
+        if error is not None:
+            return error
+    return await core_request(
+        "GET",
+        "/v1/research-coverage-changes",
+        params={
+            "portfolio_id": resolved_portfolio,
+            "instrument_code": instrument_code or None,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
 async def market_research_evidence_list(
     instrument_code: str = "",
     evidence_type: str = "",
