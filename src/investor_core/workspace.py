@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, date, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from investor_core.capital import CapitalService
@@ -103,23 +105,48 @@ class WorkspaceService:
         with self._connect() as connection:
             strategy = connection.execute(
                 """
-                SELECT id FROM strategy_assignments
-                WHERE portfolio_id=? AND status='ACTIVE'
+                SELECT a.id, a.instance_config_json, v.parameters_json
+                FROM strategy_assignments a
+                JOIN strategy_versions v ON v.id=a.strategy_version_id
+                WHERE a.portfolio_id=? AND a.status='ACTIVE'
                 """,
                 (portfolio_id,),
             ).fetchone()
-            eligible_count = 0
+            eligible_by_role = {"CORE": 0, "SATELLITE": 0}
+            target_pct_by_role: dict[str, str] = {}
             if strategy is not None:
-                eligible_count = int(
-                    connection.execute(
-                        """
-                        SELECT COUNT(*) FROM strategy_instrument_configs
-                        WHERE strategy_assignment_id=? AND status='ACTIVE'
-                          AND contribution_eligible=1
-                        """,
-                        (strategy["id"],),
-                    ).fetchone()[0]
-                )
+                eligible_rows = connection.execute(
+                    """
+                    SELECT c.role, COUNT(*) AS count
+                    FROM strategy_instrument_configs c
+                    JOIN instruments i ON i.id=c.instrument_id
+                    WHERE c.strategy_assignment_id=? AND c.status='ACTIVE'
+                      AND c.contribution_eligible=1 AND c.thesis_status='ACTIVE'
+                      AND c.role IN ('CORE','SATELLITE') AND i.status='ACTIVE'
+                    GROUP BY c.role
+                    """,
+                    (strategy["id"],),
+                ).fetchall()
+                for row in eligible_rows:
+                    eligible_by_role[str(row["role"])] = int(row["count"])
+                try:
+                    instance_config = json.loads(str(strategy["instance_config_json"]))
+                    version_parameters = json.loads(str(strategy["parameters_json"]))
+                    policy = instance_config.get("allocation_policy", version_parameters)
+                    for role, key in (
+                        ("CORE", "core_target_pct"),
+                        ("SATELLITE", "satellite_target_pct"),
+                    ):
+                        value = Decimal(str(policy[key]))
+                        if value > 0:
+                            target_pct_by_role[role] = f"{value:.2f}"
+                except (AttributeError, KeyError, TypeError, ValueError, InvalidOperation):
+                    target_pct_by_role = {}
+            eligible_count = sum(eligible_by_role.values())
+            required_roles = list(target_pct_by_role)
+            missing_roles = [
+                role for role in required_roles if int(eligible_by_role.get(role, 0)) == 0
+            ]
             plan_counts = self._counts(
                 connection.execute(
                     """
@@ -209,6 +236,10 @@ class WorkspaceService:
         return {
             "strategy_assignment_active": strategy is not None,
             "contribution_eligible_instrument_count": eligible_count,
+            "contribution_eligible_by_role": eligible_by_role,
+            "required_contribution_roles": required_roles,
+            "missing_contribution_roles": missing_roles,
+            "target_pct_by_role": target_pct_by_role,
             "plan_counts": plan_counts,
             "sell_proposal_counts": proposal_counts,
             "review_action_counts": review_action_counts,
@@ -274,6 +305,10 @@ class WorkspaceService:
         notification = workflows["latest_notification_test"]
         backup = workflows["latest_backup"]
         continuity = workflows["continuous_operations"]
+        eligible_count = int(workflows["contribution_eligible_instrument_count"])
+        required_roles = list(workflows["required_contribution_roles"])
+        missing_roles = list(workflows["missing_contribution_roles"])
+        strategy_ready = bool(required_roles) and not missing_roles
         checks = [
             self._check(
                 "INVESTMENT_CONTEXT",
@@ -287,27 +322,33 @@ class WorkspaceService:
                 (
                     "BLOCKED"
                     if not workflows["strategy_assignment_active"]
-                    else (
-                        "PASS"
-                        if int(workflows["contribution_eligible_instrument_count"]) > 0
-                        else "NOT_CONFIGURED"
-                    )
+                    else ("PASS" if strategy_ready else "NOT_CONFIGURED")
                 ),
                 (
                     "ACTIVE_STRATEGY_MISSING"
                     if not workflows["strategy_assignment_active"]
                     else (
                         "ACTIVE_STRATEGY_AND_ALLOWLIST_CONFIGURED"
-                        if int(workflows["contribution_eligible_instrument_count"]) > 0
-                        else "CONTRIBUTION_ALLOWLIST_EMPTY"
+                        if strategy_ready
+                        else (
+                            "CONTRIBUTION_ALLOWLIST_EMPTY"
+                            if eligible_count == 0
+                            else (
+                                "CONTRIBUTION_ROLE_ALLOWLIST_INCOMPLETE"
+                                if missing_roles
+                                else "CONTRIBUTION_ROLE_TARGETS_NOT_CONFIGURED"
+                            )
+                        )
                     )
                 ),
                 required=True,
                 facts={
                     "active": workflows["strategy_assignment_active"],
-                    "eligible_instrument_count": workflows[
-                        "contribution_eligible_instrument_count"
-                    ],
+                    "eligible_instrument_count": eligible_count,
+                    "eligible_by_role": workflows["contribution_eligible_by_role"],
+                    "required_roles": required_roles,
+                    "missing_roles": missing_roles,
+                    "target_pct_by_role": workflows["target_pct_by_role"],
                 },
             ),
             self._check(
@@ -528,6 +569,22 @@ class WorkspaceService:
                     "NO_EXPLICIT_CONTRIBUTION_ELIGIBILITY",
                     "strategy_current_get",
                     {"eligible_instrument_count": 0},
+                )
+            )
+        elif workflows["missing_contribution_roles"]:
+            actions.append(
+                self._action(
+                    6,
+                    "CONTRIBUTION_ROLE_ALLOWLIST_INCOMPLETE",
+                    "CONFIGURATION",
+                    "REQUIRED_ROLE_WITHOUT_ELIGIBLE_INSTRUMENT",
+                    "strategy_current_get",
+                    {
+                        "eligible_by_role": workflows["contribution_eligible_by_role"],
+                        "required_roles": workflows["required_contribution_roles"],
+                        "missing_roles": workflows["missing_contribution_roles"],
+                        "target_pct_by_role": workflows["target_pct_by_role"],
+                    },
                 )
             )
         if int(operations["open_alert_count"]):
