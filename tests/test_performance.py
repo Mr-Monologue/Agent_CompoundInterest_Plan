@@ -204,6 +204,9 @@ def test_review_quality_snapshot_is_descriptive_and_immutable(tmp_path: Path) ->
     assert first["review_history"]["review_count"] == 1
     assert first["review_history"]["continuity_status"] == "LIMITED"
     assert first["research_traceability"]["traceability_status"] == "NOT_AVAILABLE"
+    assert first["research_collection_orchestration"]["task_status_counts"] == {}
+    assert first["research_connector_runtime"]["latest_state_counts"] == {}
+    assert first["research_coverage_changes"]["change_count"] == 0
     assert (
         first["strategy_parameter_observation"]["status"]
         == "INSUFFICIENT_HISTORY"

@@ -100,3 +100,12 @@ Core may store an environment-variable name but never a secret value. Enabling a
 authorize autonomous collection. Evidence-coverage tasks remain unexecuted until an external adapter
 returns a bounded batch through the audited collection-run contract. Recorded source lineages do not
 by themselves prove independence, correctness or suitability.
+
+Research task claims are short-lived connector leases. A claim token is transient sensitive runtime
+material and must never be shown to a user or stored outside the connector workflow. A lease is not
+proof of execution; only an immutable completion receipt linked to an audited collection run can
+settle a task. Expired or exhausted tasks cannot be represented as successfully collected.
+
+Connector health and coverage changes are operational facts only. `HEALTHY` does not verify the
+publisher or evidence, while `IMPROVED` does not imply a better investment. Neither may trigger a
+watchlist transition, recommendation, strategy mutation, plan, proposal or transaction.

@@ -135,7 +135,7 @@ class ResearchService:
             ]
         )
         return {
-            "contract_version": "research-source-v3",
+            "contract_version": "research-source-v4",
             "ingestion_tool": "market_research_evidence_record",
             "collection_run_tool": "research_collection_run_record",
             "supported_evidence_types": sorted(EVIDENCE_TYPES),
@@ -150,6 +150,9 @@ class ResearchService:
             ],
             "source_config_tool": "research_source_config_draft_create",
             "coverage_tool": "research_coverage_snapshot_build",
+            "task_claim_tool": "research_collection_task_claim",
+            "task_complete_tool": "research_collection_task_complete",
+            "connector_health_tool": "research_connector_health_record",
             "configured_connectors": configured_connectors,
             "automatic_sync": False,
             "idempotency": "CONTENT_HASH",
@@ -1065,8 +1068,11 @@ class ResearchService:
                 (facts_hash,),
             ).fetchone()
             if existing is not None:
-                return self._coverage_snapshot_data(existing, idempotent_replay=True)
+                return self._coverage_snapshot_data(
+                    connection, existing, idempotent_replay=True
+                )
             snapshot_id = str(uuid4())
+            created_at = _iso(self._now())
             connection.execute(
                 """
                 INSERT INTO research_coverage_snapshots (
@@ -1084,8 +1090,28 @@ class ResearchService:
                     reason_code,
                     _json(facts),
                     facts_hash,
-                    _iso(self._now()),
+                    created_at,
                 ),
+            )
+            self._supersede_resolved_tasks(
+                connection,
+                portfolio_id=portfolio_id,
+                coverage_items=items,
+                updated_at=created_at,
+            )
+            self._persist_collection_tasks(
+                connection,
+                portfolio_id=portfolio_id,
+                coverage_snapshot_id=snapshot_id,
+                collection_tasks=collection_tasks,
+                created_at=created_at,
+            )
+            self._persist_coverage_changes(
+                connection,
+                portfolio_id=portfolio_id,
+                current_snapshot_id=snapshot_id,
+                current_facts=facts,
+                created_at=created_at,
             )
             connection.commit()
             row = connection.execute(
@@ -1093,16 +1119,55 @@ class ResearchService:
                 (snapshot_id,),
             ).fetchone()
             assert row is not None
-            return self._coverage_snapshot_data(row)
+            return self._coverage_snapshot_data(connection, row)
 
-    @staticmethod
     def _coverage_snapshot_data(
-        row: sqlite3.Row, *, idempotent_replay: bool = False
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+        *,
+        idempotent_replay: bool = False,
     ) -> JsonDict:
         facts = json.loads(str(row["facts_json"]))
+        scopes = {
+            (str(item["instrument_code"]), str(item["evidence_type"]))
+            for item in facts["collection_tasks"]
+        }
+        task_candidates = connection.execute(
+            """
+            SELECT * FROM research_collection_tasks
+            WHERE portfolio_id=? ORDER BY created_at DESC
+            """,
+            (row["portfolio_id"],),
+        ).fetchall()
+        tasks_by_scope: dict[tuple[str, str], sqlite3.Row] = {}
+        for task in task_candidates:
+            key = (str(task["instrument_code"]), str(task["evidence_type"]))
+            if key in scopes and key not in tasks_by_scope:
+                tasks_by_scope[key] = task
+        tasks = sorted(
+            tasks_by_scope.values(),
+            key=lambda item: (str(item["instrument_code"]), str(item["evidence_type"])),
+        )
+        changes = connection.execute(
+            """
+            SELECT change_kind, COUNT(*) AS count
+            FROM research_coverage_changes
+            WHERE current_snapshot_id=? GROUP BY change_kind
+            """,
+            (row["id"],),
+        ).fetchall()
         return {
             "id": str(row["id"]),
             **facts,
+            "task_records": [self._collection_task_data(item) for item in tasks],
+            "coverage_change_summary": {
+                "change_count": sum(int(item["count"]) for item in changes),
+                "counts": {
+                    str(item["change_kind"]): int(item["count"]) for item in changes
+                },
+                "boundary": "FACTUAL_COVERAGE_DELTA_NOT_INVESTMENT_SIGNAL",
+            },
             "facts_hash": str(row["facts_hash"]),
             "created_at": str(row["created_at"]),
             "idempotent_replay": idempotent_replay,
@@ -1119,7 +1184,854 @@ class ResearchService:
                 """,
                 (portfolio_id, limit),
             ).fetchall()
-            return [self._coverage_snapshot_data(row) for row in rows]
+            return [self._coverage_snapshot_data(connection, row) for row in rows]
+
+    @staticmethod
+    def _supersede_resolved_tasks(
+        connection: sqlite3.Connection,
+        *,
+        portfolio_id: str,
+        coverage_items: list[JsonDict],
+        updated_at: str,
+    ) -> None:
+        resolved_scopes = [
+            (str(item["instrument_code"]), str(evidence["evidence_type"]))
+            for item in coverage_items
+            for evidence in item["evidence"]
+            if evidence["state"] == "CURRENT"
+        ]
+        for instrument_code, evidence_type in resolved_scopes:
+            connection.execute(
+                """
+                UPDATE research_collection_tasks
+                SET status='SUPERSEDED', active_claim_id=NULL, updated_at=?
+                WHERE portfolio_id=? AND instrument_code=? AND evidence_type=?
+                  AND status IN ('PENDING','EXHAUSTED')
+                """,
+                (updated_at, portfolio_id, instrument_code, evidence_type),
+            )
+
+    def _persist_collection_tasks(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        portfolio_id: str,
+        coverage_snapshot_id: str,
+        collection_tasks: list[JsonDict],
+        created_at: str,
+    ) -> None:
+        for task in collection_tasks:
+            existing = connection.execute(
+                """
+                SELECT id FROM research_collection_tasks
+                WHERE portfolio_id=? AND instrument_code=? AND evidence_type=?
+                  AND status IN ('PENDING','CLAIMED','EXHAUSTED')
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (portfolio_id, task["instrument_code"], task["evidence_type"]),
+            ).fetchone()
+            if existing is not None:
+                continue
+            connection.execute(
+                """
+                INSERT INTO research_collection_tasks (
+                    id, portfolio_id, coverage_snapshot_id, instrument_code,
+                    evidence_type, reason, status, eligible_connectors_json,
+                    attempt_count, max_attempts, available_at, active_claim_id,
+                    completed_run_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, 0, 3, ?, NULL, NULL, ?, ?)
+                """,
+                (
+                    str(uuid4()),
+                    portfolio_id,
+                    coverage_snapshot_id,
+                    task["instrument_code"],
+                    task["evidence_type"],
+                    task["reason"],
+                    _json(task["eligible_connectors"]),
+                    created_at,
+                    created_at,
+                    created_at,
+                ),
+            )
+
+    def _persist_coverage_changes(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        portfolio_id: str,
+        current_snapshot_id: str,
+        current_facts: JsonDict,
+        created_at: str,
+    ) -> None:
+        rows = connection.execute(
+            """
+            SELECT * FROM research_coverage_snapshots
+            WHERE portfolio_id=? AND id<>? ORDER BY created_at DESC
+            """,
+            (portfolio_id, current_snapshot_id),
+        ).fetchall()
+        previous_row = None
+        for row in rows:
+            previous = json.loads(str(row["facts_json"]))
+            if (
+                previous.get("instrument_codes") == current_facts["instrument_codes"]
+                and previous.get("required_evidence_types")
+                == current_facts["required_evidence_types"]
+                and previous.get("max_age_days") == current_facts["max_age_days"]
+            ):
+                previous_row = row
+                break
+        if previous_row is None:
+            return
+        previous_facts = json.loads(str(previous_row["facts_json"]))
+        previous_map = self._coverage_state_map(previous_facts)
+        current_map = self._coverage_state_map(current_facts)
+        rank = {"MISSING": 0, "STALE": 1, "CURRENT": 2}
+        for key, current in current_map.items():
+            previous = previous_map.get(key)
+            if previous is None or previous == current:
+                continue
+            if rank[current["state"]] > rank[previous["state"]]:
+                change_kind = "IMPROVED"
+            elif rank[current["state"]] < rank[previous["state"]]:
+                change_kind = "REGRESSED"
+            else:
+                change_kind = "CHANGED"
+            facts = {
+                "portfolio_id": portfolio_id,
+                "previous_snapshot_id": str(previous_row["id"]),
+                "current_snapshot_id": current_snapshot_id,
+                "instrument_code": key[0],
+                "evidence_type": key[1],
+                "change_kind": change_kind,
+                "previous_state": previous["state"],
+                "current_state": current["state"],
+                "previous_collection_state": previous["collection_state"],
+                "current_collection_state": current["collection_state"],
+            }
+            connection.execute(
+                """
+                INSERT INTO research_coverage_changes (
+                    id, portfolio_id, previous_snapshot_id, current_snapshot_id,
+                    instrument_code, evidence_type, change_kind, previous_state,
+                    current_state, previous_collection_state,
+                    current_collection_state, facts_json, facts_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid4()),
+                    portfolio_id,
+                    str(previous_row["id"]),
+                    current_snapshot_id,
+                    key[0],
+                    key[1],
+                    change_kind,
+                    previous["state"],
+                    current["state"],
+                    previous["collection_state"],
+                    current["collection_state"],
+                    _json(facts),
+                    _hash(facts),
+                    created_at,
+                ),
+            )
+
+    @staticmethod
+    def _coverage_state_map(facts: JsonDict) -> dict[tuple[str, str], JsonDict]:
+        return {
+            (str(item["instrument_code"]), str(evidence["evidence_type"])): {
+                "state": str(evidence["state"]),
+                "collection_state": str(evidence["collection_state"]),
+            }
+            for item in facts["items"]
+            for evidence in item["evidence"]
+        }
+
+    @staticmethod
+    def _collection_task_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "portfolio_id": str(row["portfolio_id"]),
+            "coverage_snapshot_id": str(row["coverage_snapshot_id"]),
+            "instrument_code": str(row["instrument_code"]),
+            "evidence_type": str(row["evidence_type"]),
+            "reason": str(row["reason"]),
+            "status": str(row["status"]),
+            "eligible_connectors": json.loads(
+                str(row["eligible_connectors_json"])
+            ),
+            "attempt_count": int(row["attempt_count"]),
+            "max_attempts": int(row["max_attempts"]),
+            "available_at": str(row["available_at"]),
+            "active_claim_id": row["active_claim_id"],
+            "completed_run_id": row["completed_run_id"],
+            "created_at": str(row["created_at"]),
+            "updated_at": str(row["updated_at"]),
+            "task_boundary": "EXTERNAL_COLLECTION_ONLY_NO_MODEL_FILL_OR_INVESTMENT_ACTION",
+        }
+
+    def _expire_collection_claims(
+        self, connection: sqlite3.Connection, *, now: datetime
+    ) -> int:
+        now_iso = _iso(now)
+        expired = connection.execute(
+            """
+            SELECT * FROM research_collection_claims
+            WHERE status='ACTIVE' AND lease_expires_at<=?
+            """,
+            (now_iso,),
+        ).fetchall()
+        for claim in expired:
+            task_ids = json.loads(str(claim["task_ids_json"]))
+            for task_id in task_ids:
+                task = connection.execute(
+                    "SELECT * FROM research_collection_tasks WHERE id=?",
+                    (task_id,),
+                ).fetchone()
+                if task is None or task["status"] != "CLAIMED":
+                    continue
+                status = (
+                    "EXHAUSTED"
+                    if int(task["attempt_count"]) >= int(task["max_attempts"])
+                    else "PENDING"
+                )
+                connection.execute(
+                    """
+                    UPDATE research_collection_tasks
+                    SET status=?, active_claim_id=NULL, available_at=?, updated_at=?
+                    WHERE id=?
+                    """,
+                    (status, now_iso, now_iso, task_id),
+                )
+            connection.execute(
+                """
+                UPDATE research_collection_claims
+                SET status='EXPIRED', completed_at=? WHERE id=?
+                """,
+                (now_iso, claim["id"]),
+            )
+        return len(expired)
+
+    def claim_collection_tasks(
+        self,
+        *,
+        portfolio_id: str,
+        connector_key: str,
+        adapter_version: str,
+        max_tasks: int = 20,
+        lease_seconds: int = 300,
+    ) -> JsonDict:
+        """Lease bounded tasks to one configured connector; never execute collection."""
+        if not 1 <= max_tasks <= 100:
+            raise LedgerError(
+                "RESEARCH_COLLECTION_CLAIM_LIMIT_INVALID",
+                "max_tasks must be between 1 and 100",
+            )
+        if not 30 <= lease_seconds <= 3600:
+            raise LedgerError(
+                "RESEARCH_COLLECTION_LEASE_INVALID",
+                "lease_seconds must be between 30 and 3600",
+            )
+        normalized_connector = connector_key.strip().upper()
+        if not normalized_connector or not adapter_version.strip():
+            raise LedgerError(
+                "RESEARCH_CONNECTOR_IDENTITY_REQUIRED",
+                "connector_key and adapter_version are required",
+            )
+        now = self._now()
+        now_iso = _iso(now)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            config = connection.execute(
+                """
+                SELECT * FROM research_source_configs
+                WHERE portfolio_id=? AND connector_key=? AND is_current=1 AND enabled=1
+                """,
+                (portfolio_id, normalized_connector),
+            ).fetchone()
+            if config is None:
+                raise LedgerError(
+                    "RESEARCH_CONNECTOR_NOT_ENABLED",
+                    "connector is not enabled for this portfolio",
+                    http_status=409,
+                )
+            self._expire_collection_claims(connection, now=now)
+            candidates = connection.execute(
+                """
+                SELECT * FROM research_collection_tasks
+                WHERE portfolio_id=? AND status='PENDING' AND available_at<=?
+                ORDER BY created_at, instrument_code, evidence_type
+                """,
+                (portfolio_id, now_iso),
+            ).fetchall()
+            tasks = [
+                row
+                for row in candidates
+                if normalized_connector
+                in {
+                    str(item["connector_key"])
+                    for item in json.loads(str(row["eligible_connectors_json"]))
+                }
+            ][:max_tasks]
+            if not tasks:
+                connection.commit()
+                return {
+                    "delivery_state": "EMPTY",
+                    "portfolio_id": portfolio_id,
+                    "connector_key": normalized_connector,
+                    "claimed_count": 0,
+                    "tasks": [],
+                    "claim_boundary": "NO_COLLECTION_EXECUTED_BY_CORE",
+                    "strategy_changed": False,
+                    "transactions_created": False,
+                    "automatic_trade": False,
+                }
+            claim_id = str(uuid4())
+            token = secrets.token_urlsafe(32)
+            task_ids = [str(row["id"]) for row in tasks]
+            lease_expires_at = _iso(now + timedelta(seconds=lease_seconds))
+            facts = {
+                "portfolio_id": portfolio_id,
+                "connector_key": normalized_connector,
+                "adapter_version": adapter_version.strip(),
+                "task_ids": task_ids,
+                "claimed_at": now_iso,
+                "lease_expires_at": lease_expires_at,
+            }
+            connection.execute(
+                """
+                INSERT INTO research_collection_claims (
+                    id, portfolio_id, connector_key, adapter_version, status,
+                    task_count, task_ids_json, claim_token_digest, claimed_at,
+                    lease_expires_at, completed_at, facts_hash
+                ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, NULL, ?)
+                """,
+                (
+                    claim_id,
+                    portfolio_id,
+                    normalized_connector,
+                    adapter_version.strip(),
+                    len(task_ids),
+                    _json(task_ids),
+                    _token_digest(token),
+                    now_iso,
+                    lease_expires_at,
+                    _hash(facts),
+                ),
+            )
+            for task_id in task_ids:
+                connection.execute(
+                    """
+                    UPDATE research_collection_tasks
+                    SET status='CLAIMED', attempt_count=attempt_count+1,
+                        active_claim_id=?, updated_at=? WHERE id=?
+                    """,
+                    (claim_id, now_iso, task_id),
+                )
+            connection.commit()
+            claimed = connection.execute(
+                f"""
+                SELECT * FROM research_collection_tasks
+                WHERE id IN ({','.join('?' for _ in task_ids)})
+                ORDER BY instrument_code, evidence_type
+                """,
+                task_ids,
+            ).fetchall()
+            return {
+                "delivery_state": "CLAIMED",
+                "claim_id": claim_id,
+                "claim_token": token,
+                "portfolio_id": portfolio_id,
+                "connector_key": normalized_connector,
+                "adapter_version": adapter_version.strip(),
+                "claimed_at": now_iso,
+                "lease_expires_at": lease_expires_at,
+                "claimed_count": len(claimed),
+                "tasks": [self._collection_task_data(row) for row in claimed],
+                "claim_boundary": "LEASE_ONLY_EXTERNAL_CONNECTOR_MUST_COLLECT_AND_REPORT",
+                "strategy_changed": False,
+                "transactions_created": False,
+                "automatic_trade": False,
+            }
+
+    def complete_collection_claim(
+        self,
+        *,
+        claim_id: str,
+        claim_token: str,
+        collection_run_id: str,
+    ) -> JsonDict:
+        """Link an exact collection run to leased tasks and persist immutable receipts."""
+        now = self._now()
+        now_iso = _iso(now)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            claim = connection.execute(
+                "SELECT * FROM research_collection_claims WHERE id=?", (claim_id,)
+            ).fetchone()
+            if claim is None:
+                raise LedgerError(
+                    "RESEARCH_COLLECTION_CLAIM_NOT_FOUND",
+                    "collection claim was not found",
+                    http_status=404,
+                )
+            if not secrets.compare_digest(
+                str(claim["claim_token_digest"]), _token_digest(claim_token)
+            ):
+                raise LedgerError(
+                    "RESEARCH_COLLECTION_CLAIM_TOKEN_INVALID",
+                    "collection claim token does not match",
+                    http_status=409,
+                )
+            if claim["status"] != "ACTIVE":
+                receipts = self._claim_receipts(connection, claim_id=claim_id)
+                if claim["status"] in {"COMPLETED", "PARTIAL", "FAILED"}:
+                    if any(
+                        item["collection_run_id"] != collection_run_id
+                        for item in receipts
+                    ):
+                        raise LedgerError(
+                            "RESEARCH_COLLECTION_CLAIM_ALREADY_SETTLED",
+                            "collection claim was settled by a different run",
+                            http_status=409,
+                        )
+                    return self._collection_claim_data(
+                        claim, receipts=receipts, idempotent_replay=True
+                    )
+                raise LedgerError(
+                    "RESEARCH_COLLECTION_CLAIM_NOT_ACTIVE",
+                    f"collection claim is {claim['status']}",
+                    http_status=409,
+                )
+            if str(claim["lease_expires_at"]) <= now_iso:
+                self._expire_collection_claims(connection, now=now)
+                connection.commit()
+                raise LedgerError(
+                    "RESEARCH_COLLECTION_CLAIM_EXPIRED",
+                    "collection claim lease has expired",
+                    http_status=409,
+                )
+            run = connection.execute(
+                "SELECT * FROM research_collection_runs WHERE id=?",
+                (collection_run_id,),
+            ).fetchone()
+            if run is None:
+                raise LedgerError(
+                    "RESEARCH_COLLECTION_RUN_NOT_FOUND",
+                    "collection run was not found",
+                    http_status=404,
+                )
+            if (
+                str(run["portfolio_id"]) != str(claim["portfolio_id"])
+                or str(run["connector_key"]) != str(claim["connector_key"])
+            ):
+                raise LedgerError(
+                    "RESEARCH_COLLECTION_RUN_CLAIM_MISMATCH",
+                    "collection run does not match the claim portfolio and connector",
+                    http_status=409,
+                )
+            run_items = connection.execute(
+                "SELECT * FROM research_collection_items WHERE run_id=? ORDER BY ordinal",
+                (collection_run_id,),
+            ).fetchall()
+            task_ids = json.loads(str(claim["task_ids_json"]))
+            completed_count = 0
+            for task_id in task_ids:
+                task = connection.execute(
+                    "SELECT * FROM research_collection_tasks WHERE id=?", (task_id,)
+                ).fetchone()
+                assert task is not None
+                item = next(
+                    (
+                        candidate
+                        for candidate in run_items
+                        if candidate["instrument_code"] == task["instrument_code"]
+                        and candidate["evidence_type"] == task["evidence_type"]
+                    ),
+                    None,
+                )
+                ingestion_status = "MISSING" if item is None else str(item["ingestion_status"])
+                evidence_id = None if item is None else item["evidence_id"]
+                error_code = (
+                    "CLAIMED_TASK_RESULT_MISSING"
+                    if item is None
+                    else item["error_code"]
+                )
+                succeeded = ingestion_status in {"RECORDED", "REPLAYED"}
+                if succeeded:
+                    task_status = "COMPLETED"
+                    completed_run_id: str | None = collection_run_id
+                    completed_count += 1
+                else:
+                    task_status = (
+                        "EXHAUSTED"
+                        if int(task["attempt_count"]) >= int(task["max_attempts"])
+                        else "PENDING"
+                    )
+                    completed_run_id = None
+                receipt_facts = {
+                    "claim_id": claim_id,
+                    "task_id": task_id,
+                    "collection_run_id": collection_run_id,
+                    "ingestion_status": ingestion_status,
+                    "evidence_id": evidence_id,
+                    "error_code": error_code,
+                    "completed_at": now_iso,
+                }
+                connection.execute(
+                    """
+                    INSERT INTO research_collection_task_receipts (
+                        id, claim_id, task_id, collection_run_id, ingestion_status,
+                        evidence_id, error_code, completed_at, facts_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        str(uuid4()),
+                        claim_id,
+                        task_id,
+                        collection_run_id,
+                        ingestion_status,
+                        evidence_id,
+                        error_code,
+                        now_iso,
+                        _hash(receipt_facts),
+                    ),
+                )
+                connection.execute(
+                    """
+                    UPDATE research_collection_tasks
+                    SET status=?, active_claim_id=NULL, completed_run_id=?,
+                        available_at=?, updated_at=? WHERE id=?
+                    """,
+                    (task_status, completed_run_id, now_iso, now_iso, task_id),
+                )
+            if completed_count == len(task_ids):
+                claim_status = "COMPLETED"
+            elif completed_count:
+                claim_status = "PARTIAL"
+            else:
+                claim_status = "FAILED"
+            connection.execute(
+                """
+                UPDATE research_collection_claims
+                SET status=?, completed_at=? WHERE id=?
+                """,
+                (claim_status, now_iso, claim_id),
+            )
+            connection.commit()
+            updated = connection.execute(
+                "SELECT * FROM research_collection_claims WHERE id=?", (claim_id,)
+            ).fetchone()
+            assert updated is not None
+            return self._collection_claim_data(
+                updated,
+                receipts=self._claim_receipts(connection, claim_id=claim_id),
+            )
+
+    @staticmethod
+    def _claim_receipts(
+        connection: sqlite3.Connection, *, claim_id: str
+    ) -> list[JsonDict]:
+        rows = connection.execute(
+            """
+            SELECT * FROM research_collection_task_receipts
+            WHERE claim_id=? ORDER BY completed_at, task_id
+            """,
+            (claim_id,),
+        ).fetchall()
+        return [
+            {
+                "id": str(row["id"]),
+                "task_id": str(row["task_id"]),
+                "collection_run_id": str(row["collection_run_id"]),
+                "ingestion_status": str(row["ingestion_status"]),
+                "evidence_id": row["evidence_id"],
+                "error_code": row["error_code"],
+                "completed_at": str(row["completed_at"]),
+                "facts_hash": str(row["facts_hash"]),
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def _collection_claim_data(
+        row: sqlite3.Row,
+        *,
+        receipts: list[JsonDict],
+        idempotent_replay: bool = False,
+    ) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "portfolio_id": str(row["portfolio_id"]),
+            "connector_key": str(row["connector_key"]),
+            "adapter_version": str(row["adapter_version"]),
+            "status": str(row["status"]),
+            "task_count": int(row["task_count"]),
+            "task_ids": json.loads(str(row["task_ids_json"])),
+            "claimed_at": str(row["claimed_at"]),
+            "lease_expires_at": str(row["lease_expires_at"]),
+            "completed_at": row["completed_at"],
+            "facts_hash": str(row["facts_hash"]),
+            "receipts": receipts,
+            "idempotent_replay": idempotent_replay,
+            "receipt_boundary": "COLLECTION_RESULT_FACTS_NOT_RECOMMENDATION_OR_TRADE",
+            "strategy_changed": False,
+            "transactions_created": False,
+            "automatic_trade": False,
+        }
+
+    def list_collection_tasks(
+        self,
+        *,
+        portfolio_id: str,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        normalized_status = None if status is None else status.strip().upper()
+        valid_statuses = {
+            "PENDING",
+            "CLAIMED",
+            "COMPLETED",
+            "EXHAUSTED",
+            "SUPERSEDED",
+        }
+        if normalized_status is not None and normalized_status not in valid_statuses:
+            raise LedgerError(
+                "RESEARCH_COLLECTION_TASK_STATUS_INVALID",
+                "unsupported research collection task status",
+                details={"supported_statuses": sorted(valid_statuses)},
+            )
+        query = "SELECT * FROM research_collection_tasks WHERE portfolio_id=?"
+        params: list[object] = [portfolio_id]
+        if normalized_status:
+            query += " AND status=?"
+            params.append(normalized_status)
+        query += " ORDER BY created_at DESC, instrument_code, evidence_type LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._expire_collection_claims(connection, now=self._now())
+            rows = connection.execute(query, params).fetchall()
+            connection.commit()
+            return [self._collection_task_data(row) for row in rows]
+
+    def list_collection_claims(
+        self,
+        *,
+        portfolio_id: str,
+        connector_key: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = "SELECT * FROM research_collection_claims WHERE portfolio_id=?"
+        params: list[object] = [portfolio_id]
+        if connector_key:
+            query += " AND connector_key=?"
+            params.append(connector_key.strip().upper())
+        query += " ORDER BY claimed_at DESC LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self._expire_collection_claims(connection, now=self._now())
+            rows = connection.execute(query, params).fetchall()
+            connection.commit()
+            return [
+                self._collection_claim_data(
+                    row,
+                    receipts=self._claim_receipts(connection, claim_id=str(row["id"])),
+                )
+                for row in rows
+            ]
+
+    def record_connector_health(
+        self,
+        *,
+        portfolio_id: str,
+        connector_key: str,
+        adapter_version: str,
+        observed_at: datetime,
+        state: str,
+        reason_code: str,
+        latency_ms: int | None = None,
+    ) -> JsonDict:
+        normalized_connector = connector_key.strip().upper()
+        normalized_state = state.strip().upper()
+        if normalized_state not in {"HEALTHY", "DEGRADED", "UNAVAILABLE"}:
+            raise LedgerError(
+                "RESEARCH_CONNECTOR_HEALTH_STATE_INVALID",
+                "unsupported connector health state",
+            )
+        if latency_ms is not None and not 0 <= latency_ms <= 3_600_000:
+            raise LedgerError(
+                "RESEARCH_CONNECTOR_LATENCY_INVALID",
+                "latency_ms must be between 0 and 3600000",
+            )
+        if not adapter_version.strip() or not reason_code.strip():
+            raise LedgerError(
+                "RESEARCH_CONNECTOR_HEALTH_FACTS_REQUIRED",
+                "adapter_version and reason_code are required",
+            )
+        facts = {
+            "portfolio_id": portfolio_id,
+            "connector_key": normalized_connector,
+            "adapter_version": adapter_version.strip(),
+            "observed_at": _iso(observed_at),
+            "state": normalized_state,
+            "reason_code": reason_code.strip().upper(),
+            "latency_ms": latency_ms,
+        }
+        facts_hash = _hash(facts)
+        with self._connect() as connection:
+            config = connection.execute(
+                """
+                SELECT id FROM research_source_configs
+                WHERE portfolio_id=? AND connector_key=? AND is_current=1
+                """,
+                (portfolio_id, normalized_connector),
+            ).fetchone()
+            if config is None:
+                raise LedgerError(
+                    "RESEARCH_CONNECTOR_NOT_CONFIGURED",
+                    "connector is not configured for this portfolio",
+                    http_status=404,
+                )
+            existing = connection.execute(
+                "SELECT * FROM research_connector_health_receipts WHERE facts_hash=?",
+                (facts_hash,),
+            ).fetchone()
+            if existing is not None:
+                return self._connector_health_data(existing, idempotent_replay=True)
+            receipt_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO research_connector_health_receipts (
+                    id, portfolio_id, connector_key, adapter_version, observed_at,
+                    state, reason_code, latency_ms, facts_json, facts_hash, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    receipt_id,
+                    portfolio_id,
+                    normalized_connector,
+                    adapter_version.strip(),
+                    _iso(observed_at),
+                    normalized_state,
+                    reason_code.strip().upper(),
+                    latency_ms,
+                    _json(facts),
+                    facts_hash,
+                    _iso(self._now()),
+                ),
+            )
+            connection.commit()
+            row = connection.execute(
+                "SELECT * FROM research_connector_health_receipts WHERE id=?",
+                (receipt_id,),
+            ).fetchone()
+            assert row is not None
+            return self._connector_health_data(row)
+
+    @staticmethod
+    def _connector_health_data(
+        row: sqlite3.Row, *, idempotent_replay: bool = False
+    ) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            **json.loads(str(row["facts_json"])),
+            "facts_hash": str(row["facts_hash"]),
+            "created_at": str(row["created_at"]),
+            "idempotent_replay": idempotent_replay,
+            "health_boundary": "CONNECTOR_RUNTIME_FACT_NOT_SOURCE_VERIFICATION",
+        }
+
+    def list_connector_health(
+        self,
+        *,
+        portfolio_id: str,
+        stale_after_seconds: int = 900,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        if not 60 <= stale_after_seconds <= 86_400:
+            raise LedgerError(
+                "RESEARCH_CONNECTOR_HEALTH_STALE_WINDOW_INVALID",
+                "stale_after_seconds must be between 60 and 86400",
+            )
+        now = self._now().astimezone(UTC)
+        with self._connect() as connection:
+            configs = connection.execute(
+                """
+                SELECT * FROM research_source_configs
+                WHERE portfolio_id=? AND is_current=1 ORDER BY connector_key LIMIT ?
+                """,
+                (portfolio_id, limit),
+            ).fetchall()
+            items: list[JsonDict] = []
+            for config in configs:
+                receipt = connection.execute(
+                    """
+                    SELECT * FROM research_connector_health_receipts
+                    WHERE portfolio_id=? AND connector_key=?
+                    ORDER BY observed_at DESC, created_at DESC LIMIT 1
+                    """,
+                    (portfolio_id, config["connector_key"]),
+                ).fetchone()
+                if receipt is None:
+                    items.append(
+                        {
+                            "connector_key": str(config["connector_key"]),
+                            "display_name": str(config["display_name"]),
+                            "enabled": bool(config["enabled"]),
+                            "runtime_status": "NOT_REPORTED",
+                            "latest_receipt": None,
+                        }
+                    )
+                    continue
+                observed = datetime.fromisoformat(
+                    str(receipt["observed_at"]).replace("Z", "+00:00")
+                )
+                age_seconds = max(0, int((now - observed.astimezone(UTC)).total_seconds()))
+                items.append(
+                    {
+                        "connector_key": str(config["connector_key"]),
+                        "display_name": str(config["display_name"]),
+                        "enabled": bool(config["enabled"]),
+                        "runtime_status": (
+                            "STALE"
+                            if age_seconds > stale_after_seconds
+                            else str(receipt["state"])
+                        ),
+                        "age_seconds": age_seconds,
+                        "latest_receipt": self._connector_health_data(receipt),
+                    }
+                )
+            return items
+
+    def list_coverage_changes(
+        self,
+        *,
+        portfolio_id: str,
+        instrument_code: str | None = None,
+        limit: int = 100,
+    ) -> list[JsonDict]:
+        query = "SELECT * FROM research_coverage_changes WHERE portfolio_id=?"
+        params: list[object] = [portfolio_id]
+        if instrument_code:
+            query += " AND instrument_code=?"
+            params.append(instrument_code.strip().upper())
+        query += " ORDER BY created_at DESC, instrument_code, evidence_type LIMIT ?"
+        params.append(limit)
+        with self._connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+            return [
+                {
+                    "id": str(row["id"]),
+                    **json.loads(str(row["facts_json"])),
+                    "facts_hash": str(row["facts_hash"]),
+                    "created_at": str(row["created_at"]),
+                    "change_boundary": "FACTUAL_COVERAGE_DELTA_NOT_INVESTMENT_SIGNAL",
+                }
+                for row in rows
+            ]
 
     def record_evidence(
         self,
