@@ -252,6 +252,8 @@ def _instrument_plan_items(
     assignment: JsonDict,
     role_allocations: JsonDict,
     data_quality: str,
+    signal_policy: JsonDict | None = None,
+    signal_states: dict[str, JsonDict] | None = None,
 ) -> list[JsonDict]:
     """Split role amounts only across an explicitly approved local allowlist."""
     items: list[JsonDict] = []
@@ -259,7 +261,7 @@ def _instrument_plan_items(
         role_minor = int((Decimal(str(role_allocations[role])) * MONEY_SCALE).to_integral_exact())
         if role_minor == 0:
             continue
-        eligible = [
+        authorized = [
             config
             for config in assignment["instruments"]
             if config["role"] == role
@@ -267,8 +269,54 @@ def _instrument_plan_items(
             and config["contribution_eligible"]
             and config["thesis_status"] == "ACTIVE"
         ]
+        eligible = authorized
+        gate_facts: JsonDict | None = None
+        if role == "SATELLITE" and signal_policy is not None:
+            states = signal_states or {}
+
+            eligible = [
+                config
+                for config in authorized
+                if (_current_signal_state(config, states) or {}).get("state") == "OPEN"
+            ]
+            gate_facts = {
+                "policy_id": signal_policy["id"],
+                "policy_version": signal_policy["version"],
+                "metric": signal_policy["metric"],
+                "entry_max_percentile_bps": signal_policy[
+                    "entry_max_percentile_bps"
+                ],
+                "states": {
+                    code: {
+                        "snapshot_id": item["id"],
+                        "state": item["state"],
+                        "reason_code": item["reason_code"],
+                        "current_config_match": any(
+                            str(config["instrument_code"]) == code
+                            and _current_signal_state(config, states) is not None
+                            for config in authorized
+                        ),
+                    }
+                    for code, item in states.items()
+                },
+            }
         eligible.sort(key=lambda item: (item["priority"], item["instrument_code"]))
         if not eligible:
+            reason_code = "NO_ELIGIBLE_INSTRUMENT"
+            selection_boundary = "INSTANCE_ALLOWLIST_ONLY"
+            if role == "SATELLITE" and signal_policy is not None:
+                selection_boundary = "INSTANCE_ALLOWLIST_AND_OPEN_SIGNAL"
+                if not authorized:
+                    reason_code = "NO_SIGNAL_AUTHORIZED_INSTRUMENT"
+                elif not signal_states:
+                    reason_code = "SATELLITE_SIGNAL_SNAPSHOT_REQUIRED"
+                elif not any(
+                    _current_signal_state(config, states) is not None
+                    for config in authorized
+                ):
+                    reason_code = "SATELLITE_SIGNAL_SNAPSHOT_STALE"
+                else:
+                    reason_code = "NO_OPEN_SATELLITE_SIGNAL"
             items.append(
                 {
                     "instrument_id": None,
@@ -282,10 +330,11 @@ def _instrument_plan_items(
                     "reserved_amount": _money(role_minor),
                     "action": "REVIEW_REQUIRED",
                     "data_quality": data_quality,
-                    "reason_code": "NO_ELIGIBLE_INSTRUMENT",
+                    "reason_code": reason_code,
                     "explanation_facts": {
                         "role_allocation": _money(role_minor),
-                        "selection_boundary": "INSTANCE_ALLOWLIST_ONLY",
+                        "selection_boundary": selection_boundary,
+                        "signal_gate": gate_facts,
                     },
                 }
             )
@@ -351,10 +400,31 @@ def _instrument_plan_items(
                         "priority": config["priority"],
                         "benchmark_code": config["benchmark_code"],
                         "thesis_status": config["thesis_status"],
+                        "signal_gate": (
+                            gate_facts
+                            if role == "SATELLITE" and signal_policy is not None
+                            else None
+                        ),
                     },
                 }
             )
     return items
+
+
+def _current_signal_state(
+    config: JsonDict,
+    states: dict[str, JsonDict],
+) -> JsonDict | None:
+    item = states.get(str(config["instrument_code"]))
+    if item is None:
+        return None
+    facts = item.get("facts") or {}
+    if (
+        facts.get("strategy_config_id") != config["id"]
+        or facts.get("strategy_config_updated_at") != config["updated_at"]
+    ):
+        return None
+    return item
 
 
 def _apply_executable_projection(
@@ -447,6 +517,57 @@ class MarketDataService:
         return "WARNING", [
             "NAV is single-source or unverified; use the deterministic result conservatively"
         ]
+
+    def _satellite_signal_gate(
+        self,
+        *,
+        portfolio_id: str,
+        strategy_assignment_id: str,
+        as_of_date: str,
+    ) -> tuple[JsonDict | None, dict[str, JsonDict]]:
+        with self._connect() as connection:
+            policy = connection.execute(
+                """
+                SELECT * FROM satellite_signal_policies
+                WHERE portfolio_id=? AND status='ACTIVE'
+                ORDER BY version DESC LIMIT 1
+                """,
+                (portfolio_id,),
+            ).fetchone()
+            if policy is None:
+                return None, {}
+            rows = connection.execute(
+                """
+                SELECT s.*, i.code AS instrument_code
+                FROM satellite_signal_snapshots s
+                JOIN instruments i ON i.id=s.instrument_id
+                WHERE s.portfolio_id=? AND s.policy_id=?
+                  AND s.strategy_assignment_id=? AND s.as_of_date=?
+                ORDER BY s.created_at DESC, s.rowid DESC
+                """,
+                (portfolio_id, policy["id"], strategy_assignment_id, as_of_date),
+            ).fetchall()
+        states: dict[str, JsonDict] = {}
+        for row in rows:
+            code = str(row["instrument_code"])
+            if code not in states:
+                states[code] = {
+                    "id": str(row["id"]),
+                    "state": str(row["state"]),
+                    "reason_code": str(row["reason_code"]),
+                    "facts_hash": str(row["facts_hash"]),
+                    "facts": json.loads(str(row["facts_json"])),
+                }
+        return (
+            {
+                "id": str(policy["id"]),
+                "version": int(policy["version"]),
+                "metric": str(policy["metric"]),
+                "entry_max_percentile_bps": int(policy["entry_max_percentile_bps"]),
+                "content_hash": str(policy["content_hash"]),
+            },
+            states,
+        )
 
     @classmethod
     def _snapshot_data(cls, row: sqlite3.Row) -> JsonDict:
@@ -1506,10 +1627,17 @@ class MarketDataService:
             contribution_minor=contribution_minor,
         )
         assignment = self._strategy.get_assignment(portfolio_id=portfolio_id)
+        signal_policy, signal_states = self._satellite_signal_gate(
+            portfolio_id=portfolio_id,
+            strategy_assignment_id=str(assignment["id"]),
+            as_of_date=str(valuation["as_of_date"]),
+        )
         instrument_items = _instrument_plan_items(
             assignment=assignment,
             role_allocations=plan["role_allocations"],
             data_quality=valuation["data_quality"],
+            signal_policy=signal_policy,
+            signal_states=signal_states,
         )
         candidate_minor = sum(
             int((Decimal(str(item["candidate_amount"])) * MONEY_SCALE).to_integral_exact())
@@ -1531,7 +1659,13 @@ class MarketDataService:
                 "instrument_items": instrument_items,
                 "candidate_amount": _money(candidate_minor),
                 "reserved_amount": _money(reserved_minor),
-                "selection_boundary": "INSTANCE_ALLOWLIST_ONLY",
+                "selection_boundary": (
+                    "INSTANCE_ALLOWLIST_AND_OPEN_SIGNAL"
+                    if signal_policy is not None
+                    else "INSTANCE_ALLOWLIST_ONLY"
+                ),
+                "satellite_signal_policy": signal_policy,
+                "satellite_signal_snapshot_count": len(signal_states),
             }
         )
         if reserved_minor:
@@ -1598,6 +1732,11 @@ class MarketDataService:
                 "",
                 "执行边界:",
                 "- 标的只能来自当前策略实例中明确批准可定投的配置.",
+                (
+                    "- 卫星标的还必须具有同日、同政策且状态为 OPEN 的信号快照."
+                    if signal_policy is not None
+                    else "- 当前没有已批准的卫星信号政策."
+                ),
                 "- 不创建交易草稿，不代表已买入，不自动卖出.",  # noqa: RUF001
             ]
         )

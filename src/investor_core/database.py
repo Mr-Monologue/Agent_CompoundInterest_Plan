@@ -64,6 +64,9 @@ REQUIRED_TABLES = {
     "review_action_outcomes",
     "review_trend_snapshots",
     "runtime_mode_snapshots",
+    "satellite_signal_policies",
+    "satellite_signal_policy_drafts",
+    "satellite_signal_snapshots",
     "schema_meta",
     "settings",
     "strategy_assignments",
@@ -76,7 +79,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0025_alert_recovery_resolution"
+EXPECTED_ALEMBIC_REVISION = "0026_satellite_signal_gating"
 
 
 def ensure_database_parent(settings: Settings) -> None:

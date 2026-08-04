@@ -43,6 +43,8 @@ from investor_core.api.schemas import (
     ReviewQualitySnapshotRequest,
     ReviewTrendSnapshotRequest,
     RiskScanRequest,
+    SatelliteSignalPolicyDraftRequest,
+    SatelliteSignalSnapshotRequest,
     SellDecisionDraftCreateRequest,
     SellFollowupEvaluateRequest,
     StrategyInstrumentConfigDraftRequest,
@@ -67,6 +69,7 @@ from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.research import ResearchService
 from investor_core.risk import RiskService
+from investor_core.signals import SignalService
 from investor_core.strategy import StrategyService
 from investor_core.version import __version__
 from investor_core.workspace import WorkspaceService
@@ -94,6 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     strategies = StrategyService(runtime_settings)
     planning = PlanningService(runtime_settings)
     risk = RiskService(runtime_settings)
+    signals = SignalService(runtime_settings)
     operations = OperationsService(runtime_settings)
     performance = PerformanceService(runtime_settings)
     capital = CapitalService(runtime_settings)
@@ -1420,6 +1424,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 else ["Valuation observation is single-source or unverified"]
             ),
             data_quality=quality,
+        )
+
+    @app.post("/v1/satellite-signal-policy-drafts")
+    def satellite_signal_policy_draft_create(
+        request: SatelliteSignalPolicyDraftRequest,
+    ) -> dict[str, Any]:
+        return success(signals.create_policy_draft(**request.model_dump()))
+
+    @app.get("/v1/satellite-signal-policy-drafts/{draft_id}")
+    def satellite_signal_policy_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(signals.get_policy_draft(draft_id=draft_id))
+
+    @app.post("/v1/satellite-signal-policy-drafts/{draft_id}/commit")
+    def satellite_signal_policy_draft_commit(
+        draft_id: str,
+        request: TransactionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            signals.commit_policy_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.get("/v1/satellite-signal-policies")
+    def satellite_signal_policy_list(
+        portfolio_id: str | None = None,
+    ) -> dict[str, Any]:
+        return success({"items": signals.list_policies(portfolio_id=portfolio_id)})
+
+    @app.post("/v1/satellite-signal-snapshots")
+    def satellite_signal_snapshot_build(
+        request: SatelliteSignalSnapshotRequest,
+    ) -> dict[str, Any]:
+        result = signals.build_snapshot(
+            portfolio_id=request.portfolio_id,
+            as_of_date=(request.as_of_date.isoformat() if request.as_of_date else None),
+            actor_ref=request.actor_ref,
+        )
+        quality = (
+            "PASS"
+            if all(item["data_quality"] == "PASS" for item in result["items"])
+            else "WARNING"
+        )
+        return success(result, data_quality=quality)
+
+    @app.get("/v1/satellite-signal-snapshots")
+    def satellite_signal_snapshot_list(
+        portfolio_id: str,
+        as_of_date: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": signals.list_snapshots(
+                    portfolio_id=portfolio_id,
+                    as_of_date=as_of_date,
+                    limit=limit,
+                )
+            }
         )
 
     @app.get("/v1/valuation-snapshot")
