@@ -174,6 +174,83 @@ def test_healthy_system_doctor_creates_silent_fact_bundle_once(tmp_path: Path) -
     assert service.retry_due()["display_text"] == "[SILENT]"
 
 
+def test_successful_retry_auto_resolves_only_its_linked_failure_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    current = [datetime(2026, 7, 27, 2, 0, tzinfo=UTC)]
+    calls = [0]
+
+    def mutable_now() -> datetime:
+        return current[0]
+
+    def fail_then_recover(**_kwargs: object) -> tuple[dict[str, object], str, bool, str]:
+        calls[0] += 1
+        if calls[0] == 1:
+            raise LedgerError(
+                "PROVIDER_CANARY_FAILED",
+                "market data provider canary did not pass",
+            )
+        return (
+            {"items": [], "requested_count": 0},
+            "WARNING",
+            False,
+            "MARKET_SYNC_COMPLETED",
+        )
+
+    service = OperationsService(settings_for(database_path), now=mutable_now)
+    commit_policy(service, job_name="SYSTEM_DOCTOR")
+    monkeypatch.setattr(service, "_execute", fail_then_recover)
+
+    first = service.run_job(
+        job_name="SYSTEM_DOCTOR",
+        scheduled_for="2026-07-27T02:00:00Z",
+    )
+    linked_alert_id = str(first["alert_id"])
+    assert first["job_run"]["status"] == "FAILED"
+    assert service.status_summary()["open_alert_count"] == 1
+    failure_snapshot = service.list_alerts(status=None)[0]["context"]
+
+    current[0] = datetime(2026, 7, 27, 2, 5, tzinfo=UTC)
+    retried = service.retry_due()
+
+    assert retried["retried_count"] == 1
+    recovered = retried["items"][0]
+    assert recovered["job_run"]["id"] == first["job_run"]["id"]
+    assert recovered["job_run"]["status"] == "DEGRADED"
+    assert recovered["job_run"]["attempt_count"] == 2
+    assert recovered["report_bundle"]["auto_resolved_alert_ids"] == [linked_alert_id]
+    assert service.status_summary()["open_alert_count"] == 0
+
+    alert = service.list_alerts(status=None)[0]
+    assert alert["status"] == "RESOLVED"
+    assert alert["context"] == failure_snapshot
+    assert alert["resolution_code"] == "JOB_RUN_RECOVERED"
+    assert alert["resolved_by"] == "operations-retry"
+    assert alert["resolution_context"] == {
+        "attempt_count": 2,
+        "data_quality": "WARNING",
+        "final_status": "DEGRADED",
+        "job_name": "SYSTEM_DOCTOR",
+        "job_run_id": first["job_run"]["id"],
+        "reason_code": "MARKET_SYNC_COMPLETED",
+        "scheduled_for": "2026-07-27T02:00:00Z",
+    }
+    assert alert["current_job_run"]["status"] == "DEGRADED"
+    assert alert["current_job_run"]["attempt_count"] == 2
+    assert alert["current_job_run"]["error_code"] is None
+    assert alert["current_job_run"]["next_retry_at"] is None
+    with sqlite3.connect(database_path) as connection:
+        audit = connection.execute(
+            """
+            SELECT action, entity_id FROM audit_events
+            WHERE action='AUTOMATION_ALERT_AUTO_RESOLVED'
+            """
+        ).fetchall()
+    assert audit == [("AUTOMATION_ALERT_AUTO_RESOLVED", linked_alert_id)]
+
+
 def test_failed_system_doctor_creates_notify_bundle_and_outbox(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
@@ -375,9 +452,7 @@ def test_controlled_notification_test_uses_real_outbox_and_receipt(
         evidence={"acknowledgement": "CLI_EXIT_ZERO"},
         error_code=None,
     )
-    status = service.get_notification_test(
-        test_request_id=str(created["test_request"]["id"])
-    )
+    status = service.get_notification_test(test_request_id=str(created["test_request"]["id"]))
     assert delivered["outbox"]["status"] == "DELIVERED"
     assert status["outbox"]["status"] == "DELIVERED"
     assert status["attempts"][0]["status"] == "DELIVERED"
@@ -461,9 +536,7 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
     )
     manifest = service.scheduler_manifest(profile="investor")
     discovery = next(
-        item
-        for item in manifest["jobs"]
-        if item["job_name"] == "WEEKLY_MARKET_DISCOVERY"
+        item for item in manifest["jobs"] if item["job_name"] == "WEEKLY_MARKET_DISCOVERY"
     )
     assert discovery["script"] == "value_dca_weekly_market_discovery.py"
     assert discovery["no_agent"] is True
@@ -474,11 +547,7 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
         portfolio_id=portfolio_id,
     )
     manifest = service.scheduler_manifest(profile="investor")
-    review = next(
-        item
-        for item in manifest["jobs"]
-        if item["job_name"] == "WATCHLIST_REVIEW_DUE"
-    )
+    review = next(item for item in manifest["jobs"] if item["job_name"] == "WATCHLIST_REVIEW_DUE")
     assert review["script"] == "value_dca_watchlist_review_due.py"
     assert review["no_agent"] is True
     run = service.run_job(
@@ -497,9 +566,7 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
     )
     manifest = service.scheduler_manifest(profile="investor")
     quality = next(
-        item
-        for item in manifest["jobs"]
-        if item["job_name"] == "REVIEW_QUALITY_SNAPSHOT"
+        item for item in manifest["jobs"] if item["job_name"] == "REVIEW_QUALITY_SNAPSHOT"
     )
     assert quality["script"] == "value_dca_review_quality_snapshot.py"
     assert quality["no_agent"] is True
@@ -509,10 +576,7 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
         scheduled_for="2026-07-27T00:05:00Z",
     )
     assert quality_run["job_run"]["status"] == "DEGRADED"
-    assert (
-        quality_run["job_run"]["output"]["reason_code"]
-        == "REVIEW_QUALITY_NO_PERIODIC_REVIEWS"
-    )
+    assert quality_run["job_run"]["output"]["reason_code"] == "REVIEW_QUALITY_NO_PERIODIC_REVIEWS"
 
     commit_policy(
         service,
@@ -526,9 +590,7 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
     )
     manifest = service.scheduler_manifest(profile="investor")
     coverage = next(
-        item
-        for item in manifest["jobs"]
-        if item["job_name"] == "RESEARCH_COVERAGE_AUDIT"
+        item for item in manifest["jobs"] if item["job_name"] == "RESEARCH_COVERAGE_AUDIT"
     )
     assert coverage["script"] == "value_dca_research_coverage_audit.py"
     assert coverage["no_agent"] is True
@@ -539,8 +601,7 @@ def test_market_discovery_policy_requires_registered_explicit_universe(
     )
     assert coverage_run["job_run"]["status"] == "DEGRADED"
     assert (
-        coverage_run["job_run"]["output"]["reason_code"]
-        == "RESEARCH_COVERAGE_CONNECTOR_REQUIRED"
+        coverage_run["job_run"]["output"]["reason_code"] == "RESEARCH_COVERAGE_CONNECTOR_REQUIRED"
     )
 
 
@@ -573,7 +634,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0024_research_collection_orchestration",)
+    assert revision == ("0025_alert_recovery_resolution",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:
