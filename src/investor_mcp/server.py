@@ -1820,6 +1820,127 @@ async def valuation_snapshot_get(
 
 
 @mcp.tool()
+async def satellite_signal_policy_draft_create(
+    reason: str,
+    metric: Literal["PE", "PB"] = "PE",
+    entry_max_percentile_bps: int = 3000,
+    lookback_days: int = 1826,
+    minimum_sample_count: int = 30,
+    maximum_observation_age_days: int = 10,
+    allow_warning_data: bool = False,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Draft one exact satellite valuation-signal policy; this never changes strategy."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/satellite-signal-policy-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "metric": metric,
+            "entry_max_percentile_bps": entry_max_percentile_bps,
+            "lookback_days": lookback_days,
+            "minimum_sample_count": minimum_sample_count,
+            "maximum_observation_age_days": maximum_observation_age_days,
+            "allow_warning_data": allow_warning_data,
+            "reason": reason,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def satellite_signal_policy_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read one signal-policy draft without exposing its confirmation token."""
+    return await core_request("GET", f"/v1/satellite-signal-policy-drafts/{draft_id}")
+
+
+@mcp.tool()
+async def satellite_signal_policy_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Commit one exact signal policy after explicit confirmation; never trade."""
+    return await core_request(
+        "POST",
+        f"/v1/satellite-signal-policy-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def satellite_signal_policy_list(
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """List approved satellite signal policies without evaluating instruments."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "GET",
+        "/v1/satellite-signal-policies",
+        params={"portfolio_id": resolved_portfolio_id},
+    )
+
+
+@mcp.tool()
+async def satellite_signal_snapshot_build(
+    as_of_date: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Build immutable PE/PB gate facts; OPEN is not advice, execution or a trade."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/satellite-signal-snapshots",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "as_of_date": as_of_date or None,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def satellite_signal_snapshot_list(
+    as_of_date: str = "",
+    limit: int = 100,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """List persisted satellite signal facts without generating new observations."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "limit": limit,
+    }
+    if as_of_date:
+        params["as_of_date"] = as_of_date
+    return await core_request("GET", "/v1/satellite-signal-snapshots", params=params)
+
+
+@mcp.tool()
 async def risk_scan_run(
     as_of_date: str = "",
     liquidity_amount: str = "",

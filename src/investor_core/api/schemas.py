@@ -177,6 +177,24 @@ class ValuationObservationCreateRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
+class SatelliteSignalPolicyDraftRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    metric: Literal["PE", "PB"] = "PE"
+    entry_max_percentile_bps: int = Field(default=3000, ge=0, le=10000)
+    lookback_days: int = Field(default=1826, ge=30, le=7305)
+    minimum_sample_count: int = Field(default=30, ge=1, le=10000)
+    maximum_observation_age_days: int = Field(default=10, ge=0, le=365)
+    allow_warning_data: bool = False
+    reason: str = Field(min_length=1, max_length=500)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class SatelliteSignalSnapshotRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    as_of_date: date | None = None
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class LifecycleObservationCreateRequest(RequestModel):
     instrument_code: str = Field(min_length=1, max_length=40)
     observation_type: Literal[
