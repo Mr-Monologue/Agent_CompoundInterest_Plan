@@ -630,6 +630,7 @@ class RiskService:
             "benchmark_code": benchmark_code,
             "metric": normalized_metric,
             "as_of_date": end.isoformat(),
+            "latest_observation_date": str(latest["observation_date"]),
             "current_value": _value(current),
             "percentile": f"{Decimal(percentile_bps) / 100:.2f}",
             "percentile_bps": percentile_bps,
