@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.28.1",
+  "version": "0.28.2",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0024_research_collection_orchestration",
+  "database_revision": "0025_alert_recovery_resolution",
   "minimum_current_version": "0.5.3",
-  "notes": "Record verified SQLite CLI backups as operational evidence and require contribution allowlist coverage for every positive-target allocation role, without changing the database schema or financial state."
+  "notes": "Automatically resolve an automation failure alert only when its exact job run later succeeds, preserve the original failure evidence, expose the live linked run state, and backfill stale recovered alerts with audit records."
 }

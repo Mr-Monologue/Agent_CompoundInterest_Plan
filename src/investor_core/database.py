@@ -76,7 +76,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0024_research_collection_orchestration"
+EXPECTED_ALEMBIC_REVISION = "0025_alert_recovery_resolution"
 
 
 def ensure_database_parent(settings: Settings) -> None:
