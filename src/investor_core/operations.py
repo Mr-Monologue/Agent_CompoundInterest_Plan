@@ -231,13 +231,7 @@ class OperationsService:
                     "AUTOMATION_CONFIG_INVALID",
                     "market discovery requires an explicit instrument_codes list",
                 )
-            codes = sorted(
-                {
-                    str(code).strip().upper()
-                    for code in raw_codes
-                    if str(code).strip()
-                }
-            )
+            codes = sorted({str(code).strip().upper() for code in raw_codes if str(code).strip()})
             if not codes or len(codes) > 200:
                 raise LedgerError(
                     "AUTOMATION_CONFIG_INVALID",
@@ -267,9 +261,7 @@ class OperationsService:
                     "AUTOMATION_CONFIG_INVALID",
                     "research coverage requires explicit instrument_codes and evidence types",
                 )
-            codes = sorted(
-                {str(code).strip().upper() for code in raw_codes if str(code).strip()}
-            )
+            codes = sorted({str(code).strip().upper() for code in raw_codes if str(code).strip()})
             evidence_types = sorted(
                 {str(item).strip().upper() for item in raw_types if str(item).strip()}
             )
@@ -1378,6 +1370,7 @@ class OperationsService:
         bundle_id = str(uuid4())
         display_text = f"{job_name} 已生成待查看事实包, 数据质量: {quality}, 原因: {reason_code}。"
         with self._connect() as connection:
+            final_status = "DEGRADED" if quality != "PASS" else "SUCCESS"
             connection.execute(
                 """
                 UPDATE job_runs SET status=?, finished_at=?, heartbeat_at=?,
@@ -1386,7 +1379,7 @@ class OperationsService:
                 WHERE id=?
                 """,
                 (
-                    "DEGRADED" if quality != "PASS" else "SUCCESS",
+                    final_status,
                     timestamp,
                     timestamp,
                     _json(
@@ -1402,6 +1395,47 @@ class OperationsService:
                     run_id,
                 ),
             )
+            run = connection.execute("SELECT * FROM job_runs WHERE id=?", (run_id,)).fetchone()
+            assert run is not None
+            recovery_context = {
+                "job_run_id": run_id,
+                "job_name": job_name,
+                "scheduled_for": scheduled_for,
+                "final_status": final_status,
+                "attempt_count": int(run["attempt_count"]),
+                "reason_code": reason_code,
+                "data_quality": quality,
+            }
+            recoverable_alerts = connection.execute(
+                """
+                SELECT * FROM alerts
+                WHERE job_run_id=? AND status IN ('OPEN','ACKNOWLEDGED')
+                ORDER BY created_at, id
+                """,
+                (run_id,),
+            ).fetchall()
+            resolved_alert_ids: list[str] = []
+            for alert in recoverable_alerts:
+                alert_id = str(alert["id"])
+                connection.execute(
+                    """
+                    UPDATE alerts
+                    SET status='RESOLVED', resolved_at=?, resolved_by=?,
+                        resolution_code='JOB_RUN_RECOVERED',
+                        resolution_context_json=?
+                    WHERE id=? AND status IN ('OPEN','ACKNOWLEDGED')
+                    """,
+                    (timestamp, actor_ref, _json(recovery_context), alert_id),
+                )
+                resolved_alert_ids.append(alert_id)
+                self._audit(
+                    connection,
+                    action="AUTOMATION_ALERT_AUTO_RESOLVED",
+                    entity_type="alert",
+                    entity_id=alert_id,
+                    actor_ref=actor_ref,
+                    details=recovery_context,
+                )
             existing = connection.execute(
                 """
                 SELECT * FROM report_bundles
@@ -1470,6 +1504,7 @@ class OperationsService:
                 row = existing
             assert row is not None
             data = self._bundle_data(row)
+            data["auto_resolved_alert_ids"] = resolved_alert_ids
             data["display_text"] = display_text
             return data
 
@@ -1583,7 +1618,9 @@ class OperationsService:
                     """
                     UPDATE alerts
                     SET occurrence_count=occurrence_count+1, last_seen_at=?,
-                        context_json=?, status='OPEN'
+                        context_json=?, status='OPEN', resolved_at=NULL,
+                        resolved_by=NULL, resolution_code=NULL,
+                        resolution_context_json=NULL
                     WHERE id=?
                     """,
                     (timestamp, _json(context), alert_id),
@@ -1698,15 +1735,29 @@ class OperationsService:
         status: str | None = "OPEN",
         limit: int = 100,
     ) -> list[JsonDict]:
-        query = "SELECT * FROM alerts WHERE 1=1"
+        query = """
+            SELECT alerts.*,
+                   job_runs.status AS current_run_status,
+                   job_runs.attempt_count AS current_run_attempt_count,
+                   job_runs.max_attempts AS current_run_max_attempts,
+                   job_runs.started_at AS current_run_started_at,
+                   job_runs.finished_at AS current_run_finished_at,
+                   job_runs.error_code AS current_run_error_code,
+                   job_runs.error_summary AS current_run_error_summary,
+                   job_runs.next_retry_at AS current_run_next_retry_at,
+                   job_runs.output_json AS current_run_output_json
+            FROM alerts
+            JOIN job_runs ON job_runs.id=alerts.job_run_id
+            WHERE 1=1
+        """
         params: list[object] = []
         if portfolio_id:
-            query += " AND portfolio_id=?"
+            query += " AND alerts.portfolio_id=?"
             params.append(portfolio_id)
         if status:
-            query += " AND status=?"
+            query += " AND alerts.status=?"
             params.append(status.strip().upper())
-        query += " ORDER BY last_seen_at DESC LIMIT ?"
+        query += " ORDER BY alerts.last_seen_at DESC LIMIT ?"
         params.append(limit)
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
@@ -1724,6 +1775,25 @@ class OperationsService:
                 "last_seen_at": str(row["last_seen_at"]),
                 "acknowledged_at": row["acknowledged_at"],
                 "acknowledged_by": row["acknowledged_by"],
+                "resolved_at": row["resolved_at"],
+                "resolved_by": row["resolved_by"],
+                "resolution_code": row["resolution_code"],
+                "resolution_context": (
+                    json.loads(str(row["resolution_context_json"]))
+                    if row["resolution_context_json"] is not None
+                    else None
+                ),
+                "current_job_run": {
+                    "status": str(row["current_run_status"]),
+                    "attempt_count": int(row["current_run_attempt_count"]),
+                    "max_attempts": int(row["current_run_max_attempts"]),
+                    "started_at": str(row["current_run_started_at"]),
+                    "finished_at": row["current_run_finished_at"],
+                    "error_code": row["current_run_error_code"],
+                    "error_summary": row["current_run_error_summary"],
+                    "next_retry_at": row["current_run_next_retry_at"],
+                    "output": json.loads(str(row["current_run_output_json"])),
+                },
             }
             for row in rows
         ]
@@ -1761,9 +1831,7 @@ class OperationsService:
             )
         now = self._now()
         timestamp = _iso(now)
-        cooldown_cutoff = _iso(
-            now - timedelta(seconds=NOTIFICATION_TEST_COOLDOWN_SECONDS)
-        )
+        cooldown_cutoff = _iso(now - timedelta(seconds=NOTIFICATION_TEST_COOLDOWN_SECONDS))
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -1779,9 +1847,7 @@ class OperationsService:
                 ).fetchone()
                 if existing is not None:
                     connection.commit()
-                    result = self.get_notification_test(
-                        test_request_id=str(existing["id"])
-                    )
+                    result = self.get_notification_test(test_request_id=str(existing["id"]))
                     result["idempotent_replay"] = True
                     return result
                 recent = connection.execute(
@@ -1957,9 +2023,7 @@ class OperationsService:
             "source_type": "ALERT",
             "source_id": str(alert["id"]),
             "display_text": (
-                f"Value DCA 自动化告警\n"
-                f"严重度: {alert['severity']}\n"
-                f"错误码: {alert['code']}"
+                f"Value DCA 自动化告警\n严重度: {alert['severity']}\n错误码: {alert['code']}"
             ),
             "facts": json.loads(str(alert["context_json"])),
             "facts_hash": _hash(json.loads(str(alert["context_json"]))),
@@ -2251,8 +2315,7 @@ class OperationsService:
                         None
                         if exhausted
                         else _iso(
-                            self._now()
-                            + timedelta(minutes=DELIVERY_RETRY_MINUTES[retry_index])
+                            self._now() + timedelta(minutes=DELIVERY_RETRY_MINUTES[retry_index])
                         )
                     )
                     connection.execute(
@@ -2564,22 +2627,17 @@ class OperationsService:
             "latest_runs": [self._run_data(row) for row in latest_runs],
             "open_alert_count": open_alerts,
             "pending_outbox_count": pending_outbox,
-            "outbox_counts": {
-                str(row["status"]): int(row["count"]) for row in outbox_counts
-            },
+            "outbox_counts": {str(row["status"]): int(row["count"]) for row in outbox_counts},
             "due_retry_count": due_retries,
             "research_collection": {
                 "task_counts": {
-                    str(row["status"]): int(row["count"])
-                    for row in research_task_counts
+                    str(row["status"]): int(row["count"]) for row in research_task_counts
                 },
                 "claim_counts": {
-                    str(row["status"]): int(row["count"])
-                    for row in research_claim_counts
+                    str(row["status"]): int(row["count"]) for row in research_claim_counts
                 },
                 "latest_connector_health_counts": {
-                    str(row["state"]): int(row["count"])
-                    for row in connector_health_counts
+                    str(row["state"]): int(row["count"]) for row in connector_health_counts
                 },
                 "automatic_collection": False,
             },

@@ -41,29 +41,29 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "automation_policies",
         "automation_policy_drafts",
         "automation_scheduler_snapshots",
-            "backups",
-            "cash_event_drafts",
-            "cash_ledger_events",
-            "market_research_evidence",
-            "research_evidence_changes",
-            "research_watchlist_entries",
-            "research_watchlist_transition_drafts",
-            "research_watchlist_transitions",
-            "research_watchlist_review_snapshots",
-            "research_collection_runs",
-            "research_collection_items",
-            "review_quality_snapshots",
-            "research_source_config_drafts",
-            "research_source_configs",
-            "research_coverage_snapshots",
-            "research_coverage_changes",
-            "research_collection_tasks",
-            "research_collection_claims",
-            "research_collection_task_receipts",
-            "research_connector_health_receipts",
-            "market_discovery_runs",
-            "market_discovery_items",
-            "market_discovery_changes",
+        "backups",
+        "cash_event_drafts",
+        "cash_ledger_events",
+        "market_research_evidence",
+        "research_evidence_changes",
+        "research_watchlist_entries",
+        "research_watchlist_transition_drafts",
+        "research_watchlist_transitions",
+        "research_watchlist_review_snapshots",
+        "research_collection_runs",
+        "research_collection_items",
+        "review_quality_snapshots",
+        "research_source_config_drafts",
+        "research_source_configs",
+        "research_coverage_snapshots",
+        "research_coverage_changes",
+        "research_collection_tasks",
+        "research_collection_claims",
+        "research_collection_task_receipts",
+        "research_connector_health_receipts",
+        "market_discovery_runs",
+        "market_discovery_items",
+        "market_discovery_changes",
         "holding_snapshots",
         "instruments",
         "job_runs",
@@ -73,16 +73,16 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "market_nav_verifications",
         "notification_delivery_attempts",
         "notification_outbox",
-            "notification_test_requests",
-            "official_nav_backfill_batches",
-            "review_action_decision_drafts",
-            "review_action_decisions",
-            "review_action_outcome_drafts",
-            "review_action_outcomes",
-            "review_trend_snapshots",
+        "notification_test_requests",
+        "official_nav_backfill_batches",
+        "review_action_decision_drafts",
+        "review_action_decisions",
+        "review_action_outcome_drafts",
+        "review_action_outcomes",
+        "review_trend_snapshots",
         "portfolios",
-            "report_bundles",
-            "runtime_mode_snapshots",
+        "report_bundles",
+        "runtime_mode_snapshots",
         "schema_meta",
         "settings",
         "strategy_assignments",
@@ -96,7 +96,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0024_research_collection_orchestration",)
+    assert revision == ("0025_alert_recovery_resolution",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -186,7 +186,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0024_research_collection_orchestration",
+            "0025_alert_recovery_resolution",
         )
 
 
@@ -284,16 +284,14 @@ def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
             FROM research_watchlist_entries WHERE id='entry-1'
             """
         ).fetchone()
-        revision = connection.execute(
-            "SELECT version_num FROM alembic_version"
-        ).fetchone()
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (
         "OBSERVING",
         "2026-08-31",
         "2026-07-02T00:01:00Z",
         None,
     )
-    assert revision == ("0024_research_collection_orchestration",)
+    assert revision == ("0025_alert_recovery_resolution",)
     snapshot = ResearchService(settings).build_watchlist_review_snapshot(
         portfolio_id=str(portfolio["id"]),
         as_of_date=date(2026, 9, 1),
@@ -323,7 +321,110 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0024_research_collection_orchestration",)
+    assert revision == ("0025_alert_recovery_resolution",)
+
+
+def test_alert_recovery_migration_resolves_only_recovered_job_runs(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0024_research_collection_orchestration")
+    with sqlite3.connect(database_path) as connection:
+        connection.executemany(
+            """
+            INSERT INTO job_runs (
+                id, job_name, scheduled_for, idempotency_key, status,
+                started_at, finished_at, input_json, output_json,
+                error_code, error_summary, trace_id, attempt_count,
+                max_attempts, heartbeat_at, next_retry_at
+            ) VALUES (?, 'DAILY_MARKET_SYNC', ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?, 3, ?, ?)
+            """,
+            [
+                (
+                    "recovered-run",
+                    "2026-08-03T13:00:00Z",
+                    "recovered-key",
+                    "DEGRADED",
+                    "2026-08-03T13:10:06Z",
+                    "2026-08-03T13:10:08Z",
+                    '{"data_quality":"WARNING","execution_status":"SUCCESS",'
+                    '"reason_code":"MARKET_SYNC_COMPLETED"}',
+                    None,
+                    None,
+                    "recovered-trace",
+                    2,
+                    "2026-08-03T13:10:08Z",
+                    None,
+                ),
+                (
+                    "failed-run",
+                    "2026-08-04T13:00:00Z",
+                    "failed-key",
+                    "FAILED",
+                    "2026-08-04T13:00:00Z",
+                    "2026-08-04T13:00:02Z",
+                    '{"error_code":"PROVIDER_CANARY_FAILED"}',
+                    "PROVIDER_CANARY_FAILED",
+                    "canary failed",
+                    "failed-trace",
+                    1,
+                    "2026-08-04T13:00:02Z",
+                    "2026-08-04T13:05:02Z",
+                ),
+            ],
+        )
+        connection.executemany(
+            """
+            INSERT INTO alerts (
+                id, portfolio_id, job_run_id, code, severity, status,
+                fingerprint, context_json, occurrence_count, created_at,
+                last_seen_at, acknowledged_at, acknowledged_by
+            ) VALUES (?, NULL, ?, 'PROVIDER_CANARY_FAILED', 'CRITICAL', 'OPEN',
+                      ?, '{}', 1, ?, ?, NULL, NULL)
+            """,
+            [
+                (
+                    "stale-alert",
+                    "recovered-run",
+                    "stale-fingerprint",
+                    "2026-08-03T13:00:02Z",
+                    "2026-08-03T13:00:02Z",
+                ),
+                (
+                    "live-alert",
+                    "failed-run",
+                    "live-fingerprint",
+                    "2026-08-04T13:00:02Z",
+                    "2026-08-04T13:00:02Z",
+                ),
+            ],
+        )
+        connection.commit()
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, status, resolved_at, resolved_by, resolution_code,
+                   resolution_context_json
+            FROM alerts ORDER BY id
+            """
+        ).fetchall()
+        audits = connection.execute(
+            """
+            SELECT entity_id FROM audit_events
+            WHERE action='AUTOMATION_ALERT_AUTO_RESOLVED'
+            """
+        ).fetchall()
+    assert rows[0] == ("live-alert", "OPEN", None, None, None, None)
+    assert rows[1][:5] == (
+        "stale-alert",
+        "RESOLVED",
+        "2026-08-03T13:10:08Z",
+        "system:migration-0025",
+        "JOB_RUN_RECOVERED",
+    )
+    assert '"attempt_count":2' in rows[1][5]
+    assert audits == [("stale-alert",)]
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(
