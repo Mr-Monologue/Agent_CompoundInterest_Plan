@@ -413,6 +413,7 @@ class StrategyService:
                     "fund_destination": config["fund_destination"],
                     "approved_by": str(config["approved_by"]),
                     "approved_at": str(config["approved_at"]),
+                    "updated_at": str(config["updated_at"]),
                 }
                 for config in configs
             ],

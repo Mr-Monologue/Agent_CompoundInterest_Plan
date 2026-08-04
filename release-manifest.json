@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.28.2",
+  "version": "0.29.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
-  "database_revision": "0025_alert_recovery_resolution",
+  "database_revision": "0026_satellite_signal_gating",
   "minimum_current_version": "0.5.3",
-  "notes": "Automatically resolve an automation failure alert only when its exact job run later succeeds, preserve the original failure evidence, expose the live linked run state, and backfill stale recovered alerts with audit records."
+  "notes": "Add explicitly approved satellite PE/PB signal policies, immutable signal snapshots and weekly-plan gating that requires both long-term contribution authorization and an OPEN same-date signal, without guessing benchmark mappings or creating trades."
 }
