@@ -399,6 +399,11 @@ SATELLITE 信号政策，明确 PE/PB 指标、进入候选的最高分位、回
 的 `OPEN` 快照；否则卫星舱资金保持为 reserved 并要求人工复核。CORE 逻辑不受影响，计划
 仍不会创建交易，系统也不会自动卖出。数据库修订为 `0026_satellite_signal_gating`。
 
+0.29.1 修复 Windows 升级时 Core supervisor 的进程所有权。升级器和安装器现在会按受管
+`run-investor-core.ps1` 的精确路径停止本项目的 PowerShell supervisor，再终止 Core/MCP
+进程并替换运行环境，避免旧 supervisor 成为孤儿、在升级中重启 Core、锁定入口文件或导致
+新计划任务因端口占用而失败。该修复不改变数据库、策略、计划、交易、持仓或 Hermes 调度。
+
 CLI 仍保留为恢复和诊断入口：
 
 ```bash

@@ -39,6 +39,25 @@ function Get-InvestorRuntimeProcesses([string]$Root) {
     )
 }
 
+function Get-InvestorSupervisorProcesses([string]$Root) {
+    $RunnerScript = [IO.Path]::GetFullPath(
+        (Join-Path $Root "runtime\windows\run-investor-core.ps1")
+    )
+    $RunnerArgument = '-File "' + $RunnerScript + '"'
+    return @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -in @("powershell.exe", "pwsh.exe") -and
+                $null -ne $_.CommandLine -and
+                $_.CommandLine.IndexOf(
+                    $RunnerArgument,
+                    [StringComparison]::OrdinalIgnoreCase
+                ) -ge 0
+            } |
+            ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+    )
+}
+
 Write-Host "Value DCA Agent Windows installer / upgrader" -ForegroundColor Green
 Write-Host "Package source: $SourceRoot"
 Write-Host "Install directory: $InstallDir"
@@ -53,11 +72,20 @@ $ManagedTask = Get-ScheduledTask -TaskName $CoreTaskName -ErrorAction SilentlyCo
 if ($null -ne $ManagedTask -and $ManagedTask.State -eq "Running") {
     Write-Step "Stopping the managed Investor Core for a safe upgrade"
     Stop-ScheduledTask -TaskName $CoreTaskName
+}
+
+$SupervisorProcesses = @(Get-InvestorSupervisorProcesses $NormalizedTarget)
+if ($SupervisorProcesses.Count -gt 0) {
+    Write-Step "Stopping the managed Investor Core supervisor"
+    $SupervisorProcesses | Stop-Process -Force
     for ($Attempt = 0; $Attempt -lt 20; $Attempt++) {
-        if (@(Get-InvestorRuntimeProcesses $NormalizedTarget).Count -eq 0) {
+        if (@(Get-InvestorSupervisorProcesses $NormalizedTarget).Count -eq 0) {
             break
         }
         Start-Sleep -Milliseconds 500
+    }
+    if (@(Get-InvestorSupervisorProcesses $NormalizedTarget).Count -gt 0) {
+        throw "The managed Investor Core supervisor did not stop within 10 seconds."
     }
 }
 
