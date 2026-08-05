@@ -2194,12 +2194,12 @@ async def portfolio_brief_get(
 
 @mcp.tool()
 async def investment_workspace_get(
-    view: Literal["DAILY", "READINESS", "FULL"] = "DAILY",
+    view: Literal["DAILY", "WEEKLY", "READINESS", "FULL"] = "DAILY",
     as_of_date: str = "",
     portfolio_id: str = "",
     account_id: str = "",
 ) -> dict[str, Any]:
-    """Get the deterministic Hermes workbench; return data.display_text exactly."""
+    """Get the deterministic daily/weekly workbench; return data.display_text exactly."""
     resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
         portfolio_id, account_id
     )

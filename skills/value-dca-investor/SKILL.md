@@ -38,7 +38,8 @@ description: Operate a personal long-term value-DCA investment assistant through
 
 For broad requests such as “今天需要处理什么”, “当前状态”, “系统准备好了吗” or a general
 check-in, call `investment_workspace_get` first instead of assembling state from many tools. Use
-`DAILY` for the action centre, `READINESS` for V1 operational acceptance, and `FULL` only when the
+`DAILY` for the action centre, `WEEKLY` for the fixed seven-calendar-day read-only business fact
+summary, `READINESS` for V1 operational acceptance, and `FULL` only when the
 user explicitly needs both. Its priorities order existing operational and human-review facts; they
 are not investment recommendations. When its `narrative_contract.mode` is `EXACT_TEXT`, return
 `display_text` verbatim as the entire answer. Do not automatically call any suggested tool or turn a

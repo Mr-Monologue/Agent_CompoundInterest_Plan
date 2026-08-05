@@ -485,7 +485,7 @@ def test_investment_workspace_uses_default_context_and_exact_view(monkeypatch) -
 
     monkeypatch.setattr(server, "core_request", fake_core_request)
     result = asyncio.run(
-        server.investment_workspace_get(view="READINESS", as_of_date="2026-08-04")
+        server.investment_workspace_get(view="WEEKLY", as_of_date="2026-08-04")
     )
 
     assert result == {"ok": True}
@@ -495,7 +495,7 @@ def test_investment_workspace_uses_default_context_and_exact_view(monkeypatch) -
         {
             "portfolio_id": "portfolio-default",
             "account_id": "account-default",
-            "view": "READINESS",
+            "view": "WEEKLY",
             "as_of_date": "2026-08-04",
         },
     )
