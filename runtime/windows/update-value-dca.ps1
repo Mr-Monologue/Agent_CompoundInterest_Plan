@@ -45,10 +45,38 @@ function Get-InstalledVersion {
     return [version]$Match.Groups["version"].Value
 }
 
+function Get-InvestorSupervisorProcesses {
+    $RunnerScript = [IO.Path]::GetFullPath(
+        (Join-Path $InstallDir "runtime\windows\run-investor-core.ps1")
+    )
+    $RunnerArgument = '-File "' + $RunnerScript + '"'
+    return @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name -in @("powershell.exe", "pwsh.exe") -and
+                $null -ne $_.CommandLine -and
+                $_.CommandLine.IndexOf(
+                    $RunnerArgument,
+                    [StringComparison]::OrdinalIgnoreCase
+                ) -ge 0
+            } |
+            ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+    )
+}
+
 function Stop-InvestorRuntime {
     $Task = Get-ScheduledTask -TaskName $CoreTaskName -ErrorAction SilentlyContinue
     if ($null -ne $Task -and $Task.State -eq "Running") {
         Stop-ScheduledTask -TaskName $CoreTaskName
+    }
+
+    $Supervisors = @(Get-InvestorSupervisorProcesses)
+    if ($Supervisors.Count -gt 0) {
+        Write-UpdateLog (
+            "Stopping managed Core supervisors for update: " +
+            (($Supervisors | ForEach-Object { "powershell:$($_.Id)" }) -join ", ")
+        )
+        $Supervisors | Stop-Process -Force
     }
 
     $NormalizedRoot = [IO.Path]::GetFullPath($InstallDir).TrimEnd("\")
@@ -68,6 +96,7 @@ function Stop-InvestorRuntime {
     }
 
     for ($Attempt = 0; $Attempt -lt 20; $Attempt++) {
+        $RemainingSupervisors = @(Get-InvestorSupervisorProcesses)
         $Remaining = @(
             Get-Process -Name "investor-mcp", "investor-core" -ErrorAction SilentlyContinue |
                 Where-Object {
@@ -75,12 +104,12 @@ function Stop-InvestorRuntime {
                     $_.Path.StartsWith($NormalizedRoot, [StringComparison]::OrdinalIgnoreCase)
                 }
         )
-        if ($Remaining.Count -eq 0) {
+        if ($RemainingSupervisors.Count -eq 0 -and $Remaining.Count -eq 0) {
             return
         }
         Start-Sleep -Milliseconds 500
     }
-    throw "Investor runtime processes did not stop within 10 seconds."
+    throw "Investor supervisor or runtime processes did not stop within 10 seconds."
 }
 
 function Assert-Robocopy([string]$Operation) {
