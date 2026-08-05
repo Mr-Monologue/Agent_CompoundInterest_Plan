@@ -62,10 +62,12 @@ def test_windows_runtime_locks_portable_timezone_data() -> None:
 def test_release_manifest_matches_project_version() -> None:
     project = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
     manifest = json.loads((PROJECT_ROOT / "release-manifest.json").read_text())
+    runtime_version = (PROJECT_ROOT / "src/investor_core/version.py").read_text()
 
     assert manifest["schema_version"] == 1
     assert manifest["channel"] == "stable"
     assert manifest["version"] == project["project"]["version"]
+    assert f'__version__ = "{project["project"]["version"]}"' in runtime_version
     assert manifest["database_revision"] == "0026_satellite_signal_gating"
 
 
