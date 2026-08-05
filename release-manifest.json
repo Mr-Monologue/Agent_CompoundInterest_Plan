@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.29.0",
+  "version": "0.29.1",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": false,
   "database_revision": "0026_satellite_signal_gating",
   "minimum_current_version": "0.5.3",
-  "notes": "Add explicitly approved satellite PE/PB signal policies, immutable signal snapshots and weekly-plan gating that requires both long-term contribution authorization and an OPEN same-date signal, without guessing benchmark mappings or creating trades."
+  "notes": "Stop the exact managed PowerShell Core supervisor before replacing the runtime so it cannot orphan, restart Core during an update, lock the executable or leave the newly registered Windows task failed."
 }

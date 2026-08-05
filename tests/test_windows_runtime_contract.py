@@ -129,6 +129,23 @@ def test_windows_updater_is_release_only_backup_first_and_rollback_capable() -> 
     assert "Register-ScheduledTask" in updater
     assert "finalize-update-task.ps1" in updater
     assert "update-state.json" in updater
+    assert "Get-InvestorSupervisorProcesses" in updater
+    assert "run-investor-core.ps1" in updater
+    assert "Stopping managed Core supervisors for update" in updater
+    assert updater.index("$Supervisors | Stop-Process -Force") < updater.index(
+        '$Processes | Stop-Process -Force'
+    )
+
+
+def test_windows_installer_stops_orphaned_managed_supervisor_before_sync() -> None:
+    installer = (PROJECT_ROOT / "install-windows.ps1").read_text(encoding="utf-8-sig")
+
+    assert "Get-InvestorSupervisorProcesses" in installer
+    assert "run-investor-core.ps1" in installer
+    assert "Stopping the managed Investor Core supervisor" in installer
+    assert installer.index("$SupervisorProcesses | Stop-Process -Force") < installer.index(
+        "& uv sync --python 3.11"
+    )
 
 
 def test_windows_update_task_finalizer_waits_installs_gui_host_and_refreshes_hermes() -> None:
