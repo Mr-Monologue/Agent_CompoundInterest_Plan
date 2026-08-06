@@ -2166,6 +2166,40 @@ class LedgerService:
                     "UPDATE transactions SET reversed_by_transaction_id = ? WHERE id = ?",
                     (transaction_id, original_id),
                 )
+                has_plan_links = connection.execute(
+                    """
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'table' AND name = 'plan_execution_links'
+                    """
+                ).fetchone()
+                if has_plan_links is not None:
+                    linked_plan = connection.execute(
+                        "SELECT plan_id FROM plan_execution_links WHERE transaction_id = ?",
+                        (original_id,),
+                    ).fetchone()
+                    if linked_plan is not None:
+                        plan_id = str(linked_plan["plan_id"])
+                        connection.execute(
+                            """
+                            UPDATE investment_plans
+                            SET status = 'PARTIALLY_EXECUTED', executed_at = NULL, updated_at = ?
+                            WHERE id = ? AND status IN ('PARTIALLY_EXECUTED','EXECUTED')
+                            """,
+                            (committed_at, plan_id),
+                        )
+                        self._audit(
+                            connection,
+                            actor_type="USER",
+                            actor_ref=confirmed_by.strip(),
+                            action="INVESTMENT_PLAN_EXECUTION_REVERSED",
+                            entity_type="investment_plan",
+                            entity_id=plan_id,
+                            details={
+                                "transaction_id": original_id,
+                                "reversal_transaction_id": transaction_id,
+                                "status": "PARTIALLY_EXECUTED",
+                            },
+                        )
             connection.execute(
                 """
                 UPDATE transaction_drafts

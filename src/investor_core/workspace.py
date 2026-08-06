@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -50,6 +50,47 @@ class WorkspaceService:
     @staticmethod
     def _counts(rows: list[sqlite3.Row]) -> dict[str, int]:
         return {str(row["status"]): int(row["count"]) for row in rows}
+
+    @staticmethod
+    def _amount_from_minor(value: int) -> str:
+        return f"{Decimal(value) / Decimal(100):.2f}"
+
+    @classmethod
+    def _plan_progress_summary(cls, rows: list[sqlite3.Row]) -> JsonDict:
+        items: list[JsonDict] = []
+        planned_total = 0
+        executed_total = 0
+        plan_ids: set[str] = set()
+        for row in rows:
+            planned = int(row["planned_amount_minor"])
+            executed = int(row["executed_amount_minor"])
+            remaining = max(planned - executed, 0)
+            planned_total += planned
+            executed_total += executed
+            plan_ids.add(str(row["plan_id"]))
+            items.append(
+                {
+                    "plan_id": str(row["plan_id"]),
+                    "plan_date": str(row["plan_date"]),
+                    "plan_status": str(row["plan_status"]),
+                    "instrument_code": str(row["instrument_code"]),
+                    "instrument_name": str(row["instrument_name"]),
+                    "planned_amount": cls._amount_from_minor(planned),
+                    "executed_amount": cls._amount_from_minor(executed),
+                    "remaining_amount": cls._amount_from_minor(remaining),
+                    "valid_transaction_count": int(row["valid_transaction_count"]),
+                    "reversed_transaction_count": int(row["reversed_transaction_count"]),
+                    "complete": executed == planned,
+                }
+            )
+        return {
+            "plan_count": len(plan_ids),
+            "planned_amount": cls._amount_from_minor(planned_total),
+            "executed_amount": cls._amount_from_minor(executed_total),
+            "remaining_amount": cls._amount_from_minor(max(planned_total - executed_total, 0)),
+            "fee_treatment": "FEES_NOT_SEPARATELY_RECORDED_OR_COUNTED",
+            "items": items,
+        }
 
     def _portfolio_brief(
         self,
@@ -156,6 +197,39 @@ class WorkspaceService:
                     (portfolio_id, account_id),
                 ).fetchall()
             )
+            plan_progress_rows = connection.execute(
+                """
+                SELECT p.id AS plan_id, p.plan_date, p.status AS plan_status,
+                       i.code AS instrument_code, i.name AS instrument_name,
+                       pi.candidate_amount_minor AS planned_amount_minor,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NULL
+                                THEN t.amount_minor ELSE 0 END
+                       ), 0) AS executed_amount_minor,
+                       COALESCE(SUM(
+                           CASE WHEN t.id IS NOT NULL AND t.reversed_by_transaction_id IS NULL
+                                THEN 1 ELSE 0 END
+                       ), 0) AS valid_transaction_count,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NOT NULL THEN 1 ELSE 0 END
+                       ), 0) AS reversed_transaction_count
+                FROM investment_plans p
+                JOIN plan_revisions pr
+                  ON pr.plan_id=p.id AND pr.revision=p.current_revision
+                JOIN plan_items pi ON pi.plan_revision_id=pr.id
+                JOIN instruments i ON i.id=pi.instrument_id
+                LEFT JOIN plan_execution_links l ON l.plan_id=p.id
+                LEFT JOIN transactions t
+                  ON t.id=l.transaction_id AND t.instrument_id=pi.instrument_id
+                WHERE p.portfolio_id=? AND p.account_id=?
+                  AND p.status IN ('FROZEN','PARTIALLY_EXECUTED')
+                  AND pi.action='CONTRIBUTE' AND pi.candidate_amount_minor > 0
+                GROUP BY p.id, p.plan_date, p.status, i.code, i.name,
+                         pi.candidate_amount_minor
+                ORDER BY p.plan_date, p.id, i.code
+                """,
+                (portfolio_id, account_id),
+            ).fetchall()
             proposal_counts = self._counts(
                 connection.execute(
                     """
@@ -241,6 +315,7 @@ class WorkspaceService:
             "missing_contribution_roles": missing_roles,
             "target_pct_by_role": target_pct_by_role,
             "plan_counts": plan_counts,
+            "plan_execution_progress": self._plan_progress_summary(plan_progress_rows),
             "sell_proposal_counts": proposal_counts,
             "review_action_counts": review_action_counts,
             "research_task_counts": research_task_counts,
@@ -271,6 +346,168 @@ class WorkspaceService:
                 "first_started_at": first_started_at,
                 "last_started_at": last_started_at,
                 "required_days": 14,
+            },
+        }
+
+    def _weekly_facts(
+        self,
+        *,
+        portfolio_id: str,
+        account_id: str,
+        period_start: date,
+        period_end: date,
+    ) -> JsonDict:
+        start = period_start.isoformat()
+        end = period_end.isoformat()
+        with self._connect() as connection:
+            transaction_rows = connection.execute(
+                """
+                SELECT kind, side, COUNT(*) AS count,
+                       COALESCE(SUM(amount_minor), 0) AS amount_minor
+                FROM transactions
+                WHERE portfolio_id=? AND account_id=?
+                  AND trade_date BETWEEN ? AND ?
+                GROUP BY kind, side
+                ORDER BY kind, side
+                """,
+                (portfolio_id, account_id, start, end),
+            ).fetchall()
+            cash_rows = connection.execute(
+                """
+                SELECT event_type, COUNT(*) AS count,
+                       COALESCE(SUM(signed_amount_minor), 0) AS signed_amount_minor
+                FROM cash_ledger_events
+                WHERE portfolio_id=? AND account_id=?
+                  AND event_date BETWEEN ? AND ?
+                GROUP BY event_type
+                ORDER BY event_type
+                """,
+                (portfolio_id, account_id, start, end),
+            ).fetchall()
+            plan_rows = connection.execute(
+                """
+                SELECT status, COUNT(*) AS count,
+                       COALESCE(SUM(contribution_amount_minor), 0) AS amount_minor
+                FROM investment_plans
+                WHERE portfolio_id=? AND account_id=?
+                  AND plan_date BETWEEN ? AND ?
+                GROUP BY status
+                ORDER BY status
+                """,
+                (portfolio_id, account_id, start, end),
+            ).fetchall()
+            plan_progress_rows = connection.execute(
+                """
+                SELECT p.id AS plan_id, p.plan_date, p.status AS plan_status,
+                       i.code AS instrument_code, i.name AS instrument_name,
+                       pi.candidate_amount_minor AS planned_amount_minor,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NULL
+                                THEN t.amount_minor ELSE 0 END
+                       ), 0) AS executed_amount_minor,
+                       COALESCE(SUM(
+                           CASE WHEN t.id IS NOT NULL AND t.reversed_by_transaction_id IS NULL
+                                THEN 1 ELSE 0 END
+                       ), 0) AS valid_transaction_count,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NOT NULL THEN 1 ELSE 0 END
+                       ), 0) AS reversed_transaction_count
+                FROM investment_plans p
+                JOIN plan_revisions pr
+                  ON pr.plan_id=p.id AND pr.revision=p.current_revision
+                JOIN plan_items pi ON pi.plan_revision_id=pr.id
+                JOIN instruments i ON i.id=pi.instrument_id
+                LEFT JOIN plan_execution_links l ON l.plan_id=p.id
+                LEFT JOIN transactions t
+                  ON t.id=l.transaction_id AND t.instrument_id=pi.instrument_id
+                WHERE p.portfolio_id=? AND p.account_id=?
+                  AND p.plan_date BETWEEN ? AND ?
+                  AND p.status IN ('FROZEN','PARTIALLY_EXECUTED','EXECUTED')
+                  AND pi.action='CONTRIBUTE' AND pi.candidate_amount_minor > 0
+                GROUP BY p.id, p.plan_date, p.status, i.code, i.name,
+                         pi.candidate_amount_minor
+                ORDER BY p.plan_date, p.id, i.code
+                """,
+                (portfolio_id, account_id, start, end),
+            ).fetchall()
+            review_rows = connection.execute(
+                """
+                SELECT review_type, status, COUNT(*) AS count
+                FROM periodic_reviews
+                WHERE portfolio_id=? AND period_end BETWEEN ? AND ?
+                GROUP BY review_type, status
+                ORDER BY review_type, status
+                """,
+                (portfolio_id, start, end),
+            ).fetchall()
+            report_rows = connection.execute(
+                """
+                SELECT bundle_type, delivery_action, data_quality, COUNT(*) AS count
+                FROM report_bundles
+                WHERE portfolio_id=? AND substr(scheduled_for, 1, 10) BETWEEN ? AND ?
+                GROUP BY bundle_type, delivery_action, data_quality
+                ORDER BY bundle_type, delivery_action, data_quality
+                """,
+                (portfolio_id, start, end),
+            ).fetchall()
+
+        transactions = [
+            {
+                "kind": str(row["kind"]),
+                "side": str(row["side"]),
+                "count": int(row["count"]),
+                "amount": self._amount_from_minor(int(row["amount_minor"])),
+            }
+            for row in transaction_rows
+        ]
+        cash_events = [
+            {
+                "event_type": str(row["event_type"]),
+                "count": int(row["count"]),
+                "signed_amount": self._amount_from_minor(int(row["signed_amount_minor"])),
+            }
+            for row in cash_rows
+        ]
+        plans = [
+            {
+                "status": str(row["status"]),
+                "count": int(row["count"]),
+                "contribution_amount": self._amount_from_minor(int(row["amount_minor"])),
+            }
+            for row in plan_rows
+        ]
+        reviews = [
+            {
+                "review_type": str(row["review_type"]),
+                "status": str(row["status"]),
+                "count": int(row["count"]),
+            }
+            for row in review_rows
+        ]
+        report_bundles = [
+            {
+                "bundle_type": str(row["bundle_type"]),
+                "delivery_action": str(row["delivery_action"]),
+                "data_quality": str(row["data_quality"]),
+                "count": int(row["count"]),
+            }
+            for row in report_rows
+        ]
+        return {
+            "period_start": start,
+            "period_end": end,
+            "transactions": transactions,
+            "cash_events": cash_events,
+            "plans": plans,
+            "plan_execution_progress": self._plan_progress_summary(plan_progress_rows),
+            "periodic_reviews": reviews,
+            "report_bundles": report_bundles,
+            "counts": {
+                "transaction_record_count": sum(item["count"] for item in transactions),
+                "cash_event_count": sum(item["count"] for item in cash_events),
+                "plan_count": sum(item["count"] for item in plans),
+                "periodic_review_count": sum(item["count"] for item in reviews),
+                "report_bundle_count": sum(item["count"] for item in report_bundles),
             },
         }
 
@@ -654,7 +891,8 @@ class WorkspaceService:
             )
         draft_count = int(workflows["plan_counts"].get("DRAFT", 0))
         frozen_count = int(workflows["plan_counts"].get("FROZEN", 0))
-        if draft_count or frozen_count:
+        partial_count = int(workflows["plan_counts"].get("PARTIALLY_EXECUTED", 0))
+        if draft_count or frozen_count or partial_count:
             actions.append(
                 self._action(
                     50,
@@ -662,7 +900,12 @@ class WorkspaceService:
                     "USER_REVIEW",
                     "PLAN_STATE_IS_NOT_BROKERAGE_EXECUTION",
                     "weekly_plan_list",
-                    {"draft_count": draft_count, "frozen_count": frozen_count},
+                    {
+                        "draft_count": draft_count,
+                        "frozen_count": frozen_count,
+                        "partially_executed_count": partial_count,
+                        "execution_progress": workflows["plan_execution_progress"],
+                    },
                 )
             )
         open_actions = int(workflows["review_action_counts"].get("OPEN", 0))
@@ -697,10 +940,12 @@ class WorkspaceService:
         as_of_date: str,
         state: str,
         brief: JsonDict,
+        workflows: JsonDict,
         actions: list[JsonDict],
         readiness: JsonDict,
     ) -> str:
         context = brief["context"]
+        plan_progress = workflows["plan_execution_progress"]
         lines = [
             "Hermes 投资工作台",
             f"数据日期: {as_of_date}",
@@ -708,6 +953,12 @@ class WorkspaceService:
             f"组合: {context['portfolio']['name']} | 账户: {context['account']['name']}",
             f"估值数据质量: {brief['valuation']['data_quality']}",
             f"V1 就绪度: {readiness['status']}",
+            (
+                "周计划累计执行: "
+                f"已成交 ¥{plan_progress['executed_amount']} / "
+                f"计划 ¥{plan_progress['planned_amount']} / "
+                f"剩余 ¥{plan_progress['remaining_amount']}"
+            ),
             "",
             "待处理事实:",
         ]
@@ -723,6 +974,59 @@ class WorkspaceService:
             [
                 "",
                 "边界: 以上为确定性状态与工作流优先级，不是基金排名、投资建议或交易执行。",  # noqa: RUF001
+            ]
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _weekly_display(
+        *,
+        state: str,
+        brief: JsonDict,
+        weekly: JsonDict,
+        actions: list[JsonDict],
+    ) -> str:
+        context = brief["context"]
+        counts = weekly["counts"]
+        plan_progress = weekly["plan_execution_progress"]
+        totals = brief["valuation"]["totals"]
+        valuation_line = "期末持仓估值: 不可用"
+        if totals is not None:
+            valuation_line = (
+                f"期末持仓市值: {totals['market_value']} | 累计成本: {totals['cost_amount']} | "
+                f"未实现盈亏: {totals['unrealized_pnl']}"
+            )
+        lines = [
+            "Hermes 投资周报",
+            f"统计区间: {weekly['period_start']} 至 {weekly['period_end']}",
+            f"周报状态: {state}",
+            f"组合: {context['portfolio']['name']} | 账户: {context['account']['name']}",
+            f"期末估值数据质量: {brief['valuation']['data_quality']}",
+            valuation_line,
+            "",
+            "本周已记录事实:",
+            f"- 交易账本记录: {counts['transaction_record_count']}",
+            f"- 现金事实: {counts['cash_event_count']}",
+            f"- 周计划: {counts['plan_count']}",
+            (
+                "- 周计划执行进度: "
+                f"已成交 ¥{plan_progress['executed_amount']} / "
+                f"计划 ¥{plan_progress['planned_amount']} / "
+                f"剩余 ¥{plan_progress['remaining_amount']}"
+            ),
+            f"- 周期复盘: {counts['periodic_review_count']}",
+            f"- 自动化事实包: {counts['report_bundle_count']}",
+            "",
+            "当前待处理事实:",
+        ]
+        if not actions:
+            lines.append("- 当前没有 Core 识别出的待处理事实。")
+        else:
+            lines.append(f"- 共 {len(actions)} 项，请在日报工作台中逐项查看。")  # noqa: RUF001
+        lines.extend(
+            [
+                "",
+                "边界: 周报只汇总已记录事实，不生成基金排名、投资建议、计划、交易或持仓变更。",  # noqa: RUF001
             ]
         )
         return "\n".join(lines)
@@ -758,10 +1062,10 @@ class WorkspaceService:
         view: str = "DAILY",
     ) -> JsonDict:
         normalized_view = view.strip().upper()
-        if normalized_view not in {"DAILY", "READINESS", "FULL"}:
+        if normalized_view not in {"DAILY", "WEEKLY", "READINESS", "FULL"}:
             raise LedgerError(
                 "WORKSPACE_VIEW_INVALID",
-                "view must be DAILY, READINESS or FULL",
+                "view must be DAILY, WEEKLY, READINESS or FULL",
             )
         brief = self._portfolio_brief(
             portfolio_id=portfolio_id,
@@ -804,20 +1108,37 @@ class WorkspaceService:
             as_of_date=as_of_date.isoformat(),
             state=state,
             brief=brief,
+            workflows=workflows,
             actions=actions,
             readiness=readiness,
         )
         readiness_display = self._readiness_display(
             as_of_date=as_of_date.isoformat(), readiness=readiness
         )
+        weekly: JsonDict | None = None
+        if normalized_view == "WEEKLY":
+            weekly = self._weekly_facts(
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                period_start=as_of_date - timedelta(days=6),
+                period_end=as_of_date,
+            )
         if normalized_view == "DAILY":
             display_text = daily_display
+        elif normalized_view == "WEEKLY":
+            assert weekly is not None
+            display_text = self._weekly_display(
+                state=state,
+                brief=brief,
+                weekly=weekly,
+                actions=actions,
+            )
         elif normalized_view == "READINESS":
             display_text = readiness_display
         else:
             display_text = f"{daily_display}\n\n{readiness_display}"
 
-        return {
+        result: JsonDict = {
             "contract_version": "investment-workspace-v1",
             "view": normalized_view,
             "as_of_date": as_of_date.isoformat(),
@@ -850,3 +1171,6 @@ class WorkspaceService:
             "financial_state_changed": False,
             "generated_at": self._now().astimezone(UTC).isoformat().replace("+00:00", "Z"),
         }
+        if weekly is not None:
+            result["weekly_summary"] = weekly
+        return result

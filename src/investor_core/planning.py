@@ -188,6 +188,7 @@ class PlanningService:
             """,
             (revision["id"],),
         ).fetchall()
+        execution_progress = self._execution_progress(connection, row)
         return {
             "id": str(row["id"]),
             "portfolio_id": str(row["portfolio_id"]),
@@ -252,6 +253,107 @@ class PlanningService:
                 }
                 for item in items
             ],
+            "execution_progress": execution_progress,
+        }
+
+    def _execution_progress(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> JsonDict:
+        planned_rows = connection.execute(
+            """
+            SELECT pi.instrument_id, i.code AS instrument_code,
+                   i.name AS instrument_name, pi.candidate_amount_minor
+            FROM plan_items pi
+            JOIN plan_revisions pr ON pr.id = pi.plan_revision_id
+            JOIN instruments i ON i.id = pi.instrument_id
+            WHERE pr.plan_id = ? AND pr.revision = ?
+              AND pi.action = 'CONTRIBUTE' AND pi.candidate_amount_minor > 0
+            ORDER BY i.code
+            """,
+            (row["id"], row["current_revision"]),
+        ).fetchall()
+        linked_rows = connection.execute(
+            """
+            SELECT l.id, l.transaction_id, l.linked_amount_minor, l.linked_at,
+                   l.linked_by, t.instrument_id, t.trade_date, t.amount_minor,
+                   t.reversed_by_transaction_id
+            FROM plan_execution_links l
+            JOIN transactions t ON t.id = l.transaction_id
+            WHERE l.plan_id = ?
+            ORDER BY t.trade_date, t.committed_at, t.id
+            """,
+            (row["id"],),
+        ).fetchall()
+        valid_by_instrument: dict[str, int] = {}
+        valid_count = 0
+        reversed_count = 0
+        links: list[JsonDict] = []
+        for link in linked_rows:
+            reversed_transaction = link["reversed_by_transaction_id"] is not None
+            if reversed_transaction:
+                reversed_count += 1
+            else:
+                valid_count += 1
+                instrument_id = str(link["instrument_id"])
+                valid_by_instrument[instrument_id] = (
+                    valid_by_instrument.get(instrument_id, 0) + int(link["amount_minor"])
+                )
+            links.append(
+                {
+                    "transaction_id": str(link["transaction_id"]),
+                    "instrument_id": str(link["instrument_id"]),
+                    "trade_date": str(link["trade_date"]),
+                    "amount": (
+                        f"{Decimal(int(link['amount_minor'])) / MONEY_SCALE:.2f}"
+                    ),
+                    "reversed": reversed_transaction,
+                    "linked_at": str(link["linked_at"]),
+                    "linked_by": str(link["linked_by"]),
+                }
+            )
+
+        items: list[JsonDict] = []
+        planned_total = 0
+        executed_total = 0
+        complete = bool(planned_rows)
+        for planned in planned_rows:
+            instrument_id = str(planned["instrument_id"])
+            planned_minor = int(planned["candidate_amount_minor"])
+            executed_minor = valid_by_instrument.get(instrument_id, 0)
+            remaining_minor = max(planned_minor - executed_minor, 0)
+            excess_minor = max(executed_minor - planned_minor, 0)
+            planned_total += planned_minor
+            executed_total += executed_minor
+            if executed_minor != planned_minor:
+                complete = False
+            items.append(
+                {
+                    "instrument_id": instrument_id,
+                    "instrument_code": str(planned["instrument_code"]),
+                    "instrument_name": str(planned["instrument_name"]),
+                    "planned_amount": f"{Decimal(planned_minor) / MONEY_SCALE:.2f}",
+                    "executed_amount": f"{Decimal(executed_minor) / MONEY_SCALE:.2f}",
+                    "remaining_amount": f"{Decimal(remaining_minor) / MONEY_SCALE:.2f}",
+                    "excess_amount": f"{Decimal(excess_minor) / MONEY_SCALE:.2f}",
+                    "complete": executed_minor == planned_minor,
+                }
+            )
+        remaining_total = sum(_minor(str(item["remaining_amount"])) for item in items)
+        return {
+            "status": str(row["status"]),
+            "amount_semantics": "TRANSACTION_AMOUNT",
+            "fee_treatment": "FEES_NOT_SEPARATELY_RECORDED_OR_COUNTED",
+            "planned_amount": f"{Decimal(planned_total) / MONEY_SCALE:.2f}",
+            "executed_amount": f"{Decimal(executed_total) / MONEY_SCALE:.2f}",
+            "remaining_amount": f"{Decimal(remaining_total) / MONEY_SCALE:.2f}",
+            "linked_transaction_count": len(linked_rows),
+            "valid_transaction_count": valid_count,
+            "reversed_transaction_count": reversed_count,
+            "complete": complete,
+            "items": items,
+            "links": links,
         }
 
     def create_draft(
@@ -486,6 +588,7 @@ class PlanningService:
                 if normalized_status not in {
                     "DRAFT",
                     "FROZEN",
+                    "PARTIALLY_EXECUTED",
                     "EXECUTED",
                     "EXPIRED",
                     "SKIPPED",
@@ -660,19 +763,201 @@ class PlanningService:
             reason=reason,
         )
 
-    def mark_executed(
+    def _insert_execution_link(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        row: sqlite3.Row,
+        transaction_id: str,
+        confirmed_by: str,
+    ) -> None:
+        existing = connection.execute(
+            "SELECT plan_id FROM plan_execution_links WHERE transaction_id = ?",
+            (transaction_id,),
+        ).fetchone()
+        if existing is not None:
+            code = (
+                "PLAN_TRANSACTION_ALREADY_LINKED"
+                if str(existing["plan_id"]) == str(row["id"])
+                else "TRANSACTION_USED_BY_ANOTHER_PLAN"
+            )
+            message = (
+                "该成交已经关联到当前周计划, 不能重复关联。"
+                if code == "PLAN_TRANSACTION_ALREADY_LINKED"
+                else "该成交已经被其他周计划使用, 不能重复关联。"
+            )
+            self._rollback_and_raise(
+                connection,
+                LedgerError(code, message, http_status=409),
+            )
+        transaction = connection.execute(
+            """
+            SELECT t.*, i.code AS instrument_code, i.name AS instrument_name
+            FROM transactions t
+            JOIN instruments i ON i.id = t.instrument_id
+            WHERE t.id = ?
+            """,
+            (transaction_id,),
+        ).fetchone()
+        if transaction is None:
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "TRANSACTION_NOT_COMMITTED",
+                    "没有找到已确认的真实成交记录, 不能关联到周计划。",
+                    http_status=409,
+                ),
+            )
+        if transaction["reversed_by_transaction_id"] is not None:
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "TRANSACTION_ALREADY_REVERSED",
+                    "该成交已经冲销, 不能用于完成周计划。",
+                    http_status=409,
+                ),
+            )
+        if str(transaction["portfolio_id"]) != str(row["portfolio_id"]):
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "PLAN_TRANSACTION_PORTFOLIO_MISMATCH",
+                    "该成交不属于当前周计划的投资组合。",
+                    http_status=409,
+                ),
+            )
+        if str(transaction["account_id"]) != str(row["account_id"]):
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "PLAN_TRANSACTION_ACCOUNT_MISMATCH",
+                    "该成交不属于当前周计划的账户。",
+                    http_status=409,
+                ),
+            )
+        if str(transaction["kind"]) != "TRADE" or str(transaction["side"]) != "BUY":
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "PLAN_TRANSACTION_NOT_BUY",
+                    "周计划只能关联已经确认且未冲销的真实买入记录。",
+                    http_status=409,
+                ),
+            )
+        planned = connection.execute(
+            """
+            SELECT pi.candidate_amount_minor
+            FROM plan_items pi
+            JOIN plan_revisions pr ON pr.id = pi.plan_revision_id
+            WHERE pr.plan_id = ? AND pr.revision = ?
+              AND pi.instrument_id = ? AND pi.action = 'CONTRIBUTE'
+              AND pi.candidate_amount_minor > 0
+            """,
+            (row["id"], row["current_revision"], transaction["instrument_id"]),
+        ).fetchone()
+        if planned is None:
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "PLAN_INSTRUMENT_MISMATCH",
+                    f"{transaction['instrument_name']}({transaction['instrument_code']})"
+                    "不在该冻结周计划中。",
+                    http_status=409,
+                ),
+            )
+        accumulated = int(
+            connection.execute(
+                """
+                SELECT COALESCE(SUM(t.amount_minor), 0)
+                FROM plan_execution_links l
+                JOIN transactions t ON t.id = l.transaction_id
+                WHERE l.plan_id = ? AND t.instrument_id = ?
+                  AND t.reversed_by_transaction_id IS NULL
+                """,
+                (row["id"], transaction["instrument_id"]),
+            ).fetchone()[0]
+        )
+        planned_minor = int(planned["candidate_amount_minor"])
+        transaction_minor = int(transaction["amount_minor"])
+        if accumulated + transaction_minor > planned_minor:
+            remaining_minor = max(planned_minor - accumulated, 0)
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "PLAN_EXECUTION_AMOUNT_EXCEEDED",
+                    f"{transaction['instrument_name']}({transaction['instrument_code']})"
+                    "的累计成交金额将超过计划金额, 不能关联。",
+                    http_status=409,
+                    details={
+                        "planned_amount": f"{Decimal(planned_minor) / MONEY_SCALE:.2f}",
+                        "accumulated_amount": (
+                            f"{Decimal(accumulated) / MONEY_SCALE:.2f}"
+                        ),
+                        "transaction_amount": (
+                            f"{Decimal(transaction_minor) / MONEY_SCALE:.2f}"
+                        ),
+                        "remaining_amount": (
+                            f"{Decimal(remaining_minor) / MONEY_SCALE:.2f}"
+                        ),
+                    },
+                ),
+            )
+        connection.execute(
+            """
+            INSERT INTO plan_execution_links (
+                id, plan_id, transaction_id, linked_amount_minor, linked_at, linked_by
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid4()),
+                row["id"],
+                transaction_id,
+                transaction_minor,
+                _iso(self._now()),
+                confirmed_by,
+            ),
+        )
+
+    def _refresh_execution_status(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        row: sqlite3.Row,
+    ) -> tuple[sqlite3.Row, JsonDict]:
+        progress = self._execution_progress(connection, row)
+        target_status = "EXECUTED" if progress["complete"] else "PARTIALLY_EXECUTED"
+        timestamp = _iso(self._now())
+        connection.execute(
+            """
+            UPDATE investment_plans
+            SET status = ?, updated_at = ?, executed_at = ?
+            WHERE id = ?
+            """,
+            (
+                target_status,
+                timestamp,
+                timestamp if target_status == "EXECUTED" else None,
+                row["id"],
+            ),
+        )
+        updated = connection.execute(
+            self._plan_query() + " WHERE p.id = ?",
+            (row["id"],),
+        ).fetchone()
+        assert updated is not None
+        return updated, self._execution_progress(connection, updated)
+
+    def link_transaction(
         self,
         *,
         plan_id: str,
-        transaction_ids: Sequence[str],
+        transaction_id: str,
         confirmed_by: str,
     ) -> JsonDict:
-        """Link a FROZEN plan to separately committed BUY records."""
-        if not transaction_ids:
-            raise LedgerError(
-                "TRANSACTION_EVIDENCE_REQUIRED",
-                "at least one committed transaction is required",
-            )
+        """Attach one committed BUY fact and deterministically refresh plan progress."""
+        actor = confirmed_by.strip()
+        if not actor:
+            raise LedgerError("CONFIRMED_BY_REQUIRED", "必须记录本次关联的确认人。")
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -685,7 +970,86 @@ class PlanningService:
                     connection,
                     LedgerError(
                         "INVESTMENT_PLAN_NOT_FOUND",
-                        "investment plan was not found",
+                        "没有找到该周计划。",
+                        http_status=404,
+                    ),
+                )
+            if str(row["status"]) not in {"FROZEN", "PARTIALLY_EXECUTED"}:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "INVALID_PLAN_TRANSITION",
+                        "只有已冻结或部分执行的周计划可以继续关联真实买入记录。",
+                        http_status=409,
+                    ),
+                )
+            self._insert_execution_link(
+                connection,
+                row=row,
+                transaction_id=transaction_id,
+                confirmed_by=actor,
+            )
+            updated, progress = self._refresh_execution_status(connection, row=row)
+            self._audit(
+                connection,
+                actor_type="USER",
+                actor_ref=actor,
+                action=(
+                    "INVESTMENT_PLAN_EXECUTED"
+                    if str(updated["status"]) == "EXECUTED"
+                    else "INVESTMENT_PLAN_PARTIALLY_EXECUTED"
+                ),
+                entity_id=plan_id,
+                details={
+                    "transaction_id": transaction_id,
+                    "executed_amount": progress["executed_amount"],
+                    "remaining_amount": progress["remaining_amount"],
+                    "fee_treatment": progress["fee_treatment"],
+                },
+            )
+            result = self._plan_data(connection, updated)
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def mark_executed(
+        self,
+        *,
+        plan_id: str,
+        transaction_ids: Sequence[str],
+        confirmed_by: str,
+    ) -> JsonDict:
+        """Atomically link committed BUY records only when they complete a plan."""
+        if not transaction_ids:
+            raise LedgerError(
+                "TRANSACTION_EVIDENCE_REQUIRED",
+                "至少需要一条已确认的真实买入记录。",
+            )
+        if len(transaction_ids) != len(set(transaction_ids)):
+            raise LedgerError(
+                "DUPLICATE_TRANSACTION_EVIDENCE",
+                "同一成交不能在一次请求中重复关联。",
+            )
+        actor = confirmed_by.strip()
+        if not actor:
+            raise LedgerError("CONFIRMED_BY_REQUIRED", "必须记录本次关联的确认人。")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                self._plan_query() + " WHERE p.id = ?",
+                (plan_id,),
+            ).fetchone()
+            if row is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "INVESTMENT_PLAN_NOT_FOUND",
+                        "没有找到该周计划。",
                         http_status=404,
                     ),
                 )
@@ -693,100 +1057,51 @@ class PlanningService:
                 result = self._plan_data(connection, row)
                 connection.commit()
                 return result
-            if str(row["status"]) != "FROZEN":
+            if str(row["status"]) not in {"FROZEN", "PARTIALLY_EXECUTED"}:
                 self._rollback_and_raise(
                     connection,
                     LedgerError(
                         "INVALID_PLAN_TRANSITION",
-                        "only a FROZEN plan can be marked executed",
+                        "只有已冻结或部分执行的周计划可以标记为已执行。",
                         http_status=409,
                     ),
                 )
-            placeholders = ",".join("?" for _item in transaction_ids)
-            transactions = connection.execute(
-                f"""
-                SELECT id, portfolio_id, account_id, side, kind, instrument_id
-                FROM transactions
-                WHERE id IN ({placeholders})
-                """,
-                transaction_ids,
-            ).fetchall()
-            if len(transactions) != len(set(transaction_ids)):
+            for transaction_id in transaction_ids:
+                self._insert_execution_link(
+                    connection,
+                    row=row,
+                    transaction_id=transaction_id,
+                    confirmed_by=actor,
+                )
+            updated, progress = self._refresh_execution_status(connection, row=row)
+            if str(updated["status"]) != "EXECUTED":
                 self._rollback_and_raise(
                     connection,
                     LedgerError(
-                        "TRANSACTION_EVIDENCE_INVALID",
-                        "one or more committed transactions were not found",
+                        "PLAN_EXECUTION_INCOMPLETE",
+                        "仍有基金或金额未完成, 周计划只能保持部分执行。",
                         http_status=409,
+                        details={"execution_progress": progress},
                     ),
                 )
-            if any(
-                str(item["portfolio_id"]) != str(row["portfolio_id"])
-                or str(item["account_id"]) != str(row["account_id"])
-                or str(item["side"]) != "BUY"
-                or str(item["kind"]) != "TRADE"
-                for item in transactions
-            ):
-                self._rollback_and_raise(
-                    connection,
-                    LedgerError(
-                        "TRANSACTION_EVIDENCE_INVALID",
-                        "transactions must be committed BUY trades in the plan context",
-                        http_status=409,
-                    ),
-                )
-            candidate_ids = {
-                str(item["instrument_id"])
-                for item in connection.execute(
-                    """
-                    SELECT pi.instrument_id
-                    FROM plan_items pi
-                    JOIN plan_revisions pr ON pr.id = pi.plan_revision_id
-                    WHERE pr.plan_id = ? AND pr.revision = ?
-                      AND pi.action = 'CONTRIBUTE'
-                      AND pi.candidate_amount_minor > 0
-                    """,
-                    (plan_id, row["current_revision"]),
-                ).fetchall()
-            }
-            evidence_ids = {str(item["instrument_id"]) for item in transactions}
-            if candidate_ids != evidence_ids:
-                self._rollback_and_raise(
-                    connection,
-                    LedgerError(
-                        "TRANSACTION_EVIDENCE_MISMATCH",
-                        "transaction instruments do not match the frozen plan",
-                        http_status=409,
-                        details={
-                            "planned_instrument_ids": sorted(candidate_ids),
-                            "transaction_instrument_ids": sorted(evidence_ids),
-                        },
-                    ),
-                )
-            timestamp = _iso(self._now())
-            connection.execute(
-                """
-                UPDATE investment_plans
-                SET status = 'EXECUTED', updated_at = ?, executed_at = ?
-                WHERE id = ?
-                """,
-                (timestamp, timestamp, plan_id),
-            )
             self._audit(
                 connection,
                 actor_type="USER",
-                actor_ref=confirmed_by.strip(),
+                actor_ref=actor,
                 action="INVESTMENT_PLAN_EXECUTED",
                 entity_id=plan_id,
-                details={"transaction_ids": sorted(transaction_ids)},
+                details={
+                    "transaction_ids": sorted(transaction_ids),
+                    "executed_amount": progress["executed_amount"],
+                    "remaining_amount": progress["remaining_amount"],
+                    "fee_treatment": progress["fee_treatment"],
+                },
             )
-            updated = connection.execute(
-                self._plan_query() + " WHERE p.id = ?",
-                (plan_id,),
-            ).fetchone()
-            assert updated is not None
             result = self._plan_data(connection, updated)
             connection.commit()
             return result
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
