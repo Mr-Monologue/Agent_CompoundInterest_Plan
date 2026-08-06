@@ -2348,6 +2348,23 @@ async def weekly_plan_mark_executed(
 
 
 @mcp.tool()
+async def weekly_plan_transaction_link(
+    plan_id: str,
+    transaction_id: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Link one confirmed external BUY fact; never create or execute a trade."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plans/{plan_id}/transactions",
+        payload={
+            "transaction_id": transaction_id,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
 async def holding_list(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
     """List latest deterministic holdings reconstructed from committed records."""
     resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(

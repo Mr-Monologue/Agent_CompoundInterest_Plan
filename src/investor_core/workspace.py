@@ -55,6 +55,43 @@ class WorkspaceService:
     def _amount_from_minor(value: int) -> str:
         return f"{Decimal(value) / Decimal(100):.2f}"
 
+    @classmethod
+    def _plan_progress_summary(cls, rows: list[sqlite3.Row]) -> JsonDict:
+        items: list[JsonDict] = []
+        planned_total = 0
+        executed_total = 0
+        plan_ids: set[str] = set()
+        for row in rows:
+            planned = int(row["planned_amount_minor"])
+            executed = int(row["executed_amount_minor"])
+            remaining = max(planned - executed, 0)
+            planned_total += planned
+            executed_total += executed
+            plan_ids.add(str(row["plan_id"]))
+            items.append(
+                {
+                    "plan_id": str(row["plan_id"]),
+                    "plan_date": str(row["plan_date"]),
+                    "plan_status": str(row["plan_status"]),
+                    "instrument_code": str(row["instrument_code"]),
+                    "instrument_name": str(row["instrument_name"]),
+                    "planned_amount": cls._amount_from_minor(planned),
+                    "executed_amount": cls._amount_from_minor(executed),
+                    "remaining_amount": cls._amount_from_minor(remaining),
+                    "valid_transaction_count": int(row["valid_transaction_count"]),
+                    "reversed_transaction_count": int(row["reversed_transaction_count"]),
+                    "complete": executed == planned,
+                }
+            )
+        return {
+            "plan_count": len(plan_ids),
+            "planned_amount": cls._amount_from_minor(planned_total),
+            "executed_amount": cls._amount_from_minor(executed_total),
+            "remaining_amount": cls._amount_from_minor(max(planned_total - executed_total, 0)),
+            "fee_treatment": "FEES_NOT_SEPARATELY_RECORDED_OR_COUNTED",
+            "items": items,
+        }
+
     def _portfolio_brief(
         self,
         *,
@@ -160,6 +197,39 @@ class WorkspaceService:
                     (portfolio_id, account_id),
                 ).fetchall()
             )
+            plan_progress_rows = connection.execute(
+                """
+                SELECT p.id AS plan_id, p.plan_date, p.status AS plan_status,
+                       i.code AS instrument_code, i.name AS instrument_name,
+                       pi.candidate_amount_minor AS planned_amount_minor,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NULL
+                                THEN t.amount_minor ELSE 0 END
+                       ), 0) AS executed_amount_minor,
+                       COALESCE(SUM(
+                           CASE WHEN t.id IS NOT NULL AND t.reversed_by_transaction_id IS NULL
+                                THEN 1 ELSE 0 END
+                       ), 0) AS valid_transaction_count,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NOT NULL THEN 1 ELSE 0 END
+                       ), 0) AS reversed_transaction_count
+                FROM investment_plans p
+                JOIN plan_revisions pr
+                  ON pr.plan_id=p.id AND pr.revision=p.current_revision
+                JOIN plan_items pi ON pi.plan_revision_id=pr.id
+                JOIN instruments i ON i.id=pi.instrument_id
+                LEFT JOIN plan_execution_links l ON l.plan_id=p.id
+                LEFT JOIN transactions t
+                  ON t.id=l.transaction_id AND t.instrument_id=pi.instrument_id
+                WHERE p.portfolio_id=? AND p.account_id=?
+                  AND p.status IN ('FROZEN','PARTIALLY_EXECUTED')
+                  AND pi.action='CONTRIBUTE' AND pi.candidate_amount_minor > 0
+                GROUP BY p.id, p.plan_date, p.status, i.code, i.name,
+                         pi.candidate_amount_minor
+                ORDER BY p.plan_date, p.id, i.code
+                """,
+                (portfolio_id, account_id),
+            ).fetchall()
             proposal_counts = self._counts(
                 connection.execute(
                     """
@@ -245,6 +315,7 @@ class WorkspaceService:
             "missing_contribution_roles": missing_roles,
             "target_pct_by_role": target_pct_by_role,
             "plan_counts": plan_counts,
+            "plan_execution_progress": self._plan_progress_summary(plan_progress_rows),
             "sell_proposal_counts": proposal_counts,
             "review_action_counts": review_action_counts,
             "research_task_counts": research_task_counts,
@@ -325,6 +396,40 @@ class WorkspaceService:
                 """,
                 (portfolio_id, account_id, start, end),
             ).fetchall()
+            plan_progress_rows = connection.execute(
+                """
+                SELECT p.id AS plan_id, p.plan_date, p.status AS plan_status,
+                       i.code AS instrument_code, i.name AS instrument_name,
+                       pi.candidate_amount_minor AS planned_amount_minor,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NULL
+                                THEN t.amount_minor ELSE 0 END
+                       ), 0) AS executed_amount_minor,
+                       COALESCE(SUM(
+                           CASE WHEN t.id IS NOT NULL AND t.reversed_by_transaction_id IS NULL
+                                THEN 1 ELSE 0 END
+                       ), 0) AS valid_transaction_count,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NOT NULL THEN 1 ELSE 0 END
+                       ), 0) AS reversed_transaction_count
+                FROM investment_plans p
+                JOIN plan_revisions pr
+                  ON pr.plan_id=p.id AND pr.revision=p.current_revision
+                JOIN plan_items pi ON pi.plan_revision_id=pr.id
+                JOIN instruments i ON i.id=pi.instrument_id
+                LEFT JOIN plan_execution_links l ON l.plan_id=p.id
+                LEFT JOIN transactions t
+                  ON t.id=l.transaction_id AND t.instrument_id=pi.instrument_id
+                WHERE p.portfolio_id=? AND p.account_id=?
+                  AND p.plan_date BETWEEN ? AND ?
+                  AND p.status IN ('FROZEN','PARTIALLY_EXECUTED','EXECUTED')
+                  AND pi.action='CONTRIBUTE' AND pi.candidate_amount_minor > 0
+                GROUP BY p.id, p.plan_date, p.status, i.code, i.name,
+                         pi.candidate_amount_minor
+                ORDER BY p.plan_date, p.id, i.code
+                """,
+                (portfolio_id, account_id, start, end),
+            ).fetchall()
             review_rows = connection.execute(
                 """
                 SELECT review_type, status, COUNT(*) AS count
@@ -394,6 +499,7 @@ class WorkspaceService:
             "transactions": transactions,
             "cash_events": cash_events,
             "plans": plans,
+            "plan_execution_progress": self._plan_progress_summary(plan_progress_rows),
             "periodic_reviews": reviews,
             "report_bundles": report_bundles,
             "counts": {
@@ -785,7 +891,8 @@ class WorkspaceService:
             )
         draft_count = int(workflows["plan_counts"].get("DRAFT", 0))
         frozen_count = int(workflows["plan_counts"].get("FROZEN", 0))
-        if draft_count or frozen_count:
+        partial_count = int(workflows["plan_counts"].get("PARTIALLY_EXECUTED", 0))
+        if draft_count or frozen_count or partial_count:
             actions.append(
                 self._action(
                     50,
@@ -793,7 +900,12 @@ class WorkspaceService:
                     "USER_REVIEW",
                     "PLAN_STATE_IS_NOT_BROKERAGE_EXECUTION",
                     "weekly_plan_list",
-                    {"draft_count": draft_count, "frozen_count": frozen_count},
+                    {
+                        "draft_count": draft_count,
+                        "frozen_count": frozen_count,
+                        "partially_executed_count": partial_count,
+                        "execution_progress": workflows["plan_execution_progress"],
+                    },
                 )
             )
         open_actions = int(workflows["review_action_counts"].get("OPEN", 0))
@@ -828,10 +940,12 @@ class WorkspaceService:
         as_of_date: str,
         state: str,
         brief: JsonDict,
+        workflows: JsonDict,
         actions: list[JsonDict],
         readiness: JsonDict,
     ) -> str:
         context = brief["context"]
+        plan_progress = workflows["plan_execution_progress"]
         lines = [
             "Hermes 投资工作台",
             f"数据日期: {as_of_date}",
@@ -839,6 +953,12 @@ class WorkspaceService:
             f"组合: {context['portfolio']['name']} | 账户: {context['account']['name']}",
             f"估值数据质量: {brief['valuation']['data_quality']}",
             f"V1 就绪度: {readiness['status']}",
+            (
+                "周计划累计执行: "
+                f"已成交 ¥{plan_progress['executed_amount']} / "
+                f"计划 ¥{plan_progress['planned_amount']} / "
+                f"剩余 ¥{plan_progress['remaining_amount']}"
+            ),
             "",
             "待处理事实:",
         ]
@@ -868,6 +988,7 @@ class WorkspaceService:
     ) -> str:
         context = brief["context"]
         counts = weekly["counts"]
+        plan_progress = weekly["plan_execution_progress"]
         totals = brief["valuation"]["totals"]
         valuation_line = "期末持仓估值: 不可用"
         if totals is not None:
@@ -887,6 +1008,12 @@ class WorkspaceService:
             f"- 交易账本记录: {counts['transaction_record_count']}",
             f"- 现金事实: {counts['cash_event_count']}",
             f"- 周计划: {counts['plan_count']}",
+            (
+                "- 周计划执行进度: "
+                f"已成交 ¥{plan_progress['executed_amount']} / "
+                f"计划 ¥{plan_progress['planned_amount']} / "
+                f"剩余 ¥{plan_progress['remaining_amount']}"
+            ),
             f"- 周期复盘: {counts['periodic_review_count']}",
             f"- 自动化事实包: {counts['report_bundle_count']}",
             "",
@@ -981,6 +1108,7 @@ class WorkspaceService:
             as_of_date=as_of_date.isoformat(),
             state=state,
             brief=brief,
+            workflows=workflows,
             actions=actions,
             readiness=readiness,
         )

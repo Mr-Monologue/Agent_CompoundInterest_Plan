@@ -120,6 +120,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "weekly_plan_freeze",
         "weekly_plan_skip",
         "weekly_plan_mark_executed",
+        "weekly_plan_transaction_link",
         "holding_list",
         "opening_position_draft_create",
         "transaction_list",
@@ -128,6 +129,38 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "transaction_reversal_draft_create",
         "transaction_draft_commit",
         "opening_position_draft_commit",
+    ]
+
+
+def test_weekly_plan_transaction_link_uses_single_fact_path(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        del params
+        calls.append((method, path, payload))
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+    asyncio.run(
+        server.weekly_plan_transaction_link(
+            plan_id="plan-1",
+            transaction_id="transaction-1",
+            confirmed_by="Ryan",
+        )
+    )
+
+    assert calls == [
+        (
+            "POST",
+            "/v1/weekly-plans/plan-1/transactions",
+            {"transaction_id": "transaction-1", "confirmed_by": "Ryan"},
+        )
     ]
 
 

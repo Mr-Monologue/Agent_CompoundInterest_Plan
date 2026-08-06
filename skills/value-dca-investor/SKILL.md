@@ -118,9 +118,14 @@ created plan remains `DRAFT`; it is not approved and creates no transaction. Sho
 revision, items, expiry, and confirmation boundary. Use `weekly_plan_freeze` only after the user
 explicitly confirms that exact draft and provides or clearly approves use of its one-time token.
 Use `weekly_plan_skip` only after explicit user direction and a reason. Treat `FROZEN` as an
-approved plan, not a brokerage execution. Use `weekly_plan_mark_executed` only with separately
-committed BUY transaction IDs returned by Core; never infer execution from a frozen plan,
-screenshots, intent, or an external platform action that has not been recorded.
+approved plan, not a brokerage execution. Use `weekly_plan_transaction_link` only after the user
+explicitly confirms associating one separately committed real BUY fact with the frozen plan. A
+valid incomplete association moves the plan to `PARTIALLY_EXECUTED`; show the per-fund planned,
+executed, and remaining amounts. Use `weekly_plan_mark_executed` only with separately committed BUY
+transaction IDs returned by Core and only when they complete every planned fund amount. Never
+infer execution from a frozen plan, screenshots, intent, or an external platform action that has
+not been recorded. Ledger transaction `amount` is the plan-progress amount; fees are not separately
+recorded or counted. Never reuse a transaction across plans or associate a reversed transaction.
 
 Use `valuation_observation_record` only with exact sourced PE/PB evidence for a registered index;
 never invent, scrape implicitly, or copy an unverified value. Use `valuation_snapshot_get` for

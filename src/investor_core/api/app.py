@@ -56,6 +56,7 @@ from investor_core.api.schemas import (
     WeeklyPlanDraftCreateRequest,
     WeeklyPlanExecutedRequest,
     WeeklyPlanSkipRequest,
+    WeeklyPlanTransactionLinkRequest,
 )
 from investor_core.capital import CapitalService
 from investor_core.config import Settings, get_settings
@@ -1322,6 +1323,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             planning.mark_executed(
                 plan_id=plan_id,
                 transaction_ids=request.transaction_ids,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.post("/v1/weekly-plans/{plan_id}/transactions")
+    def weekly_plan_transaction_link(
+        plan_id: str,
+        request: WeeklyPlanTransactionLinkRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.link_transaction(
+                plan_id=plan_id,
+                transaction_id=request.transaction_id,
                 confirmed_by=request.confirmed_by,
             )
         )
