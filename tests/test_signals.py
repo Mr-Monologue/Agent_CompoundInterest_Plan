@@ -19,6 +19,7 @@ def configured_signal_services(
     *,
     mapped: bool,
     contribution_eligible: bool,
+    proxy_suitability: str = "STRONG",
 ) -> tuple[Settings, str]:
     migrate_database(database_path)
     settings = Settings(environment=Environment.TEST, db_path=database_path)
@@ -46,12 +47,40 @@ def configured_signal_services(
         minimum_amount_minor=1,
         maximum_amount_minor=None,
         benchmark_code="INDEX001" if mapped else None,
-        proxy_suitability="STRONG" if mapped else "NOT_APPLICABLE",
+        proxy_suitability=proxy_suitability if mapped else "NOT_APPLICABLE",
         thesis_status="ACTIVE",
         approved_by="test-user",
         reason="显式配置测试卫星标的",
     )
     return settings, str(portfolio["id"])
+
+
+def record_valuation_history(
+    settings: Settings,
+    *,
+    end: date,
+    sample_count: int,
+    current_low: bool = False,
+    warning: bool = False,
+) -> None:
+    risk = RiskService(settings)
+    start = end - timedelta(days=sample_count - 1)
+    for offset in range(sample_count):
+        observed = start + timedelta(days=offset)
+        value = 10 if current_low and offset == sample_count - 1 else 20 + offset
+        risk.record_valuation_observation(
+            instrument_code="INDEX001",
+            metric="PE",
+            observation_date=observed.isoformat(),
+            value=str(value),
+            source_type="OFFICIAL",
+            source_name="test-index-source",
+            source_ref=f"test://index/{observed.isoformat()}",
+            verification_status=(
+                "UNVERIFIED" if warning and offset == sample_count - 1 else "VERIFIED"
+            ),
+            observed_at=f"{observed.isoformat()}T16:00:00+08:00",
+        )
 
 
 def commit_policy(service: SignalService, portfolio_id: str) -> dict[str, object]:
@@ -274,3 +303,52 @@ def test_instrument_plan_requires_open_signal_when_policy_is_active() -> None:
     assert opened[0]["candidate_amount"] == "100.00"
     assert stale[0]["instrument_code"] is None
     assert stale[0]["reason_code"] == "SATELLITE_SIGNAL_SNAPSHOT_STALE"
+
+
+@pytest.mark.parametrize(
+    ("case", "contribution_eligible", "expected_state", "expected_reason"),
+    [
+        ("weak_proxy", True, "BLOCKED", "STRONG_PROXY_REQUIRED"),
+        ("missing_history", True, "BLOCKED", "VALUATION_HISTORY_MISSING"),
+        ("insufficient_samples", True, "BLOCKED", "VALUATION_SAMPLE_COUNT_INSUFFICIENT"),
+        ("stale", True, "BLOCKED", "VALUATION_OBSERVATION_STALE"),
+        ("warning", True, "BLOCKED", "VALUATION_DATA_QUALITY_BLOCKED"),
+        ("not_authorized", False, "NOT_AUTHORIZED", "CONTRIBUTION_NOT_AUTHORIZED"),
+        ("closed", True, "CLOSED", "VALUATION_SIGNAL_CLOSED"),
+    ],
+)
+def test_signal_snapshot_safety_states(
+    tmp_path: Path,
+    case: str,
+    contribution_eligible: bool,
+    expected_state: str,
+    expected_reason: str,
+) -> None:
+    settings, portfolio_id = configured_signal_services(
+        tmp_path / "investor.db",
+        mapped=True,
+        contribution_eligible=contribution_eligible,
+        proxy_suitability="WEAK" if case == "weak_proxy" else "STRONG",
+    )
+    if case == "insufficient_samples":
+        record_valuation_history(settings, end=date(2026, 8, 4), sample_count=29)
+    elif case == "stale":
+        record_valuation_history(settings, end=date(2026, 7, 20), sample_count=30)
+    elif case in {"warning", "not_authorized"}:
+        record_valuation_history(
+            settings,
+            end=date(2026, 8, 4),
+            sample_count=30,
+            current_low=True,
+            warning=case == "warning",
+        )
+    elif case == "closed":
+        record_valuation_history(settings, end=date(2026, 8, 4), sample_count=30)
+
+    service = SignalService(settings)
+    commit_policy(service, portfolio_id)
+    result = service.build_snapshot(portfolio_id=portfolio_id, as_of_date="2026-08-04")
+
+    assert result["items"][0]["state"] == expected_state
+    assert result["items"][0]["reason_code"] == expected_reason
+    assert result["automatic_trade"] is False

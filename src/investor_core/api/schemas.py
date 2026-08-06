@@ -549,3 +549,8 @@ class WeeklyPlanSkipRequest(WeeklyPlanConfirmRequest):
 class WeeklyPlanExecutedRequest(RequestModel):
     transaction_ids: list[str] = Field(min_length=1, max_length=100)
     confirmed_by: str = Field(min_length=1, max_length=120)
+
+
+class WeeklyPlanTransactionLinkRequest(RequestModel):
+    transaction_id: str = Field(min_length=1, max_length=80)
+    confirmed_by: str = Field(min_length=1, max_length=120)
