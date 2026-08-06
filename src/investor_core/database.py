@@ -76,10 +76,11 @@ REQUIRED_TABLES = {
     "investment_plans",
     "plan_items",
     "plan_revisions",
+    "plan_execution_links",
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0026_satellite_signal_gating"
+EXPECTED_ALEMBIC_REVISION = "0027_partial_plan_execution"
 
 
 def ensure_database_parent(settings: Settings) -> None:

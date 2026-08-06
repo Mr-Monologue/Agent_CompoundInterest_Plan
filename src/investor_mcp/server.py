@@ -2194,12 +2194,12 @@ async def portfolio_brief_get(
 
 @mcp.tool()
 async def investment_workspace_get(
-    view: Literal["DAILY", "READINESS", "FULL"] = "DAILY",
+    view: Literal["DAILY", "WEEKLY", "READINESS", "FULL"] = "DAILY",
     as_of_date: str = "",
     portfolio_id: str = "",
     account_id: str = "",
 ) -> dict[str, Any]:
-    """Get the deterministic Hermes workbench; return data.display_text exactly."""
+    """Get the deterministic daily/weekly workbench; return data.display_text exactly."""
     resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
         portfolio_id, account_id
     )
@@ -2342,6 +2342,23 @@ async def weekly_plan_mark_executed(
         f"/v1/weekly-plans/{plan_id}/executed",
         payload={
             "transaction_ids": transaction_ids,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_plan_transaction_link(
+    plan_id: str,
+    transaction_id: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Link one confirmed external BUY fact; never create or execute a trade."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plans/{plan_id}/transactions",
+        payload={
+            "transaction_id": transaction_id,
             "confirmed_by": confirmed_by,
         },
     )
