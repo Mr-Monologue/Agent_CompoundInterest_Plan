@@ -121,6 +121,16 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "weekly_plan_skip",
         "weekly_plan_mark_executed",
         "weekly_plan_transaction_link",
+        "external_subscription_draft_create",
+        "external_subscription_status_draft_create",
+        "external_subscription_confirmation_draft_create",
+        "external_subscription_draft_get",
+        "external_subscription_confirmation_reversal_draft_create",
+        "external_subscription_draft_commit",
+        "external_subscription_list",
+        "external_subscription_get",
+        "external_subscription_transaction_draft_create",
+        "external_subscription_transaction_draft_commit",
         "holding_list",
         "opening_position_draft_create",
         "transaction_list",
@@ -129,6 +139,17 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "transaction_reversal_draft_create",
         "transaction_draft_commit",
         "opening_position_draft_commit",
+    ]
+
+    subscription_tools = {
+        tool.name: tool.description or ""
+        for tool in tools
+        if tool.name.startswith("external_subscription_")
+    }
+    assert len(subscription_tools) == 10
+    assert "never place an order" in subscription_tools["external_subscription_draft_create"]
+    assert "never trade" in subscription_tools[
+        "external_subscription_transaction_draft_create"
     ]
 
 

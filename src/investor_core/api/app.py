@@ -15,6 +15,13 @@ from investor_core.api.schemas import (
     AutomationPolicyDraftCreateRequest,
     AutomationSchedulerSnapshotRequest,
     CashEventDraftCreateRequest,
+    ExternalSubscriptionConfirmationDraftRequest,
+    ExternalSubscriptionConfirmationReversalDraftRequest,
+    ExternalSubscriptionDraftCommitRequest,
+    ExternalSubscriptionStatusDraftRequest,
+    ExternalSubscriptionSubmissionDraftRequest,
+    ExternalSubscriptionTransactionCommitRequest,
+    ExternalSubscriptionTransactionDraftRequest,
     InstrumentCreateRequest,
     InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
@@ -72,6 +79,7 @@ from investor_core.research import ResearchService
 from investor_core.risk import RiskService
 from investor_core.signals import SignalService
 from investor_core.strategy import StrategyService
+from investor_core.subscriptions import SubscriptionService
 from investor_core.version import __version__
 from investor_core.workspace import WorkspaceService
 
@@ -104,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     capital = CapitalService(runtime_settings)
     research = ResearchService(runtime_settings)
     workspace = WorkspaceService(runtime_settings)
+    subscriptions = SubscriptionService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -1336,6 +1345,163 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             planning.link_transaction(
                 plan_id=plan_id,
                 transaction_id=request.transaction_id,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.post("/v1/external-subscription-drafts")
+    def external_subscription_submission_draft_create(
+        request: ExternalSubscriptionSubmissionDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.create_submission_draft(
+                portfolio_id=request.portfolio_id,
+                account_id=request.account_id,
+                weekly_plan_id=request.weekly_plan_id,
+                instrument_code=request.instrument_code,
+                requested_amount=str(request.requested_amount),
+                submitted_at=request.submitted_at.isoformat(),
+                submitted_business_date=request.submitted_business_date.isoformat(),
+                external_platform=request.external_platform,
+                idempotency_key=request.idempotency_key,
+                external_reference=request.external_reference,
+                expected_confirmation_date=(
+                    request.expected_confirmation_date.isoformat()
+                    if request.expected_confirmation_date
+                    else None
+                ),
+                source=request.source,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post("/v1/external-subscriptions/{subscription_id}/status-drafts")
+    def external_subscription_status_draft_create(
+        subscription_id: str,
+        request: ExternalSubscriptionStatusDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.create_status_draft(
+                subscription_id=subscription_id,
+                target_status=request.target_status,
+                reason=request.reason,
+                idempotency_key=request.idempotency_key,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post("/v1/external-subscriptions/{subscription_id}/confirmation-drafts")
+    def external_subscription_confirmation_draft_create(
+        subscription_id: str,
+        request: ExternalSubscriptionConfirmationDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.create_confirmation_draft(
+                subscription_id=subscription_id,
+                confirmed_at=request.confirmed_at.isoformat(),
+                confirmation_business_date=(
+                    request.confirmation_business_date.isoformat()
+                ),
+                nav_date=request.nav_date.isoformat(),
+                nav=str(request.nav),
+                confirmed_shares=str(request.confirmed_shares),
+                confirmed_amount=str(request.confirmed_amount),
+                fee=str(request.fee),
+                refunded_amount=str(request.refunded_amount),
+                idempotency_key=request.idempotency_key,
+                external_reference=request.external_reference,
+                reversal_of_confirmation_id=request.reversal_of_confirmation_id,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.get("/v1/external-subscription-drafts/{draft_id}")
+    def external_subscription_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(subscriptions.get_draft(draft_id=draft_id))
+
+    @app.post(
+        "/v1/external-subscriptions/{subscription_id}/confirmation-reversal-drafts"
+    )
+    def external_subscription_confirmation_reversal_draft_create(
+        subscription_id: str,
+        request: ExternalSubscriptionConfirmationReversalDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.create_confirmation_reversal_draft(
+                subscription_id=subscription_id,
+                confirmation_id=request.confirmation_id,
+                reason=request.reason,
+                idempotency_key=request.idempotency_key,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post("/v1/external-subscription-drafts/{draft_id}/commit")
+    def external_subscription_draft_commit(
+        draft_id: str,
+        request: ExternalSubscriptionDraftCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.commit_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.get("/v1/external-subscriptions")
+    def external_subscription_list(
+        portfolio_id: str | None = None,
+        account_id: str | None = None,
+        weekly_plan_id: str | None = None,
+        status: str | None = None,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": subscriptions.list(
+                    portfolio_id=portfolio_id,
+                    account_id=account_id,
+                    weekly_plan_id=weekly_plan_id,
+                    status=status,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/external-subscriptions/{subscription_id}")
+    def external_subscription_get(subscription_id: str) -> dict[str, Any]:
+        return success(subscriptions.get(subscription_id=subscription_id))
+
+    @app.post(
+        "/v1/external-subscription-confirmations/{confirmation_id}/transaction-drafts"
+    )
+    def external_subscription_transaction_draft_create(
+        confirmation_id: str,
+        request: ExternalSubscriptionTransactionDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.create_transaction_draft(
+                confirmation_id=confirmation_id,
+                idempotency_key=request.idempotency_key,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post(
+        "/v1/external-subscription-confirmations/{confirmation_id}/"
+        "transaction-drafts/{draft_id}/commit"
+    )
+    def external_subscription_transaction_draft_commit(
+        confirmation_id: str,
+        draft_id: str,
+        request: ExternalSubscriptionTransactionCommitRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.commit_transaction_draft(
+                confirmation_id=confirmation_id,
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
                 confirmed_by=request.confirmed_by,
             )
         )

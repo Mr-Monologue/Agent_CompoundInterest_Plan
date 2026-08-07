@@ -14,6 +14,7 @@ from investor_core.config import Settings
 from investor_core.ledger import JsonDict, LedgerError, LedgerService, utc_now
 from investor_core.market_data import MarketDataService
 from investor_core.operations import OperationsService
+from investor_core.subscriptions import SubscriptionService
 
 
 class WorkspaceService:
@@ -28,6 +29,7 @@ class WorkspaceService:
         operations: OperationsService | None = None,
         capital: CapitalService | None = None,
         ledger: LedgerService | None = None,
+        subscriptions: SubscriptionService | None = None,
     ) -> None:
         self.settings = settings
         self._now = now
@@ -35,6 +37,7 @@ class WorkspaceService:
         self._operations = operations or OperationsService(settings, now=now)
         self._capital = capital or CapitalService(settings, now=now)
         self._ledger = ledger or LedgerService(settings, now=now)
+        self._subscriptions = subscriptions or SubscriptionService(settings, now=now)
 
     def _connect(self) -> sqlite3.Connection:
         database_path = (
@@ -60,13 +63,21 @@ class WorkspaceService:
         items: list[JsonDict] = []
         planned_total = 0
         executed_total = 0
+        in_flight_total = 0
+        cancelled_total = 0
         plan_ids: set[str] = set()
         for row in rows:
             planned = int(row["planned_amount_minor"])
             executed = int(row["executed_amount_minor"])
+            in_flight = min(
+                int(row["in_flight_amount_minor"]), max(planned - executed, 0)
+            )
+            cancelled = int(row["cancelled_or_refunded_amount_minor"])
             remaining = max(planned - executed, 0)
             planned_total += planned
             executed_total += executed
+            in_flight_total += in_flight
+            cancelled_total += cancelled
             plan_ids.add(str(row["plan_id"]))
             items.append(
                 {
@@ -78,6 +89,11 @@ class WorkspaceService:
                     "planned_amount": cls._amount_from_minor(planned),
                     "executed_amount": cls._amount_from_minor(executed),
                     "remaining_amount": cls._amount_from_minor(remaining),
+                    "in_flight_amount": cls._amount_from_minor(in_flight),
+                    "unsubmitted_amount": cls._amount_from_minor(
+                        max(remaining - in_flight, 0)
+                    ),
+                    "cancelled_or_refunded_amount": cls._amount_from_minor(cancelled),
                     "valid_transaction_count": int(row["valid_transaction_count"]),
                     "reversed_transaction_count": int(row["reversed_transaction_count"]),
                     "complete": executed == planned,
@@ -88,7 +104,12 @@ class WorkspaceService:
             "planned_amount": cls._amount_from_minor(planned_total),
             "executed_amount": cls._amount_from_minor(executed_total),
             "remaining_amount": cls._amount_from_minor(max(planned_total - executed_total, 0)),
-            "fee_treatment": "FEES_NOT_SEPARATELY_RECORDED_OR_COUNTED",
+            "in_flight_amount": cls._amount_from_minor(in_flight_total),
+            "unsubmitted_amount": cls._amount_from_minor(
+                max(planned_total - executed_total - in_flight_total, 0)
+            ),
+            "cancelled_or_refunded_amount": cls._amount_from_minor(cancelled_total),
+            "fee_treatment": "CONFIRMED_PRINCIPAL_PLUS_FEE_COUNTS_TOWARD_PLAN",
             "items": items,
         }
 
@@ -184,7 +205,7 @@ class WorkspaceService:
                 except (AttributeError, KeyError, TypeError, ValueError, InvalidOperation):
                     target_pct_by_role = {}
             eligible_count = sum(eligible_by_role.values())
-            required_roles = list(target_pct_by_role)
+            required_roles = ["CORE"] if Decimal(target_pct_by_role.get("CORE", "0")) > 0 else []
             missing_roles = [
                 role for role in required_roles if int(eligible_by_role.get(role, 0)) == 0
             ]
@@ -199,13 +220,40 @@ class WorkspaceService:
             )
             plan_progress_rows = connection.execute(
                 """
+                WITH booked AS (
+                    SELECT c.subscription_id,
+                           COALESCE(SUM(
+                               CASE WHEN t.reversed_by_transaction_id IS NULL
+                                    THEN l.plan_linked_amount_minor ELSE 0 END
+                           ), 0) AS booked_minor
+                    FROM external_subscription_confirmations c
+                    JOIN subscription_confirmation_transaction_links l
+                      ON l.confirmation_id=c.id
+                    JOIN transactions t ON t.id=l.transaction_id
+                    WHERE c.kind='CONFIRMATION'
+                      AND c.reversed_by_confirmation_id IS NULL
+                    GROUP BY c.subscription_id
+                ), subscriptions AS (
+                    SELECT s.weekly_plan_id, s.instrument_id,
+                           SUM(MAX(s.requested_amount_minor-s.cancelled_amount_minor
+                               -s.refunded_amount_minor-COALESCE(b.booked_minor, 0), 0))
+                               AS in_flight_amount_minor,
+                           SUM(s.cancelled_amount_minor+s.refunded_amount_minor)
+                               AS cancelled_or_refunded_amount_minor
+                    FROM external_subscriptions s
+                    LEFT JOIN booked b ON b.subscription_id=s.id
+                    GROUP BY s.weekly_plan_id, s.instrument_id
+                )
                 SELECT p.id AS plan_id, p.plan_date, p.status AS plan_status,
                        i.code AS instrument_code, i.name AS instrument_name,
                        pi.candidate_amount_minor AS planned_amount_minor,
                        COALESCE(SUM(
                            CASE WHEN t.reversed_by_transaction_id IS NULL
-                                THEN t.amount_minor ELSE 0 END
+                                THEN l.linked_amount_minor ELSE 0 END
                        ), 0) AS executed_amount_minor,
+                       COALESCE(s.in_flight_amount_minor, 0) AS in_flight_amount_minor,
+                       COALESCE(s.cancelled_or_refunded_amount_minor, 0)
+                           AS cancelled_or_refunded_amount_minor,
                        COALESCE(SUM(
                            CASE WHEN t.id IS NOT NULL AND t.reversed_by_transaction_id IS NULL
                                 THEN 1 ELSE 0 END
@@ -221,11 +269,14 @@ class WorkspaceService:
                 LEFT JOIN plan_execution_links l ON l.plan_id=p.id
                 LEFT JOIN transactions t
                   ON t.id=l.transaction_id AND t.instrument_id=pi.instrument_id
+                LEFT JOIN subscriptions s
+                  ON s.weekly_plan_id=p.id AND s.instrument_id=pi.instrument_id
                 WHERE p.portfolio_id=? AND p.account_id=?
                   AND p.status IN ('FROZEN','PARTIALLY_EXECUTED')
                   AND pi.action='CONTRIBUTE' AND pi.candidate_amount_minor > 0
                 GROUP BY p.id, p.plan_date, p.status, i.code, i.name,
-                         pi.candidate_amount_minor
+                         pi.candidate_amount_minor, s.in_flight_amount_minor,
+                         s.cancelled_or_refunded_amount_minor
                 ORDER BY p.plan_date, p.id, i.code
                 """,
                 (portfolio_id, account_id),
@@ -307,6 +358,12 @@ class WorkspaceService:
             last = datetime.fromisoformat(str(last_started_at).replace("Z", "+00:00"))
             observed_days = max(1, (last.date() - first.date()).days + 1)
 
+        subscription_summary = self._subscriptions.summary(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            as_of_date=self._now().astimezone(UTC).date(),
+        )
+
         return {
             "strategy_assignment_active": strategy is not None,
             "contribution_eligible_instrument_count": eligible_count,
@@ -316,6 +373,7 @@ class WorkspaceService:
             "target_pct_by_role": target_pct_by_role,
             "plan_counts": plan_counts,
             "plan_execution_progress": self._plan_progress_summary(plan_progress_rows),
+            "external_subscription_progress": subscription_summary,
             "sell_proposal_counts": proposal_counts,
             "review_action_counts": review_action_counts,
             "research_task_counts": research_task_counts,
@@ -398,13 +456,40 @@ class WorkspaceService:
             ).fetchall()
             plan_progress_rows = connection.execute(
                 """
+                WITH booked AS (
+                    SELECT c.subscription_id,
+                           COALESCE(SUM(
+                               CASE WHEN t.reversed_by_transaction_id IS NULL
+                                    THEN l.plan_linked_amount_minor ELSE 0 END
+                           ), 0) AS booked_minor
+                    FROM external_subscription_confirmations c
+                    JOIN subscription_confirmation_transaction_links l
+                      ON l.confirmation_id=c.id
+                    JOIN transactions t ON t.id=l.transaction_id
+                    WHERE c.kind='CONFIRMATION'
+                      AND c.reversed_by_confirmation_id IS NULL
+                    GROUP BY c.subscription_id
+                ), subscriptions AS (
+                    SELECT s.weekly_plan_id, s.instrument_id,
+                           SUM(MAX(s.requested_amount_minor-s.cancelled_amount_minor
+                               -s.refunded_amount_minor-COALESCE(b.booked_minor, 0), 0))
+                               AS in_flight_amount_minor,
+                           SUM(s.cancelled_amount_minor+s.refunded_amount_minor)
+                               AS cancelled_or_refunded_amount_minor
+                    FROM external_subscriptions s
+                    LEFT JOIN booked b ON b.subscription_id=s.id
+                    GROUP BY s.weekly_plan_id, s.instrument_id
+                )
                 SELECT p.id AS plan_id, p.plan_date, p.status AS plan_status,
                        i.code AS instrument_code, i.name AS instrument_name,
                        pi.candidate_amount_minor AS planned_amount_minor,
                        COALESCE(SUM(
                            CASE WHEN t.reversed_by_transaction_id IS NULL
-                                THEN t.amount_minor ELSE 0 END
+                                THEN l.linked_amount_minor ELSE 0 END
                        ), 0) AS executed_amount_minor,
+                       COALESCE(s.in_flight_amount_minor, 0) AS in_flight_amount_minor,
+                       COALESCE(s.cancelled_or_refunded_amount_minor, 0)
+                           AS cancelled_or_refunded_amount_minor,
                        COALESCE(SUM(
                            CASE WHEN t.id IS NOT NULL AND t.reversed_by_transaction_id IS NULL
                                 THEN 1 ELSE 0 END
@@ -420,12 +505,15 @@ class WorkspaceService:
                 LEFT JOIN plan_execution_links l ON l.plan_id=p.id
                 LEFT JOIN transactions t
                   ON t.id=l.transaction_id AND t.instrument_id=pi.instrument_id
+                LEFT JOIN subscriptions s
+                  ON s.weekly_plan_id=p.id AND s.instrument_id=pi.instrument_id
                 WHERE p.portfolio_id=? AND p.account_id=?
                   AND p.plan_date BETWEEN ? AND ?
                   AND p.status IN ('FROZEN','PARTIALLY_EXECUTED','EXECUTED')
                   AND pi.action='CONTRIBUTE' AND pi.candidate_amount_minor > 0
                 GROUP BY p.id, p.plan_date, p.status, i.code, i.name,
-                         pi.candidate_amount_minor
+                         pi.candidate_amount_minor, s.in_flight_amount_minor,
+                         s.cancelled_or_refunded_amount_minor
                 ORDER BY p.plan_date, p.id, i.code
                 """,
                 (portfolio_id, account_id, start, end),
@@ -493,6 +581,11 @@ class WorkspaceService:
             }
             for row in report_rows
         ]
+        subscription_summary = self._subscriptions.summary(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            as_of_date=period_end,
+        )
         return {
             "period_start": start,
             "period_end": end,
@@ -500,6 +593,7 @@ class WorkspaceService:
             "cash_events": cash_events,
             "plans": plans,
             "plan_execution_progress": self._plan_progress_summary(plan_progress_rows),
+            "external_subscription_progress": subscription_summary,
             "periodic_reviews": reviews,
             "report_bundles": report_bundles,
             "counts": {
@@ -546,6 +640,16 @@ class WorkspaceService:
         required_roles = list(workflows["required_contribution_roles"])
         missing_roles = list(workflows["missing_contribution_roles"])
         strategy_ready = bool(required_roles) and not missing_roles
+        plan_counts = workflows["plan_counts"]
+        closed_plan_count = sum(
+            int(plan_counts.get(status, 0)) for status in ("EXECUTED", "SKIPPED")
+        )
+        open_plan_count = sum(
+            int(plan_counts.get(status, 0))
+            for status in ("DRAFT", "FROZEN", "PARTIALLY_EXECUTED")
+        )
+        subscription_progress = workflows["external_subscription_progress"]
+        active_subscription_count = int(subscription_progress["active_count"])
         checks = [
             self._check(
                 "INVESTMENT_CONTEXT",
@@ -683,25 +787,24 @@ class WorkspaceService:
             self._check(
                 "WEEKLY_PLAN_LIFECYCLE",
                 (
-                    "PASS"
-                    if sum(
-                        int(workflows["plan_counts"].get(status, 0))
-                        for status in ("EXECUTED", "SKIPPED")
-                    )
-                    > 0
-                    else "NOT_TESTED"
+                    "IN_PROGRESS"
+                    if open_plan_count > 0 or active_subscription_count > 0
+                    else ("PASS" if closed_plan_count > 0 else "NOT_TESTED")
                 ),
                 (
-                    "CLOSED_PLAN_LIFECYCLE_OBSERVED"
-                    if sum(
-                        int(workflows["plan_counts"].get(status, 0))
-                        for status in ("EXECUTED", "SKIPPED")
+                    "PLAN_OR_SUBSCRIPTION_STILL_IN_PROGRESS"
+                    if open_plan_count > 0 or active_subscription_count > 0
+                    else (
+                        "CLOSED_PLAN_LIFECYCLE_OBSERVED"
+                        if closed_plan_count > 0
+                        else "CLOSED_PLAN_LIFECYCLE_NOT_OBSERVED"
                     )
-                    > 0
-                    else "CLOSED_PLAN_LIFECYCLE_NOT_OBSERVED"
                 ),
                 required=True,
-                facts={"plan_counts": workflows["plan_counts"]},
+                facts={
+                    "plan_counts": plan_counts,
+                    "external_subscription_progress": subscription_progress,
+                },
             ),
             self._check(
                 "PERIODIC_REVIEW_HISTORY",
@@ -889,6 +992,18 @@ class WorkspaceService:
                     {"count": review_required},
                 )
             )
+        subscription_progress = workflows["external_subscription_progress"]
+        if int(subscription_progress["active_count"]):
+            actions.append(
+                self._action(
+                    45,
+                    "EXTERNAL_SUBSCRIPTIONS_AWAIT_CONFIRMATION",
+                    "USER_REVIEW",
+                    "SUBSCRIPTION_FACTS_OR_LEDGER_POSTING_REMAIN_OPEN",
+                    "external_subscription_list",
+                    subscription_progress,
+                )
+            )
         draft_count = int(workflows["plan_counts"].get("DRAFT", 0))
         frozen_count = int(workflows["plan_counts"].get("FROZEN", 0))
         partial_count = int(workflows["plan_counts"].get("PARTIALLY_EXECUTED", 0))
@@ -946,6 +1061,7 @@ class WorkspaceService:
     ) -> str:
         context = brief["context"]
         plan_progress = workflows["plan_execution_progress"]
+        subscription_progress = workflows["external_subscription_progress"]
         lines = [
             "Hermes 投资工作台",
             f"数据日期: {as_of_date}",
@@ -976,6 +1092,24 @@ class WorkspaceService:
                 "边界: 以上为确定性状态与工作流优先级，不是基金排名、投资建议或交易执行。",  # noqa: RUF001
             ]
         )
+        lines.extend(
+            [
+                "",
+                (
+                    "场外申购进度: "
+                    f"在途 ¥{subscription_progress['in_flight_amount']} / "
+                    "已确认待记账 "
+                    f"¥{subscription_progress['confirmed_unbooked_amount']} / "
+                    f"跨周 {subscription_progress['cross_week_count']} 笔"
+                ),
+                (
+                    "冻结计划资金: "
+                    f"在途 ¥{plan_progress['in_flight_amount']} / "
+                    f"未提交 ¥{plan_progress['unsubmitted_amount']} / "
+                    f"取消或退款 ¥{plan_progress['cancelled_or_refunded_amount']}"
+                ),
+            ]
+        )
         return "\n".join(lines)
 
     @staticmethod
@@ -989,6 +1123,7 @@ class WorkspaceService:
         context = brief["context"]
         counts = weekly["counts"]
         plan_progress = weekly["plan_execution_progress"]
+        subscription_progress = weekly["external_subscription_progress"]
         totals = brief["valuation"]["totals"]
         valuation_line = "期末持仓估值: 不可用"
         if totals is not None:
@@ -1027,6 +1162,24 @@ class WorkspaceService:
             [
                 "",
                 "边界: 周报只汇总已记录事实，不生成基金排名、投资建议、计划、交易或持仓变更。",  # noqa: RUF001
+            ]
+        )
+        lines.extend(
+            [
+                "",
+                (
+                    "场外申购进度: "
+                    f"在途 ¥{subscription_progress['in_flight_amount']} / "
+                    "已确认待记账 "
+                    f"¥{subscription_progress['confirmed_unbooked_amount']} / "
+                    f"跨周 {subscription_progress['cross_week_count']} 笔"
+                ),
+                (
+                    "冻结计划资金: "
+                    f"在途 ¥{plan_progress['in_flight_amount']} / "
+                    f"未提交 ¥{plan_progress['unsubmitted_amount']} / "
+                    f"取消或退款 ¥{plan_progress['cancelled_or_refunded_amount']}"
+                ),
             ]
         )
         return "\n".join(lines)

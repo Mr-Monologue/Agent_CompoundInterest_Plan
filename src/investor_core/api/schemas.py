@@ -554,3 +554,75 @@ class WeeklyPlanExecutedRequest(RequestModel):
 class WeeklyPlanTransactionLinkRequest(RequestModel):
     transaction_id: str = Field(min_length=1, max_length=80)
     confirmed_by: str = Field(min_length=1, max_length=120)
+
+
+class ExternalSubscriptionSubmissionDraftRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    account_id: str = Field(min_length=1, max_length=80)
+    weekly_plan_id: str = Field(min_length=1, max_length=80)
+    instrument_code: str = Field(min_length=1, max_length=40)
+    requested_amount: Decimal = Field(gt=0)
+    submitted_at: datetime
+    submitted_business_date: date
+    external_platform: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    external_reference: str | None = Field(default=None, max_length=200)
+    expected_confirmation_date: date | None = None
+    source: Literal["USER_REPORTED", "PLATFORM_RECEIPT"] = "USER_REPORTED"
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_submission_time(self) -> Self:
+        if self.submitted_at.utcoffset() is None:
+            raise ValueError("submitted_at must include a timezone")
+        return self
+
+
+class ExternalSubscriptionStatusDraftRequest(RequestModel):
+    target_status: Literal["PENDING_CONFIRMATION", "CANCELLED", "REJECTED"]
+    reason: str = Field(min_length=1, max_length=1000)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ExternalSubscriptionConfirmationDraftRequest(RequestModel):
+    confirmed_at: datetime
+    confirmation_business_date: date
+    nav_date: date
+    nav: Decimal = Field(gt=0)
+    confirmed_shares: Decimal = Field(gt=0)
+    confirmed_amount: Decimal = Field(gt=0)
+    fee: Decimal = Field(default=Decimal("0"), ge=0)
+    refunded_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    external_reference: str | None = Field(default=None, max_length=200)
+    reversal_of_confirmation_id: str | None = Field(default=None, max_length=80)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_confirmation_time(self) -> Self:
+        if self.confirmed_at.utcoffset() is None:
+            raise ValueError("confirmed_at must include a timezone")
+        return self
+
+
+class ExternalSubscriptionDraftCommitRequest(RequestModel):
+    confirmation_token: str = Field(min_length=1, max_length=200)
+    confirmed_by: str = Field(min_length=1, max_length=120)
+
+
+class ExternalSubscriptionConfirmationReversalDraftRequest(RequestModel):
+    confirmation_id: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=1, max_length=1000)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ExternalSubscriptionTransactionDraftRequest(RequestModel):
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ExternalSubscriptionTransactionCommitRequest(RequestModel):
+    confirmation_token: str = Field(min_length=1, max_length=200)
+    confirmed_by: str = Field(min_length=1, max_length=120)

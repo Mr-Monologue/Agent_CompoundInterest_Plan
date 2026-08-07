@@ -634,7 +634,7 @@ def test_migration_preserves_existing_job_runs_and_adds_retry_state(tmp_path: Pa
         ).fetchone()
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert row == (1, 3)
-    assert revision == ("0027_partial_plan_execution",)
+    assert revision == ("0028_external_subscription_lifecycle",)
 
 
 def test_scheduler_manifest_and_snapshot_detect_drift(tmp_path: Path) -> None:

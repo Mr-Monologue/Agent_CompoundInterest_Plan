@@ -91,13 +91,17 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "strategy_versions",
         "investment_plans",
         "plan_execution_links",
+        "external_subscriptions",
+        "external_subscription_confirmations",
+        "external_subscription_drafts",
+        "subscription_confirmation_transaction_links",
         "plan_items",
         "plan_revisions",
         "transaction_drafts",
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0027_partial_plan_execution",)
+    assert revision == ("0028_external_subscription_lifecycle",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -187,7 +191,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0027_partial_plan_execution",
+            "0028_external_subscription_lifecycle",
         )
 
 
@@ -292,7 +296,7 @@ def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
         "2026-07-02T00:01:00Z",
         None,
     )
-    assert revision == ("0027_partial_plan_execution",)
+    assert revision == ("0028_external_subscription_lifecycle",)
     snapshot = ResearchService(settings).build_watchlist_review_snapshot(
         portfolio_id=str(portfolio["id"]),
         as_of_date=date(2026, 9, 1),
@@ -322,7 +326,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0027_partial_plan_execution",)
+    assert revision == ("0028_external_subscription_lifecycle",)
 
 
 def test_alert_recovery_migration_resolves_only_recovered_job_runs(tmp_path: Path) -> None:
@@ -460,7 +464,47 @@ def test_satellite_signal_migration_preserves_alert_resolution_schema(
         "resolution_code",
         "resolution_context_json",
     } <= alert_columns
-    assert revision == ("0027_partial_plan_execution",)
+    assert revision == ("0028_external_subscription_lifecycle",)
+
+
+def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0027_partial_plan_execution")
+    with sqlite3.connect(database_path) as connection:
+        before = {
+            table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in (
+                "investment_plans",
+                "plan_execution_links",
+                "transactions",
+                "holding_snapshots",
+            )
+        }
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        after = {
+            table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in before
+        }
+        new_counts = {
+            table: connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in (
+                "external_subscriptions",
+                "external_subscription_confirmations",
+                "external_subscription_drafts",
+                "subscription_confirmation_transaction_links",
+            )
+        }
+        revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()
+    assert after == before
+    assert set(new_counts.values()) == {0}
+    assert revision == ("0028_external_subscription_lifecycle",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(
