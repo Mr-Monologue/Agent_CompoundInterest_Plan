@@ -228,7 +228,7 @@ def test_plan_accumulates_multiple_buy_records_across_trade_dates(tmp_path: Path
     assert partial["execution_progress"]["executed_amount"] == "40.00"
     assert partial["execution_progress"]["remaining_amount"] == "60.00"
     assert partial["execution_progress"]["fee_treatment"] == (
-        "FEES_NOT_SEPARATELY_RECORDED_OR_COUNTED"
+        "CONFIRMED_PRINCIPAL_PLUS_FEE_COUNTS_TOWARD_PLAN"
     )
     assert partial["execution_progress"]["items"][0] == {
         "instrument_id": partial["items"][0]["instrument_id"],
@@ -236,8 +236,11 @@ def test_plan_accumulates_multiple_buy_records_across_trade_dates(tmp_path: Path
         "instrument_name": partial["items"][0]["instrument_name"],
         "planned_amount": "100.00",
         "executed_amount": "40.00",
-        "remaining_amount": "60.00",
-        "excess_amount": "0.00",
+            "remaining_amount": "60.00",
+            "in_flight_amount": "0.00",
+            "unsubmitted_amount": "60.00",
+            "cancelled_or_refunded_amount": "0.00",
+            "excess_amount": "0.00",
         "complete": False,
     }
 
