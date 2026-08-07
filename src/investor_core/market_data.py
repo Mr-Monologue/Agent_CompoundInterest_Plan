@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from investor_core.commitments import unfinished_plan_commitments
 from investor_core.config import Settings
 from investor_core.ledger import LedgerError, LedgerService, utc_now
 from investor_core.source_lineage import resolve_source_lineage
@@ -1621,10 +1622,46 @@ class MarketDataService:
                 ),
             }
 
+        prior_commitments = unfinished_plan_commitments(
+            self.settings,
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            before_date=str(valuation["as_of_date"]),
+        )
+        outstanding_minor = int(prior_commitments["outstanding_amount_minor"])
+        suppressed_minor = min(contribution_minor, outstanding_minor)
+        available_contribution_minor = contribution_minor - suppressed_minor
+        if available_contribution_minor <= 0:
+            return {
+                "available": False,
+                "state": "BLOCKED",
+                "reason_code": "OUTSTANDING_PLAN_COMMITMENT",
+                "as_of_date": valuation["as_of_date"],
+                "data_quality": valuation["data_quality"],
+                "warnings": valuation["warnings"],
+                "requested_contribution_amount": _money(contribution_minor),
+                "prior_outstanding_amount": _money(outstanding_minor),
+                "suppressed_amount": _money(suppressed_minor),
+                "available_contribution_amount": _money(0),
+                "prior_commitments": prior_commitments,
+                "narrative_contract": {
+                    "mode": "EXACT_TEXT",
+                    "response_field": "display_text",
+                    "additions_allowed": False,
+                },
+                "display_text": (
+                    "Weekly contribution plan preview\n"
+                    f"Fact date: {valuation['as_of_date']}\n"
+                    "Status: BLOCKED (OUTSTANDING_PLAN_COMMITMENT)\n"
+                    "A prior frozen plan still has unfinished cash commitments; "
+                    "the same amount cannot be allocated again."
+                ),
+            }
+
         plan = _contribution_allocation(
             policy_record=allocation["policy"],
             role_summary=brief["role_summary"],
-            contribution_minor=contribution_minor,
+            contribution_minor=available_contribution_minor,
         )
         assignment = self._strategy.get_assignment(portfolio_id=portfolio_id)
         signal_policy, signal_states = self._satellite_signal_gate(
@@ -1655,6 +1692,11 @@ class MarketDataService:
         )
         plan.update(
             {
+                "requested_contribution_amount": _money(contribution_minor),
+                "prior_outstanding_amount": _money(outstanding_minor),
+                "suppressed_amount": _money(suppressed_minor),
+                "available_contribution_amount": _money(available_contribution_minor),
+                "prior_commitments": prior_commitments,
                 "scope": "INSTRUMENT",
                 "instrument_items": instrument_items,
                 "candidate_amount": _money(candidate_minor),

@@ -298,15 +298,19 @@ class PlanningService:
                 valid_count += 1
                 instrument_id = str(link["instrument_id"])
                 valid_by_instrument[instrument_id] = (
-                    valid_by_instrument.get(instrument_id, 0) + int(link["amount_minor"])
+                    valid_by_instrument.get(instrument_id, 0)
+                    + int(link["linked_amount_minor"])
                 )
             links.append(
                 {
                     "transaction_id": str(link["transaction_id"]),
                     "instrument_id": str(link["instrument_id"]),
                     "trade_date": str(link["trade_date"]),
-                    "amount": (
+                    "transaction_amount": (
                         f"{Decimal(int(link['amount_minor'])) / MONEY_SCALE:.2f}"
+                    ),
+                    "linked_amount": (
+                        f"{Decimal(int(link['linked_amount_minor'])) / MONEY_SCALE:.2f}"
                     ),
                     "reversed": reversed_transaction,
                     "linked_at": str(link["linked_at"]),
@@ -314,9 +318,53 @@ class PlanningService:
                 }
             )
 
+        subscription_rows = connection.execute(
+            """
+            WITH booked AS (
+                SELECT c.subscription_id,
+                       COALESCE(SUM(
+                           CASE WHEN t.reversed_by_transaction_id IS NULL
+                                THEN l.plan_linked_amount_minor ELSE 0 END
+                       ), 0) AS booked_minor
+                FROM external_subscription_confirmations c
+                JOIN subscription_confirmation_transaction_links l
+                  ON l.confirmation_id=c.id
+                JOIN transactions t ON t.id=l.transaction_id
+                WHERE c.kind='CONFIRMATION'
+                  AND c.reversed_by_confirmation_id IS NULL
+                GROUP BY c.subscription_id
+            )
+            SELECT s.instrument_id,
+                   COALESCE(SUM(
+                       s.requested_amount_minor - s.cancelled_amount_minor
+                       - s.refunded_amount_minor
+                   ), 0) AS active_requested_minor,
+                   COALESCE(SUM(s.cancelled_amount_minor + s.refunded_amount_minor), 0)
+                       AS cancelled_or_refunded_minor,
+                   COALESCE(SUM(b.booked_minor), 0) AS booked_minor
+            FROM external_subscriptions s
+            LEFT JOIN booked b ON b.subscription_id=s.id
+            WHERE s.weekly_plan_id=?
+            GROUP BY s.instrument_id
+            """,
+            (row["id"],),
+        ).fetchall()
+        in_flight_by_instrument = {
+            str(item["instrument_id"]): max(
+                int(item["active_requested_minor"]) - int(item["booked_minor"]), 0
+            )
+            for item in subscription_rows
+        }
+        cancelled_by_instrument = {
+            str(item["instrument_id"]): int(item["cancelled_or_refunded_minor"])
+            for item in subscription_rows
+        }
+
         items: list[JsonDict] = []
         planned_total = 0
         executed_total = 0
+        in_flight_total = 0
+        cancelled_total = 0
         complete = bool(planned_rows)
         for planned in planned_rows:
             instrument_id = str(planned["instrument_id"])
@@ -324,8 +372,15 @@ class PlanningService:
             executed_minor = valid_by_instrument.get(instrument_id, 0)
             remaining_minor = max(planned_minor - executed_minor, 0)
             excess_minor = max(executed_minor - planned_minor, 0)
+            in_flight_minor = min(
+                in_flight_by_instrument.get(instrument_id, 0), remaining_minor
+            )
+            unsubmitted_minor = max(remaining_minor - in_flight_minor, 0)
+            cancelled_minor = cancelled_by_instrument.get(instrument_id, 0)
             planned_total += planned_minor
             executed_total += executed_minor
+            in_flight_total += in_flight_minor
+            cancelled_total += cancelled_minor
             if executed_minor != planned_minor:
                 complete = False
             items.append(
@@ -336,6 +391,13 @@ class PlanningService:
                     "planned_amount": f"{Decimal(planned_minor) / MONEY_SCALE:.2f}",
                     "executed_amount": f"{Decimal(executed_minor) / MONEY_SCALE:.2f}",
                     "remaining_amount": f"{Decimal(remaining_minor) / MONEY_SCALE:.2f}",
+                    "in_flight_amount": f"{Decimal(in_flight_minor) / MONEY_SCALE:.2f}",
+                    "unsubmitted_amount": (
+                        f"{Decimal(unsubmitted_minor) / MONEY_SCALE:.2f}"
+                    ),
+                    "cancelled_or_refunded_amount": (
+                        f"{Decimal(cancelled_minor) / MONEY_SCALE:.2f}"
+                    ),
                     "excess_amount": f"{Decimal(excess_minor) / MONEY_SCALE:.2f}",
                     "complete": executed_minor == planned_minor,
                 }
@@ -343,11 +405,18 @@ class PlanningService:
         remaining_total = sum(_minor(str(item["remaining_amount"])) for item in items)
         return {
             "status": str(row["status"]),
-            "amount_semantics": "TRANSACTION_AMOUNT",
-            "fee_treatment": "FEES_NOT_SEPARATELY_RECORDED_OR_COUNTED",
+            "amount_semantics": "PLANNED_CASH_OUTFLOW",
+            "fee_treatment": "CONFIRMED_PRINCIPAL_PLUS_FEE_COUNTS_TOWARD_PLAN",
             "planned_amount": f"{Decimal(planned_total) / MONEY_SCALE:.2f}",
             "executed_amount": f"{Decimal(executed_total) / MONEY_SCALE:.2f}",
             "remaining_amount": f"{Decimal(remaining_total) / MONEY_SCALE:.2f}",
+            "in_flight_amount": f"{Decimal(in_flight_total) / MONEY_SCALE:.2f}",
+            "unsubmitted_amount": (
+                f"{Decimal(max(remaining_total - in_flight_total, 0)) / MONEY_SCALE:.2f}"
+            ),
+            "cancelled_or_refunded_amount": (
+                f"{Decimal(cancelled_total) / MONEY_SCALE:.2f}"
+            ),
             "linked_transaction_count": len(linked_rows),
             "valid_transaction_count": valid_count,
             "reversed_transaction_count": reversed_count,
@@ -770,6 +839,7 @@ class PlanningService:
         row: sqlite3.Row,
         transaction_id: str,
         confirmed_by: str,
+        linked_amount_minor: int | None = None,
     ) -> None:
         existing = connection.execute(
             "SELECT plan_id FROM plan_execution_links WHERE transaction_id = ?",
@@ -868,7 +938,7 @@ class PlanningService:
         accumulated = int(
             connection.execute(
                 """
-                SELECT COALESCE(SUM(t.amount_minor), 0)
+                SELECT COALESCE(SUM(l.linked_amount_minor), 0)
                 FROM plan_execution_links l
                 JOIN transactions t ON t.id = l.transaction_id
                 WHERE l.plan_id = ? AND t.instrument_id = ?
@@ -879,7 +949,18 @@ class PlanningService:
         )
         planned_minor = int(planned["candidate_amount_minor"])
         transaction_minor = int(transaction["amount_minor"])
-        if accumulated + transaction_minor > planned_minor:
+        effective_linked_minor = (
+            transaction_minor if linked_amount_minor is None else linked_amount_minor
+        )
+        if effective_linked_minor <= 0:
+            self._rollback_and_raise(
+                connection,
+                LedgerError(
+                    "INVALID_LINKED_AMOUNT",
+                    "The plan-linked cash amount must be positive.",
+                ),
+            )
+        if accumulated + effective_linked_minor > planned_minor:
             remaining_minor = max(planned_minor - accumulated, 0)
             self._rollback_and_raise(
                 connection,
@@ -894,7 +975,7 @@ class PlanningService:
                             f"{Decimal(accumulated) / MONEY_SCALE:.2f}"
                         ),
                         "transaction_amount": (
-                            f"{Decimal(transaction_minor) / MONEY_SCALE:.2f}"
+                            f"{Decimal(effective_linked_minor) / MONEY_SCALE:.2f}"
                         ),
                         "remaining_amount": (
                             f"{Decimal(remaining_minor) / MONEY_SCALE:.2f}"
@@ -912,7 +993,7 @@ class PlanningService:
                 str(uuid4()),
                 row["id"],
                 transaction_id,
-                transaction_minor,
+                effective_linked_minor,
                 _iso(self._now()),
                 confirmed_by,
             ),
@@ -953,6 +1034,7 @@ class PlanningService:
         plan_id: str,
         transaction_id: str,
         confirmed_by: str,
+        linked_amount: str | None = None,
     ) -> JsonDict:
         """Attach one committed BUY fact and deterministically refresh plan progress."""
         actor = confirmed_by.strip()
@@ -988,6 +1070,9 @@ class PlanningService:
                 row=row,
                 transaction_id=transaction_id,
                 confirmed_by=actor,
+                linked_amount_minor=(
+                    _minor(linked_amount) if linked_amount is not None else None
+                ),
             )
             updated, progress = self._refresh_execution_status(connection, row=row)
             self._audit(
