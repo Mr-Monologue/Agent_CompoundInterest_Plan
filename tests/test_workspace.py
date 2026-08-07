@@ -267,7 +267,8 @@ def test_daily_and_weekly_reports_show_partial_plan_progress(tmp_path: Path) -> 
         for item in daily["v1_readiness"]["checks"]
         if item["code"] == "WEEKLY_PLAN_LIFECYCLE"
     )
-    assert lifecycle["status"] == "NOT_TESTED"
+    assert lifecycle["status"] == "IN_PROGRESS"
+    assert lifecycle["reason_code"] == "PLAN_OR_SUBSCRIPTION_STILL_IN_PROGRESS"
     assert "已成交 ¥40.00 / 计划 ¥100.00 / 剩余 ¥60.00" in daily["display_text"]
 
     weekly = service.get(
@@ -349,7 +350,7 @@ def test_readiness_reports_strategy_and_v1_operations_literally(tmp_path: Path) 
     assert "只评价产品运行条件" in result["display_text"]
 
 
-def test_readiness_requires_allowlist_coverage_for_each_target_role(tmp_path: Path) -> None:
+def test_readiness_keeps_satellite_gating_optional_for_core_loop(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     settings, portfolio_id, account_id = create_context(database_path)
     ledger = LedgerService(settings, now=fixed_now)
@@ -403,18 +404,20 @@ def test_readiness_requires_allowlist_coverage_for_each_target_role(tmp_path: Pa
         item for item in result["v1_readiness"]["checks"] if item["code"] == "STRATEGY_INSTANCE"
     )
 
-    assert check["status"] == "NOT_CONFIGURED"
-    assert check["reason_code"] == "CONTRIBUTION_ROLE_ALLOWLIST_INCOMPLETE"
+    assert check["status"] == "PASS"
+    assert check["reason_code"] == "ACTIVE_STRATEGY_AND_ALLOWLIST_CONFIGURED"
     assert check["facts"] == {
         "active": True,
         "eligible_instrument_count": 1,
         "eligible_by_role": {"CORE": 1, "SATELLITE": 0},
-        "required_roles": ["CORE", "SATELLITE"],
-        "missing_roles": ["SATELLITE"],
+        "required_roles": ["CORE"],
+        "missing_roles": [],
         "target_pct_by_role": {"CORE": "65.00", "SATELLITE": "35.00"},
     }
-    assert result["next_actions"][0]["code"] == "CONTRIBUTION_ROLE_ALLOWLIST_INCOMPLETE"
-    assert result["next_actions"][0]["facts"]["missing_roles"] == ["SATELLITE"]
+    assert all(
+        item["code"] != "CONTRIBUTION_ROLE_ALLOWLIST_INCOMPLETE"
+        for item in result["next_actions"]
+    )
 
 
 def test_workspace_api_preserves_valuation_quality_and_boundaries(tmp_path: Path) -> None:

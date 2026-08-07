@@ -2365,6 +2365,209 @@ async def weekly_plan_transaction_link(
 
 
 @mcp.tool()
+async def external_subscription_draft_create(
+    weekly_plan_id: str,
+    instrument_code: str,
+    requested_amount: str,
+    submitted_at: str,
+    submitted_business_date: str,
+    external_platform: str,
+    idempotency_key: str,
+    external_reference: str = "",
+    expected_confirmation_date: str = "",
+    source: Literal["USER_REPORTED", "PLATFORM_RECEIPT"] = "USER_REPORTED",
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Draft a user-reported external fund subscription; never place an order."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/external-subscription-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+            "weekly_plan_id": weekly_plan_id,
+            "instrument_code": instrument_code,
+            "requested_amount": requested_amount,
+            "submitted_at": submitted_at,
+            "submitted_business_date": submitted_business_date,
+            "external_platform": external_platform,
+            "external_reference": external_reference or None,
+            "expected_confirmation_date": expected_confirmation_date or None,
+            "source": source,
+            "idempotency_key": idempotency_key,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def external_subscription_status_draft_create(
+    subscription_id: str,
+    target_status: Literal["PENDING_CONFIRMATION", "CANCELLED", "REJECTED"],
+    reason: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Draft an external subscription status fact; never infer platform failure."""
+    return await core_request(
+        "POST",
+        f"/v1/external-subscriptions/{subscription_id}/status-drafts",
+        payload={
+            "target_status": target_status,
+            "reason": reason,
+            "idempotency_key": idempotency_key,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def external_subscription_confirmation_draft_create(
+    subscription_id: str,
+    confirmed_at: str,
+    confirmation_business_date: str,
+    nav_date: str,
+    nav: str,
+    confirmed_shares: str,
+    confirmed_amount: str,
+    idempotency_key: str,
+    fee: str = "0",
+    refunded_amount: str = "0",
+    external_reference: str = "",
+) -> dict[str, Any]:
+    """Draft one platform-confirmed fund share fact; holding remains unchanged."""
+    return await core_request(
+        "POST",
+        f"/v1/external-subscriptions/{subscription_id}/confirmation-drafts",
+        payload={
+            "confirmed_at": confirmed_at,
+            "confirmation_business_date": confirmation_business_date,
+            "nav_date": nav_date,
+            "nav": nav,
+            "confirmed_shares": confirmed_shares,
+            "confirmed_amount": confirmed_amount,
+            "fee": fee,
+            "refunded_amount": refunded_amount,
+            "external_reference": external_reference or None,
+            "idempotency_key": idempotency_key,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def external_subscription_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read an external subscription draft without changing financial facts."""
+    return await core_request("GET", f"/v1/external-subscription-drafts/{draft_id}")
+
+
+@mcp.tool()
+async def external_subscription_confirmation_reversal_draft_create(
+    subscription_id: str,
+    confirmation_id: str,
+    reason: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Draft correction of one unposted share confirmation; never change holdings."""
+    return await core_request(
+        "POST",
+        f"/v1/external-subscriptions/{subscription_id}/confirmation-reversal-drafts",
+        payload={
+            "confirmation_id": confirmation_id,
+            "reason": reason,
+            "idempotency_key": idempotency_key,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def external_subscription_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Commit exactly one explicitly confirmed external subscription fact."""
+    return await core_request(
+        "POST",
+        f"/v1/external-subscription-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def external_subscription_list(
+    weekly_plan_id: str = "",
+    status: str = "",
+    portfolio_id: str = "",
+    account_id: str = "",
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List external subscriptions, including pending and cross-week facts."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    params: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "account_id": resolved_account_id,
+        "limit": limit,
+    }
+    if weekly_plan_id:
+        params["weekly_plan_id"] = weekly_plan_id
+    if status:
+        params["status"] = status
+    return await core_request("GET", "/v1/external-subscriptions", params=params)
+
+
+@mcp.tool()
+async def external_subscription_get(subscription_id: str) -> dict[str, Any]:
+    """Read one external subscription and its audited confirmations."""
+    return await core_request("GET", f"/v1/external-subscriptions/{subscription_id}")
+
+
+@mcp.tool()
+async def external_subscription_transaction_draft_create(
+    confirmation_id: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Draft a BUY ledger fact from one user-confirmed platform result; never trade."""
+    return await core_request(
+        "POST",
+        f"/v1/external-subscription-confirmations/{confirmation_id}/transaction-drafts",
+        payload={"idempotency_key": idempotency_key, "actor_ref": "hermes"},
+    )
+
+
+@mcp.tool()
+async def external_subscription_transaction_draft_commit(
+    confirmation_id: str,
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Post one confirmed platform result to the ledger after explicit confirmation."""
+    return await core_request(
+        "POST",
+        f"/v1/external-subscription-confirmations/{confirmation_id}/"
+        f"transaction-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
 async def holding_list(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
     """List latest deterministic holdings reconstructed from committed records."""
     resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
