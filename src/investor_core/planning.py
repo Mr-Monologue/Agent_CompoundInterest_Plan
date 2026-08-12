@@ -49,6 +49,74 @@ def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def plan_state_contract(
+    status: str,
+    *,
+    confirmation_expires_at: str | None = None,
+    now: datetime | None = None,
+) -> JsonDict:
+    """Return the single deterministic business meaning for a plan status."""
+    normalized = status.strip().upper()
+    action_required = normalized in {"DRAFT", "FROZEN", "PARTIALLY_EXECUTED"}
+    blocks_future_plans = normalized in {"FROZEN", "PARTIALLY_EXECUTED"}
+    terminal = normalized in {"EXECUTED", "EXPIRED", "SKIPPED"}
+    credential_state = "NOT_APPLICABLE"
+    if confirmation_expires_at and normalized in {"DRAFT", "FROZEN"}:
+        reference_now = now or _utc_now()
+        credential_state = (
+            "EXPIRED"
+            if _parse_iso(confirmation_expires_at) <= reference_now
+            else "ACTIVE"
+        )
+    reason_codes = {
+        "DRAFT": "PLAN_DRAFT_REQUIRES_USER_DECISION",
+        "FROZEN": "FROZEN_PLAN_REMAINS_ACTIVE_UNTIL_EXECUTED_OR_SKIPPED",
+        "PARTIALLY_EXECUTED": "PLAN_EXECUTION_REMAINS_INCOMPLETE",
+        "EXECUTED": "PLAN_EXECUTION_COMPLETED",
+        "EXPIRED": "UNCONFIRMED_PLAN_DRAFT_EXPIRED",
+        "SKIPPED": "PLAN_EXPLICITLY_SKIPPED",
+    }
+    return {
+        "status": normalized,
+        "terminal": terminal,
+        "action_required": action_required,
+        "blocks_future_plans": blocks_future_plans,
+        "plan_fact_expired": normalized == "EXPIRED",
+        "original_confirmation_credential": credential_state,
+        "skip_requires_new_confirmation": normalized == "FROZEN",
+        "reason_code": reason_codes.get(normalized, "UNKNOWN_PLAN_STATUS"),
+    }
+
+
+def summarize_plan_states(plan_counts: JsonDict) -> JsonDict:
+    """Summarize plan list semantics for workspace and readiness views."""
+    draft_count = int(plan_counts.get("DRAFT", 0))
+    frozen_count = int(plan_counts.get("FROZEN", 0))
+    partial_count = int(plan_counts.get("PARTIALLY_EXECUTED", 0))
+    return {
+        "action_required_count": draft_count + frozen_count + partial_count,
+        "future_plan_blocking_count": frozen_count + partial_count,
+        "terminal_count": sum(
+            int(plan_counts.get(status, 0))
+            for status in ("EXECUTED", "EXPIRED", "SKIPPED")
+        ),
+        "frozen_plans_remain_active": frozen_count > 0,
+        "reason_code": (
+            "FROZEN_PLAN_REMAINS_ACTIVE_UNTIL_EXECUTED_OR_SKIPPED"
+            if frozen_count > 0
+            else (
+                "PLAN_EXECUTION_REMAINS_INCOMPLETE"
+                if partial_count > 0
+                else (
+                    "PLAN_DRAFT_REQUIRES_USER_DECISION"
+                    if draft_count > 0
+                    else "NO_OPEN_WEEKLY_PLAN"
+                )
+            )
+        ),
+    }
+
+
 def _minor(value: str) -> int:
     return int((Decimal(value) * MONEY_SCALE).to_integral_exact())
 
@@ -189,6 +257,7 @@ class PlanningService:
             (revision["id"],),
         ).fetchall()
         execution_progress = self._execution_progress(connection, row)
+        status = str(row["status"])
         return {
             "id": str(row["id"]),
             "portfolio_id": str(row["portfolio_id"]),
@@ -202,7 +271,12 @@ class PlanningService:
             "contribution_amount": (
                 f"{Decimal(int(row['contribution_amount_minor'])) / MONEY_SCALE:.2f}"
             ),
-            "status": str(row["status"]),
+            "status": status,
+            "state_contract": plan_state_contract(
+                status,
+                confirmation_expires_at=str(row["confirmation_expires_at"]),
+                now=self._now(),
+            ),
             "current_revision": int(row["current_revision"]),
             "idempotency_key": str(row["idempotency_key"]),
             "created_by": str(row["created_by"]),
@@ -831,6 +905,373 @@ class PlanningService:
             confirmed_by=confirmed_by,
             reason=reason,
         )
+
+    @staticmethod
+    def _skip_draft_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "plan_id": str(row["plan_id"]),
+            "action": "SKIP",
+            "reason": str(row["reason"]),
+            "status": str(row["status"]),
+            "created_by": str(row["created_by"]),
+            "created_at": str(row["created_at"]),
+            "expires_at": str(row["expires_at"]),
+            "committed_at": row["committed_at"],
+            "committed_by": row["committed_by"],
+        }
+
+    @staticmethod
+    def _plan_facts_hash(
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> str:
+        execution_links = [
+            dict(item)
+            for item in connection.execute(
+                "SELECT * FROM plan_execution_links WHERE plan_id=? ORDER BY id",
+                (row["id"],),
+            ).fetchall()
+        ]
+        subscriptions = [
+            dict(item)
+            for item in connection.execute(
+                "SELECT * FROM external_subscriptions WHERE weekly_plan_id=? ORDER BY id",
+                (row["id"],),
+            ).fetchall()
+        ]
+        subscription_ids = [str(item["id"]) for item in subscriptions]
+        confirmations: list[dict[str, Any]] = []
+        transaction_links: list[dict[str, Any]] = []
+        if subscription_ids:
+            placeholders = ",".join("?" for _ in subscription_ids)
+            confirmations = [
+                dict(item)
+                for item in connection.execute(
+                    "SELECT * FROM external_subscription_confirmations "
+                    f"WHERE subscription_id IN ({placeholders}) ORDER BY id",
+                    subscription_ids,
+                ).fetchall()
+            ]
+            confirmation_ids = [str(item["id"]) for item in confirmations]
+            if confirmation_ids:
+                confirmation_placeholders = ",".join("?" for _ in confirmation_ids)
+                transaction_links = [
+                    dict(item)
+                    for item in connection.execute(
+                        "SELECT * FROM subscription_confirmation_transaction_links "
+                        f"WHERE confirmation_id IN ({confirmation_placeholders}) "
+                        "ORDER BY confirmation_id",
+                        confirmation_ids,
+                    ).fetchall()
+                ]
+        return _hash(
+            {
+                "plan": {
+                    "id": str(row["id"]),
+                    "status": str(row["status"]),
+                    "current_revision": int(row["current_revision"]),
+                    "request_hash": str(row["request_hash"]),
+                    "frozen_at": row["frozen_at"],
+                    "updated_at": str(row["updated_at"]),
+                },
+                "execution_links": execution_links,
+                "external_subscriptions": subscriptions,
+                "external_subscription_confirmations": confirmations,
+                "subscription_transaction_links": transaction_links,
+            }
+        )
+
+    def create_skip_draft(
+        self,
+        *,
+        plan_id: str,
+        reason: str,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Create a fresh, short-lived confirmation for skipping one frozen plan."""
+        normalized_reason = reason.strip()
+        actor = actor_ref.strip()
+        if not normalized_reason:
+            raise LedgerError("INVALID_REASON", "skip reason is required")
+        if not actor:
+            raise LedgerError("INVALID_ACTOR", "actor_ref is required")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            plan = connection.execute(
+                self._plan_query() + " WHERE p.id = ?",
+                (plan_id,),
+            ).fetchone()
+            if plan is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "INVESTMENT_PLAN_NOT_FOUND",
+                        "investment plan was not found",
+                        http_status=404,
+                    ),
+                )
+            plan = self._expire_if_needed(connection, plan)
+            if str(plan["status"]) != "FROZEN":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_SKIP_RECONFIRMATION_NOT_ALLOWED",
+                        "only a frozen weekly plan can use a fresh skip confirmation",
+                        http_status=409,
+                    ),
+                )
+            progress = self._execution_progress(connection, plan)
+            if progress["executed_amount"] != "0.00" or progress["in_flight_amount"] != "0.00":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_SKIP_HAS_ACTIVE_EXECUTION",
+                        "a frozen plan with executed or in-flight money cannot be skipped",
+                        http_status=409,
+                        details={"execution_progress": progress},
+                    ),
+                )
+            now = self._now()
+            expires_at = now + timedelta(minutes=self.settings.confirmation_ttl_minutes)
+            token = secrets.token_urlsafe(24)
+            draft_id = str(uuid4())
+            connection.execute(
+                """
+                INSERT INTO weekly_plan_skip_drafts (
+                    id, plan_id, reason, plan_facts_hash, confirmation_digest,
+                    status, created_by, created_at, expires_at,
+                    committed_at, committed_by
+                ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, NULL, NULL)
+                """,
+                (
+                    draft_id,
+                    plan_id,
+                    normalized_reason,
+                    self._plan_facts_hash(connection, plan),
+                    _token_digest(token),
+                    actor,
+                    _iso(now),
+                    _iso(expires_at),
+                ),
+            )
+            self._audit(
+                connection,
+                actor_type="AGENT",
+                actor_ref=actor,
+                action="INVESTMENT_PLAN_SKIP_DRAFT_CREATED",
+                entity_id=plan_id,
+                details={
+                    "skip_draft_id": draft_id,
+                    "reason": normalized_reason,
+                    "plan_status": "FROZEN",
+                    "transaction_created": False,
+                },
+                before_hash=self._plan_facts_hash(connection, plan),
+                after_hash=self._plan_facts_hash(connection, plan),
+            )
+            row = connection.execute(
+                "SELECT * FROM weekly_plan_skip_drafts WHERE id = ?",
+                (draft_id,),
+            ).fetchone()
+            assert row is not None
+            result = {
+                "draft": self._skip_draft_data(row),
+                "plan": self._plan_data(connection, plan),
+                "confirmation_token": token,
+            }
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def get_skip_draft(self, *, draft_id: str) -> JsonDict:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM weekly_plan_skip_drafts WHERE id = ?",
+                (draft_id,),
+            ).fetchone()
+            if row is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_SKIP_DRAFT_NOT_FOUND",
+                        "weekly plan skip draft was not found",
+                        http_status=404,
+                    ),
+                )
+            if str(row["status"]) == "PENDING" and _parse_iso(
+                str(row["expires_at"])
+            ) <= self._now():
+                connection.execute(
+                    "UPDATE weekly_plan_skip_drafts SET status='EXPIRED' WHERE id=?",
+                    (draft_id,),
+                )
+                row = connection.execute(
+                    "SELECT * FROM weekly_plan_skip_drafts WHERE id = ?",
+                    (draft_id,),
+                ).fetchone()
+                assert row is not None
+            result = self._skip_draft_data(row)
+            connection.commit()
+            return result
+        finally:
+            connection.close()
+
+    def commit_skip_draft(
+        self,
+        *,
+        draft_id: str,
+        confirmation_token: str,
+        confirmed_by: str,
+    ) -> JsonDict:
+        """Skip the exact frozen plan only after confirming a fresh skip draft."""
+        actor = confirmed_by.strip()
+        if not actor or not confirmation_token:
+            raise LedgerError(
+                "CONFIRMATION_REQUIRED",
+                "confirmation token and confirmed_by are required",
+            )
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM weekly_plan_skip_drafts WHERE id = ?",
+                (draft_id,),
+            ).fetchone()
+            if draft is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_SKIP_DRAFT_NOT_FOUND",
+                        "weekly plan skip draft was not found",
+                        http_status=404,
+                    ),
+                )
+            if str(draft["status"]) == "COMMITTED":
+                plan = connection.execute(
+                    self._plan_query() + " WHERE p.id = ?",
+                    (draft["plan_id"],),
+                ).fetchone()
+                assert plan is not None
+                result = {
+                    "draft": self._skip_draft_data(draft),
+                    "plan": self._plan_data(connection, plan),
+                    "idempotent_replay": True,
+                }
+                connection.commit()
+                return result
+            if str(draft["status"]) != "PENDING":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "INVALID_PLAN_SKIP_DRAFT_STATUS",
+                        "weekly plan skip draft is not pending",
+                        http_status=409,
+                    ),
+                )
+            if _parse_iso(str(draft["expires_at"])) <= self._now():
+                connection.execute(
+                    "UPDATE weekly_plan_skip_drafts SET status='EXPIRED' WHERE id=?",
+                    (draft_id,),
+                )
+                connection.commit()
+                raise LedgerError(
+                    "CONFIRMATION_EXPIRED",
+                    "weekly plan skip confirmation has expired",
+                    http_status=409,
+                )
+            if not hmac.compare_digest(
+                str(draft["confirmation_digest"]),
+                _token_digest(confirmation_token),
+            ):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "CONFIRMATION_MISMATCH",
+                        "confirmation token does not match this skip draft",
+                        http_status=409,
+                    ),
+                )
+            plan = connection.execute(
+                self._plan_query() + " WHERE p.id = ?",
+                (draft["plan_id"],),
+            ).fetchone()
+            if plan is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "INVESTMENT_PLAN_NOT_FOUND",
+                        "investment plan was not found",
+                        http_status=404,
+                    ),
+                )
+            if str(plan["status"]) != "FROZEN" or not hmac.compare_digest(
+                str(draft["plan_facts_hash"]), self._plan_facts_hash(connection, plan)
+            ):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_SKIP_DRAFT_STALE",
+                        "weekly plan changed after the skip draft was created",
+                        http_status=409,
+                    ),
+                )
+            timestamp = _iso(self._now())
+            before_hash = self._plan_facts_hash(connection, plan)
+            connection.execute(
+                "UPDATE investment_plans SET status='SKIPPED', updated_at=? WHERE id=?",
+                (timestamp, plan["id"]),
+            )
+            connection.execute(
+                """
+                UPDATE weekly_plan_skip_drafts
+                SET status='COMMITTED', committed_at=?, committed_by=?
+                WHERE id=? AND status='PENDING'
+                """,
+                (timestamp, actor, draft_id),
+            )
+            updated_plan = connection.execute(
+                self._plan_query() + " WHERE p.id = ?",
+                (plan["id"],),
+            ).fetchone()
+            updated_draft = connection.execute(
+                "SELECT * FROM weekly_plan_skip_drafts WHERE id = ?",
+                (draft_id,),
+            ).fetchone()
+            assert updated_plan is not None and updated_draft is not None
+            self._audit(
+                connection,
+                actor_type="USER",
+                actor_ref=actor,
+                action="INVESTMENT_PLAN_SKIPPED",
+                entity_id=str(plan["id"]),
+                details={
+                    "skip_draft_id": draft_id,
+                    "reason": str(draft["reason"]),
+                    "transaction_created": False,
+                },
+                before_hash=before_hash,
+                after_hash=self._plan_facts_hash(connection, updated_plan),
+            )
+            result = {
+                "draft": self._skip_draft_data(updated_draft),
+                "plan": self._plan_data(connection, updated_plan),
+                "idempotent_replay": False,
+            }
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def _insert_execution_link(
         self,

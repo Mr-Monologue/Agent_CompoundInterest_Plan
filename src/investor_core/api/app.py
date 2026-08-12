@@ -62,6 +62,7 @@ from investor_core.api.schemas import (
     WeeklyPlanConfirmRequest,
     WeeklyPlanDraftCreateRequest,
     WeeklyPlanExecutedRequest,
+    WeeklyPlanSkipDraftCreateRequest,
     WeeklyPlanSkipRequest,
     WeeklyPlanTransactionLinkRequest,
 )
@@ -1026,7 +1027,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def strategy_instrument_config_draft_create(
         request: StrategyInstrumentConfigDraftRequest,
     ) -> dict[str, Any]:
-        result = strategies.create_config_draft(**request.model_dump())
+        result = strategies.create_config_draft(**request.model_dump(exclude_unset=True))
         return success(result, warnings=result["warnings"])
 
     @app.get("/v1/strategy-instrument-config-drafts/{draft_id}")
@@ -1332,6 +1333,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             planning.mark_executed(
                 plan_id=plan_id,
                 transaction_ids=request.transaction_ids,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.post("/v1/weekly-plans/{plan_id}/skip-drafts")
+    def weekly_plan_skip_draft_create(
+        plan_id: str,
+        request: WeeklyPlanSkipDraftCreateRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.create_skip_draft(
+                plan_id=plan_id,
+                reason=request.reason,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.get("/v1/weekly-plan-skip-drafts/{draft_id}")
+    def weekly_plan_skip_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(planning.get_skip_draft(draft_id=draft_id))
+
+    @app.post("/v1/weekly-plan-skip-drafts/{draft_id}/commit")
+    def weekly_plan_skip_draft_commit(
+        draft_id: str,
+        request: WeeklyPlanConfirmRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.commit_skip_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
                 confirmed_by=request.confirmed_by,
             )
         )

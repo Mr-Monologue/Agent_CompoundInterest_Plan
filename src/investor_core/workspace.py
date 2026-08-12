@@ -14,6 +14,7 @@ from investor_core.config import Settings
 from investor_core.ledger import JsonDict, LedgerError, LedgerService, utc_now
 from investor_core.market_data import MarketDataService
 from investor_core.operations import OperationsService
+from investor_core.planning import summarize_plan_states
 from investor_core.subscriptions import SubscriptionService
 
 
@@ -218,6 +219,7 @@ class WorkspaceService:
                     (portfolio_id, account_id),
                 ).fetchall()
             )
+            plan_state_summary = summarize_plan_states(plan_counts)
             plan_progress_rows = connection.execute(
                 """
                 WITH booked AS (
@@ -372,6 +374,7 @@ class WorkspaceService:
             "missing_contribution_roles": missing_roles,
             "target_pct_by_role": target_pct_by_role,
             "plan_counts": plan_counts,
+            "plan_state_summary": plan_state_summary,
             "plan_execution_progress": self._plan_progress_summary(plan_progress_rows),
             "external_subscription_progress": subscription_summary,
             "sell_proposal_counts": proposal_counts,
@@ -641,6 +644,7 @@ class WorkspaceService:
         missing_roles = list(workflows["missing_contribution_roles"])
         strategy_ready = bool(required_roles) and not missing_roles
         plan_counts = workflows["plan_counts"]
+        plan_state_summary = workflows["plan_state_summary"]
         closed_plan_count = sum(
             int(plan_counts.get(status, 0)) for status in ("EXECUTED", "SKIPPED")
         )
@@ -803,6 +807,7 @@ class WorkspaceService:
                 required=True,
                 facts={
                     "plan_counts": plan_counts,
+                    "plan_state_summary": plan_state_summary,
                     "external_subscription_progress": subscription_progress,
                 },
             ),
@@ -1019,6 +1024,7 @@ class WorkspaceService:
                         "draft_count": draft_count,
                         "frozen_count": frozen_count,
                         "partially_executed_count": partial_count,
+                        "plan_state_summary": workflows["plan_state_summary"],
                         "execution_progress": workflows["plan_execution_progress"],
                     },
                 )

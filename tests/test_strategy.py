@@ -243,3 +243,98 @@ def test_strategy_configuration_requires_exact_confirmation(tmp_path: Path) -> N
     assert config["instrument_code"] == "FUND001"
     assert config["contribution_eligible"] is True
     assert config["proxy_suitability"] == "NOT_APPLICABLE"
+
+
+def test_nullable_strategy_fields_distinguish_omitted_from_explicit_clear(
+    tmp_path: Path,
+) -> None:
+    ledger, strategy = services(tmp_path / "investor.db")
+    portfolio = ledger.create_portfolio(name="测试组合")
+    ledger.create_instrument(code="FUND001", name="测试基金")
+    ledger.create_instrument(code="INDEX001", name="测试指数", asset_type="INDEX")
+    strategy.assign(
+        portfolio_id=str(portfolio["id"]),
+        strategy_key="value-dca",
+        strategy_version="1.6",
+        instance_config={},
+        approved_by="test-user",
+        reason="测试可空字段",
+    )
+    strategy.configure_instrument(
+        portfolio_id=str(portfolio["id"]),
+        instrument_code="FUND001",
+        role="CORE",
+        contribution_eligible=True,
+        target_weight_bps=2000,
+        priority=1,
+        minimum_amount_minor=100,
+        maximum_amount_minor=5000,
+        benchmark_code="INDEX001",
+        thesis_status="ACTIVE",
+        approved_by="test-user",
+        reason="建立待清空配置",
+        proxy_suitability="STRONG",
+        hard_stop_return_bps=-1000,
+        maximum_position_weight_bps=3000,
+        lifecycle_rules={"max_expense_ratio_bps": 100},
+        redemption_policy={"fee_bps": 50},
+        exposure_profile={"industry": {"TEST": 10000}},
+        fund_destination="CASH_BUFFER",
+    )
+
+    omitted = strategy.create_config_draft(
+        portfolio_id=str(portfolio["id"]),
+        instrument_code="FUND001",
+        contribution_eligible=False,
+        role="UNASSIGNED",
+        reason="未提供可空字段时保留旧值",
+    )
+    omitted_proposed = omitted["draft"]["proposed"]
+    assert omitted_proposed["target_weight_bps"] == 2000
+    assert omitted_proposed["maximum_amount_minor"] == 5000
+    assert omitted_proposed["benchmark_code"] == "INDEX001"
+    assert omitted_proposed["fund_destination"] == "CASH_BUFFER"
+
+    cleared = strategy.create_config_draft(
+        portfolio_id=str(portfolio["id"]),
+        instrument_code="FUND001",
+        contribution_eligible=False,
+        role="UNASSIGNED",
+        target_weight_bps=None,
+        maximum_amount_minor=None,
+        benchmark_code=None,
+        proxy_suitability="NOT_APPLICABLE",
+        hard_stop_return_bps=None,
+        maximum_position_weight_bps=None,
+        lifecycle_rules=None,
+        redemption_policy=None,
+        exposure_profile=None,
+        fund_destination=None,
+        reason="明确清空全部可空策略字段",
+    )
+    proposed = cleared["draft"]["proposed"]
+    for field in (
+        "target_weight_bps",
+        "maximum_amount_minor",
+        "benchmark_code",
+        "hard_stop_return_bps",
+        "maximum_position_weight_bps",
+        "fund_destination",
+    ):
+        assert proposed[field] is None
+    assert proposed["lifecycle_rules"] == {}
+    assert proposed["redemption_policy"] == {}
+    assert proposed["exposure_profile"] == {}
+
+    committed = strategy.commit_config_draft(
+        draft_id=str(cleared["draft"]["id"]),
+        confirmation_token=str(cleared["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    config = committed["assignment"]["instruments"][0]
+    assert config["role"] == "UNASSIGNED"
+    assert config["contribution_eligible"] is False
+    assert config["target_weight_bps"] is None
+    assert config["maximum_amount_minor"] is None
+    assert config["benchmark_code"] is None
+    assert config["proxy_suitability"] == "NOT_APPLICABLE"
