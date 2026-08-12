@@ -546,6 +546,11 @@ class WeeklyPlanSkipRequest(WeeklyPlanConfirmRequest):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class WeeklyPlanSkipDraftCreateRequest(RequestModel):
+    reason: str = Field(min_length=1, max_length=500)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class WeeklyPlanExecutedRequest(RequestModel):
     transaction_ids: list[str] = Field(min_length=1, max_length=100)
     confirmed_by: str = Field(min_length=1, max_length=120)

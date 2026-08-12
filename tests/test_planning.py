@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -191,6 +192,119 @@ def test_plan_lifecycle_is_separate_from_transactions(tmp_path: Path) -> None:
     assert executed["status"] == "EXECUTED"
     assert executed["execution_progress"]["executed_amount"] == "100.00"
     assert executed["execution_progress"]["remaining_amount"] == "0.00"
+
+
+def test_frozen_plan_can_be_skipped_with_fresh_short_lived_confirmation(
+    tmp_path: Path,
+) -> None:
+    ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
+    created = planning.create_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        contribution_amount="100.00",
+        plan_date_value="2026-07-21",
+        idempotency_key="weekly-lost-original-token",
+        as_of_date_value="2026-07-21",
+    )
+    plan_id = str(created["plan"]["id"])
+
+    with pytest.raises(LedgerError) as not_frozen:
+        planning.create_skip_draft(
+            plan_id=plan_id,
+            reason="尚未冻结的计划不能走重新确认关闭",
+        )
+    assert not_frozen.value.code == "PLAN_SKIP_RECONFIRMATION_NOT_ALLOWED"
+
+    planning.freeze(
+        plan_id=plan_id,
+        confirmation_token=str(created["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    transaction_count = len(
+        ledger.list_transactions(portfolio_id=portfolio_id, account_id=account_id)
+    )
+    original_expiry = datetime.fromisoformat(
+        str(created["plan"]["expires_at"]).replace("Z", "+00:00")
+    )
+    later = original_expiry + timedelta(days=1)
+    reconfirming = PlanningService(planning.settings, now=lambda: later)
+    frozen = reconfirming.get(plan_id=plan_id)
+    assert frozen["status"] == "FROZEN"
+    assert frozen["state_contract"] == {
+        "status": "FROZEN",
+        "terminal": False,
+        "action_required": True,
+        "blocks_future_plans": True,
+        "plan_fact_expired": False,
+        "original_confirmation_credential": "EXPIRED",
+        "skip_requires_new_confirmation": True,
+        "reason_code": "FROZEN_PLAN_REMAINS_ACTIVE_UNTIL_EXECUTED_OR_SKIPPED",
+    }
+
+    close = reconfirming.create_skip_draft(
+        plan_id=plan_id,
+        reason="用户明确关闭旧冻结计划",
+    )
+    assert close["draft"]["status"] == "PENDING"
+    assert close["plan"]["status"] == "FROZEN"
+    assert reconfirming.get_skip_draft(draft_id=str(close["draft"]["id"]))[
+        "status"
+    ] == "PENDING"
+
+    with pytest.raises(LedgerError) as mismatch:
+        reconfirming.commit_skip_draft(
+            draft_id=str(close["draft"]["id"]),
+            confirmation_token="wrong-token",
+            confirmed_by="test-user",
+        )
+    assert mismatch.value.code == "CONFIRMATION_MISMATCH"
+    assert reconfirming.get(plan_id=plan_id)["status"] == "FROZEN"
+
+    committed = reconfirming.commit_skip_draft(
+        draft_id=str(close["draft"]["id"]),
+        confirmation_token=str(close["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    assert committed["draft"]["status"] == "COMMITTED"
+    assert committed["plan"]["status"] == "SKIPPED"
+    assert committed["plan"]["state_contract"]["terminal"] is True
+    assert len(ledger.list_transactions(portfolio_id=portfolio_id, account_id=account_id)) == (
+        transaction_count
+    )
+
+
+def test_weekly_plan_skip_reconfirmation_expires_without_closing_plan(
+    tmp_path: Path,
+) -> None:
+    _ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
+    clock = datetime(2026, 8, 11, 1, 0, tzinfo=UTC)
+    service = PlanningService(planning.settings, now=lambda: clock)
+    created = service.create_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        contribution_amount="100.00",
+        plan_date_value="2026-08-11",
+        idempotency_key="weekly-close-expiry",
+        as_of_date_value="2026-07-21",
+    )
+    plan_id = str(created["plan"]["id"])
+    service.freeze(
+        plan_id=plan_id,
+        confirmation_token=str(created["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    close = service.create_skip_draft(plan_id=plan_id, reason="关闭旧计划")
+    clock += timedelta(hours=1)
+
+    with pytest.raises(LedgerError) as expired:
+        service.commit_skip_draft(
+            draft_id=str(close["draft"]["id"]),
+            confirmation_token=str(close["confirmation_token"]),
+            confirmed_by="test-user",
+        )
+    assert expired.value.code == "CONFIRMATION_EXPIRED"
+    assert service.get_skip_draft(draft_id=str(close["draft"]["id"]))["status"] == "EXPIRED"
+    assert service.get(plan_id=plan_id)["status"] == "FROZEN"
 
 
 def test_plan_accumulates_multiple_buy_records_across_trade_dates(tmp_path: Path) -> None:

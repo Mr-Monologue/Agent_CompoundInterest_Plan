@@ -119,6 +119,9 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "weekly_plan_get",
         "weekly_plan_freeze",
         "weekly_plan_skip",
+        "weekly_plan_skip_draft_create",
+        "weekly_plan_skip_draft_get",
+        "weekly_plan_skip_draft_commit",
         "weekly_plan_mark_executed",
         "weekly_plan_transaction_link",
         "external_subscription_draft_create",
@@ -151,6 +154,60 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
     assert "never trade" in subscription_tools[
         "external_subscription_transaction_draft_create"
     ]
+
+    skip_tools = {
+        tool.name: tool.description or ""
+        for tool in tools
+        if tool.name.startswith("weekly_plan_skip_draft_")
+    }
+    assert len(skip_tools) == 3
+    assert "never recovers" in skip_tools["weekly_plan_skip_draft_create"]
+
+
+def test_strategy_config_mcp_omits_unset_nullable_fields_and_clears_explicitly(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[dict[str, Any]] = []
+
+    async def fake_context(  # type: ignore[no-untyped-def]
+        portfolio_id: str, account_id: str
+    ) -> tuple[str, str, None]:
+        del portfolio_id, account_id
+        return "portfolio-1", "account-1", None
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        del method, path, params
+        assert payload is not None
+        calls.append(payload)
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "resolve_investment_context", fake_context)
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+    asyncio.run(
+        server.strategy_instrument_config_draft_create(
+            instrument_code="014978",
+            contribution_eligible=False,
+            reason="退出核心舱",
+            role="UNASSIGNED",
+        )
+    )
+    assert "target_weight_bps" not in calls[0]
+    asyncio.run(
+        server.strategy_instrument_config_draft_create(
+            instrument_code="014978",
+            contribution_eligible=False,
+            reason="退出核心舱并清空目标权重",
+            role="UNASSIGNED",
+            clear_fields=["target_weight_bps"],
+        )
+    )
+    assert calls[1]["target_weight_bps"] is None
 
 
 def test_weekly_plan_transaction_link_uses_single_fact_path(monkeypatch) -> None:  # type: ignore[no-untyped-def]

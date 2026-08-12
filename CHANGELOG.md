@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.31.1 — 2026-08-11
+
+- Distinguish omitted nullable strategy fields from explicit clearing in API drafts and expose explicit MCP clear-field semantics.
+- Add short-lived, separately confirmed skip drafts for existing frozen weekly plans without recovering or bypassing their original credential.
+- Align plan-list, workspace and readiness facts so a frozen plan remains active, action-required and future-plan-blocking until executed or explicitly skipped.
+- Preserve the prohibition on automatic strategy changes, plan closure, subscription creation and trading.
+
 ## v0.31.0 — 2026-08-07
 
 - Add a governed lifecycle for externally submitted fund subscriptions, pending cash, partial confirmations, cancellations, corrections and explicit ledger posting.

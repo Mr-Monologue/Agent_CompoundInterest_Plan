@@ -16,6 +16,17 @@ from investor_core.config import Settings
 from investor_core.ledger import JsonDict, LedgerError
 
 
+class _NotProvided:
+    """Keep an omitted patch field distinct from an explicit null value."""
+
+
+_NOT_PROVIDED = _NotProvided()
+
+
+def _patch_value(value: object, current: object) -> object:
+    return current if isinstance(value, _NotProvided) else value
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
 
@@ -862,19 +873,19 @@ class StrategyService:
         contribution_eligible: bool,
         reason: str,
         role: str | None = None,
-        target_weight_bps: int | None = None,
+        target_weight_bps: int | None | _NotProvided = _NOT_PROVIDED,
         priority: int | None = None,
         minimum_amount_minor: int | None = None,
-        maximum_amount_minor: int | None = None,
-        benchmark_code: str | None = None,
+        maximum_amount_minor: int | None | _NotProvided = _NOT_PROVIDED,
+        benchmark_code: str | None | _NotProvided = _NOT_PROVIDED,
         proxy_suitability: str | None = None,
         thesis_status: str | None = None,
-        hard_stop_return_bps: int | None = None,
-        maximum_position_weight_bps: int | None = None,
-        lifecycle_rules: JsonDict | None = None,
-        redemption_policy: JsonDict | None = None,
-        exposure_profile: JsonDict | None = None,
-        fund_destination: str | None = None,
+        hard_stop_return_bps: int | None | _NotProvided = _NOT_PROVIDED,
+        maximum_position_weight_bps: int | None | _NotProvided = _NOT_PROVIDED,
+        lifecycle_rules: JsonDict | None | _NotProvided = _NOT_PROVIDED,
+        redemption_policy: JsonDict | None | _NotProvided = _NOT_PROVIDED,
+        exposure_profile: JsonDict | None | _NotProvided = _NOT_PROVIDED,
+        fund_destination: str | None | _NotProvided = _NOT_PROVIDED,
         actor_ref: str = "hermes",
     ) -> JsonDict:
         """Create an expiring preview; NAV never determines contribution eligibility."""
@@ -929,8 +940,8 @@ class StrategyService:
             "instrument_code": normalized_code,
             "role": (role or str(current["role"])).strip().upper(),
             "contribution_eligible": contribution_eligible,
-            "target_weight_bps": (
-                target_weight_bps if target_weight_bps is not None else current["target_weight_bps"]
+            "target_weight_bps": _patch_value(
+                target_weight_bps, current["target_weight_bps"]
             ),
             "priority": priority if priority is not None else int(current["priority"]),
             "minimum_amount_minor": (
@@ -938,43 +949,31 @@ class StrategyService:
                 if minimum_amount_minor is not None
                 else int(current["minimum_amount_minor"])
             ),
-            "maximum_amount_minor": (
-                maximum_amount_minor
-                if maximum_amount_minor is not None
-                else current["maximum_amount_minor"]
+            "maximum_amount_minor": _patch_value(
+                maximum_amount_minor, current["maximum_amount_minor"]
             ),
-            "benchmark_code": (
-                benchmark_code if benchmark_code is not None else current["benchmark_code"]
-            ),
+            "benchmark_code": _patch_value(benchmark_code, current["benchmark_code"]),
             "proxy_suitability": (
                 proxy_suitability if proxy_suitability is not None else current["proxy_suitability"]
             ),
             "thesis_status": (
                 thesis_status if thesis_status is not None else current["thesis_status"]
             ),
-            "hard_stop_return_bps": (
-                hard_stop_return_bps
-                if hard_stop_return_bps is not None
-                else current["hard_stop_return_bps"]
+            "hard_stop_return_bps": _patch_value(
+                hard_stop_return_bps, current["hard_stop_return_bps"]
             ),
-            "maximum_position_weight_bps": (
-                maximum_position_weight_bps
-                if maximum_position_weight_bps is not None
-                else current["maximum_position_weight_bps"]
+            "maximum_position_weight_bps": _patch_value(
+                maximum_position_weight_bps, current["maximum_position_weight_bps"]
             ),
-            "lifecycle_rules": (
-                lifecycle_rules if lifecycle_rules is not None else current["lifecycle_rules"]
+            "lifecycle_rules": _patch_value(lifecycle_rules, current["lifecycle_rules"]),
+            "redemption_policy": _patch_value(
+                redemption_policy, current["redemption_policy"]
             ),
-            "redemption_policy": (
-                redemption_policy
-                if redemption_policy is not None
-                else current["redemption_policy"]
+            "exposure_profile": _patch_value(
+                exposure_profile, current["exposure_profile"]
             ),
-            "exposure_profile": (
-                exposure_profile if exposure_profile is not None else current["exposure_profile"]
-            ),
-            "fund_destination": (
-                fund_destination if fund_destination is not None else current["fund_destination"]
+            "fund_destination": _patch_value(
+                fund_destination, current["fund_destination"]
             ),
             "reason": reason.strip(),
         }

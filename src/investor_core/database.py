@@ -77,6 +77,7 @@ REQUIRED_TABLES = {
     "plan_items",
     "plan_revisions",
     "plan_execution_links",
+    "weekly_plan_skip_drafts",
     "external_subscriptions",
     "external_subscription_confirmations",
     "external_subscription_drafts",
@@ -84,7 +85,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0028_external_subscription_lifecycle"
+EXPECTED_ALEMBIC_REVISION = "0029_weekly_plan_skip_reconfirmation"
 
 
 def ensure_database_parent(settings: Settings) -> None:
