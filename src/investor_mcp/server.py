@@ -1549,37 +1549,65 @@ async def strategy_instrument_config_draft_create(
     redemption_policy: dict[str, Any] | None = None,
     exposure_profile: dict[str, Any] | None = None,
     fund_destination: str = "",
+    clear_fields: list[str] | None = None,
     portfolio_id: str = "",
     account_id: str = "",
 ) -> dict[str, Any]:
-    """Preview a portfolio-local strategy configuration; NAV never decides eligibility."""
+    """Preview a strategy configuration.
+
+    Omitted optional values keep their current setting. Put nullable field names in
+    clear_fields to explicitly clear them; this never changes strategy until commit.
+    """
     resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
+    nullable_values: dict[str, Any] = {
+        "target_weight_bps": target_weight_bps,
+        "maximum_amount_minor": maximum_amount_minor,
+        "benchmark_code": benchmark_code or None,
+        "hard_stop_return_bps": hard_stop_return_bps,
+        "maximum_position_weight_bps": maximum_position_weight_bps,
+        "lifecycle_rules": lifecycle_rules,
+        "redemption_policy": redemption_policy,
+        "exposure_profile": exposure_profile,
+        "fund_destination": fund_destination or None,
+    }
+    requested_clears = set(clear_fields or [])
+    unsupported_clears = requested_clears - nullable_values.keys()
+    if unsupported_clears:
+        raise ValueError(
+            "clear_fields contains unsupported strategy fields: "
+            + ", ".join(sorted(unsupported_clears))
+        )
+    conflicting = sorted(
+        field for field in requested_clears if nullable_values[field] is not None
+    )
+    if conflicting:
+        raise ValueError(
+            "a strategy field cannot be set and cleared in the same draft: "
+            + ", ".join(conflicting)
+        )
+    payload: dict[str, Any] = {
+        "portfolio_id": resolved_portfolio_id,
+        "instrument_code": instrument_code,
+        "contribution_eligible": contribution_eligible,
+        "reason": reason,
+        "actor_ref": "hermes",
+    }
+    optional_values: dict[str, Any] = {
+        "role": role,
+        "priority": priority,
+        "minimum_amount_minor": minimum_amount_minor,
+        "proxy_suitability": proxy_suitability,
+        "thesis_status": thesis_status,
+    }
+    payload.update({key: value for key, value in optional_values.items() if value is not None})
+    payload.update({key: value for key, value in nullable_values.items() if value is not None})
+    payload.update({field: None for field in requested_clears})
     return await core_request(
         "POST",
         "/v1/strategy-instrument-config-drafts",
-        payload={
-            "portfolio_id": resolved_portfolio_id,
-            "instrument_code": instrument_code,
-            "contribution_eligible": contribution_eligible,
-            "reason": reason,
-            "role": role,
-            "target_weight_bps": target_weight_bps,
-            "priority": priority,
-            "minimum_amount_minor": minimum_amount_minor,
-            "maximum_amount_minor": maximum_amount_minor,
-            "benchmark_code": benchmark_code or None,
-            "proxy_suitability": proxy_suitability,
-            "thesis_status": thesis_status,
-            "hard_stop_return_bps": hard_stop_return_bps,
-            "maximum_position_weight_bps": maximum_position_weight_bps,
-            "lifecycle_rules": lifecycle_rules,
-            "redemption_policy": redemption_policy,
-            "exposure_profile": exposure_profile,
-            "fund_destination": fund_destination or None,
-            "actor_ref": "hermes",
-        },
+        payload=payload,
     )
 
 
@@ -2318,7 +2346,7 @@ async def weekly_plan_skip(
     confirmed_by: str,
     reason: str,
 ) -> dict[str, Any]:
-    """Skip one DRAFT or FROZEN plan after explicit user confirmation."""
+    """Skip with the plan's original token; use a new skip draft if that token is unavailable."""
     return await core_request(
         "POST",
         f"/v1/weekly-plans/{plan_id}/skip",
@@ -2326,6 +2354,49 @@ async def weekly_plan_skip(
             "confirmation_token": confirmation_token,
             "confirmed_by": confirmed_by,
             "reason": reason,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_plan_skip_draft_create(
+    plan_id: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Create a fresh short-lived confirmation to close one FROZEN plan.
+
+    This never recovers the original plan token, never skips without a later commit,
+    and never creates a transaction or changes holdings.
+    """
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plans/{plan_id}/skip-drafts",
+        payload={"reason": reason, "actor_ref": "hermes"},
+    )
+
+
+@mcp.tool()
+async def weekly_plan_skip_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read one frozen-plan close preview without exposing any confirmation token."""
+    return await core_request(
+        "GET",
+        f"/v1/weekly-plan-skip-drafts/{draft_id}",
+    )
+
+
+@mcp.tool()
+async def weekly_plan_skip_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Mark the exact FROZEN plan SKIPPED after confirming its fresh close draft."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plan-skip-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
         },
     )
 

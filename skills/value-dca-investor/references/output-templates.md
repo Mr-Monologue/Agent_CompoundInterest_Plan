@@ -38,7 +38,10 @@ exact boundary text.
 3. State `DRAFT（未冻结、未成交）`, show the confirmation expiry, and explain that freezing creates
    no transaction.
 4. Request explicit confirmation of that exact revision. After freezing, keep the label
-   `FROZEN（计划已确认、交易未执行）` until separately committed BUY records are linked.
+   `FROZEN（计划已确认、交易未执行、仍需处理并占用后续计划额度）` until separately
+   committed BUY records are linked or a separately confirmed skip draft marks it `SKIPPED`.
+5. If the original credential is unavailable, preview the new skip draft and ask for one fresh
+   confirmation; never ask the user to recover or retain the original credential indefinitely.
 
 ## Sell proposal
 

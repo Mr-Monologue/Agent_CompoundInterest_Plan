@@ -55,12 +55,18 @@ evidence; it never authorizes a new trade or silently changes strategy parameter
 ## Weekly plan lifecycle
 
 1. `DRAFT`: deterministic proposal only; no approval and no transaction.
-2. `FROZEN`: the user confirmed the exact revision; still no transaction.
+2. `FROZEN`: the user confirmed the exact revision; still no transaction, but the plan remains
+   active, action-required and future-plan-blocking until executed or explicitly skipped.
 3. `EXECUTED`: separately committed BUY records match the frozen plan.
 4. `EXPIRED` or `SKIPPED`: no transaction is implied.
 
 Never treat a preview, DRAFT, or FROZEN plan as a purchase. Never add an instrument outside the
 current portfolio strategy instance's explicit contribution allowlist.
+
+If a frozen plan's original one-time credential is unavailable, create a new short-lived skip
+draft for that exact plan. Commit it only after a fresh explicit confirmation. Never recover,
+expose or bypass the old credential, and never mark the plan skipped from natural-language intent
+alone.
 
 ## Scheduled jobs
 

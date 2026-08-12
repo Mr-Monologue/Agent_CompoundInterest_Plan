@@ -33,6 +33,20 @@ def test_ready_after_migration(tmp_path: Path) -> None:
     assert checks["database-schema"]["status"] == "PASS"
 
 
+def test_weekly_plan_skip_reconfirmation_api_is_discoverable(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    client = TestClient(
+        create_app(Settings(environment=Environment.TEST, db_path=database_path))
+    )
+
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/v1/weekly-plans/{plan_id}/skip-drafts" in paths
+    assert "/v1/weekly-plan-skip-drafts/{draft_id}" in paths
+    assert "/v1/weekly-plan-skip-drafts/{draft_id}/commit" in paths
+
+
 def test_notification_test_api_requires_explicit_confirmation(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
@@ -129,6 +143,58 @@ def test_instrument_role_update_api_requires_current_role_match(tmp_path: Path) 
     assert config["contribution_eligible"] is False
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "ROLE_CONFLICT"
+
+
+def test_strategy_config_api_preserves_omitted_field_and_clears_explicit_null(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    settings = Settings(environment=Environment.TEST, db_path=database_path)
+    client = TestClient(create_app(settings))
+    portfolio = client.post("/v1/portfolios", json={"name": "测试组合"}).json()["data"]
+    client.post("/v1/instruments", json={"code": "014978", "name": "测试基金"})
+    strategy = StrategyService(settings)
+    strategy.assign(
+        portfolio_id=str(portfolio["id"]),
+        strategy_key="value-dca",
+        strategy_version="1.6",
+        instance_config={},
+        approved_by="test-user",
+        reason="测试显式清空",
+    )
+    strategy.configure_instrument(
+        portfolio_id=str(portfolio["id"]),
+        instrument_code="014978",
+        role="CORE",
+        contribution_eligible=True,
+        target_weight_bps=2000,
+        priority=1,
+        minimum_amount_minor=1,
+        maximum_amount_minor=None,
+        benchmark_code=None,
+        thesis_status="ACTIVE",
+        approved_by="test-user",
+        reason="建立旧目标权重",
+    )
+    base_payload = {
+        "portfolio_id": portfolio["id"],
+        "instrument_code": "014978",
+        "contribution_eligible": False,
+        "role": "UNASSIGNED",
+        "reason": "退出核心舱",
+    }
+
+    omitted = client.post("/v1/strategy-instrument-config-drafts", json=base_payload)
+    explicit_null = client.post(
+        "/v1/strategy-instrument-config-drafts",
+        json={**base_payload, "target_weight_bps": None},
+    )
+
+    assert omitted.status_code == 200
+    assert omitted.json()["data"]["draft"]["proposed"]["target_weight_bps"] == 2000
+    assert explicit_null.status_code == 200
+    assert explicit_null.json()["data"]["draft"]["proposed"]["target_weight_bps"] is None
 
 
 def test_strategy_api_is_read_only_and_requires_explicit_cli_assignment(
