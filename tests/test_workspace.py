@@ -227,6 +227,33 @@ def test_daily_and_weekly_reports_show_partial_plan_progress(tmp_path: Path) -> 
         confirmation_token=str(created["confirmation_token"]),
         confirmed_by="test-user",
     )
+    service = WorkspaceService(settings, now=fixed_now)
+    frozen_daily = service.get(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        as_of_date=date(2026, 8, 4),
+        view="DAILY",
+    )
+    frozen_summary = frozen_daily["workflows"]["plan_state_summary"]
+    assert frozen_summary["action_required_count"] == 1
+    assert frozen_summary["future_plan_blocking_count"] == 1
+    assert frozen_summary["frozen_plans_remain_active"] is True
+    assert frozen_summary["reason_code"] == (
+        "FROZEN_PLAN_REMAINS_ACTIVE_UNTIL_EXECUTED_OR_SKIPPED"
+    )
+    frozen_lifecycle = next(
+        item
+        for item in frozen_daily["v1_readiness"]["checks"]
+        if item["code"] == "WEEKLY_PLAN_LIFECYCLE"
+    )
+    assert frozen_lifecycle["status"] == "IN_PROGRESS"
+    assert frozen_lifecycle["facts"]["plan_state_summary"] == frozen_summary
+    frozen_action = next(
+        item
+        for item in frozen_daily["next_actions"]
+        if item["code"] == "WEEKLY_PLANS_AWAIT_USER_STATE"
+    )
+    assert frozen_action["facts"]["plan_state_summary"] == frozen_summary
     trade = ledger.create_transaction_draft(
         portfolio_id=portfolio_id,
         account_id=account_id,
@@ -250,7 +277,6 @@ def test_daily_and_weekly_reports_show_partial_plan_progress(tmp_path: Path) -> 
         confirmed_by="test-user",
     )
 
-    service = WorkspaceService(settings, now=fixed_now)
     daily = service.get(
         portfolio_id=portfolio_id,
         account_id=account_id,
