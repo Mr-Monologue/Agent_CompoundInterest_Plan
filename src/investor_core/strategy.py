@@ -227,6 +227,13 @@ class StrategyService:
         connection.execute("PRAGMA synchronous=NORMAL")
         return connection
 
+    @staticmethod
+    def _instrument_registration_column(connection: sqlite3.Connection) -> str:
+        columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(instruments)")
+        }
+        return "registration_role" if "registration_role" in columns else "role"
+
     def _audit(
         self,
         connection: sqlite3.Connection,
@@ -332,10 +339,12 @@ class StrategyService:
                     http_status=409,
                     details={"portfolio_id": portfolio_id},
                 )
+            registration_column = self._instrument_registration_column(connection)
             configs = connection.execute(
-                """
+                f"""
                 SELECT c.*, i.code AS instrument_code, i.name AS instrument_name,
-                       i.asset_type, b.code AS benchmark_code
+                       i.asset_type, i.{registration_column} AS registration_role,
+                       b.code AS benchmark_code
                 FROM strategy_instrument_configs c
                 JOIN instruments i ON i.id = c.instrument_id
                 LEFT JOIN instruments b ON b.id = c.benchmark_instrument_id
@@ -374,7 +383,10 @@ class StrategyService:
                     "instrument_code": str(config["instrument_code"]),
                     "instrument_name": str(config["instrument_name"]),
                     "asset_type": str(config["asset_type"]),
+                    "registration_role": str(config["registration_role"]),
+                    "strategy_role": str(config["role"]),
                     "role": str(config["role"]),
+                    "role_deprecation": "role is a deprecated alias of strategy_role",
                     "contribution_eligible": bool(config["contribution_eligible"]),
                     "target_weight_bps": (
                         int(config["target_weight_bps"])
@@ -795,17 +807,17 @@ class StrategyService:
             connection.close()
         return self.get_assignment(portfolio_id=portfolio_id)
 
-    def update_instrument_role(
+    def create_instrument_role_draft(
         self,
         *,
         portfolio_id: str,
         instrument_code: str,
-        role: str,
-        expected_current_role: str,
+        strategy_role: str,
+        expected_current_strategy_role: str,
         reason: str,
         actor_ref: str = "hermes",
     ) -> JsonDict:
-        """Update a portfolio-local role without changing contribution eligibility."""
+        """Draft a portfolio-local strategy role change without applying it."""
         assignment = self.get_assignment(portfolio_id=portfolio_id)
         normalized_code = instrument_code.strip().upper()
         config = next(
@@ -816,8 +828,12 @@ class StrategyService:
             ),
             None,
         )
-        current_role = str(config["role"]) if config is not None else "UNASSIGNED"
-        normalized_expected = expected_current_role.strip().upper()
+        current_role = str(config["strategy_role"]) if config is not None else "UNASSIGNED"
+        normalized_role = strategy_role.strip().upper()
+        normalized_expected = expected_current_strategy_role.strip().upper()
+        allowed_roles = {"CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"}
+        if normalized_role not in allowed_roles or normalized_expected not in allowed_roles:
+            raise LedgerError("INVALID_ROLE", "unsupported strategy instrument role")
         if current_role != normalized_expected:
             raise LedgerError(
                 "ROLE_CONFLICT",
@@ -826,44 +842,94 @@ class StrategyService:
                 details={
                     "portfolio_id": portfolio_id,
                     "instrument_code": normalized_code,
+                    "expected_current_strategy_role": normalized_expected,
+                    "actual_current_strategy_role": current_role,
                     "expected_current_role": normalized_expected,
                     "actual_current_role": current_role,
                 },
             )
-        updated = self.configure_instrument(
+        created = self.create_config_draft(
             portfolio_id=portfolio_id,
             instrument_code=normalized_code,
-            role=role,
+            role=normalized_role,
             contribution_eligible=(
                 bool(config["contribution_eligible"]) if config is not None else False
             ),
-            target_weight_bps=(config["target_weight_bps"] if config is not None else None),
+            target_weight_bps=(
+                config["target_weight_bps"] if config is not None else _NOT_PROVIDED
+            ),
             priority=int(config["priority"]) if config is not None else 100,
             minimum_amount_minor=(int(config["minimum_amount_minor"]) if config is not None else 1),
-            maximum_amount_minor=(config["maximum_amount_minor"] if config is not None else None),
-            benchmark_code=(config["benchmark_code"] if config is not None else None),
+            maximum_amount_minor=(
+                config["maximum_amount_minor"] if config is not None else _NOT_PROVIDED
+            ),
+            benchmark_code=(
+                config["benchmark_code"] if config is not None else _NOT_PROVIDED
+            ),
             thesis_status=(str(config["thesis_status"]) if config is not None else "ACTIVE"),
-            approved_by=actor_ref,
             reason=reason,
             proxy_suitability=(
                 str(config["proxy_suitability"]) if config is not None else "NOT_APPLICABLE"
             ),
-            hard_stop_return_bps=(config["hard_stop_return_bps"] if config is not None else None),
-            maximum_position_weight_bps=(
-                config["maximum_position_weight_bps"] if config is not None else None
+            hard_stop_return_bps=(
+                config["hard_stop_return_bps"] if config is not None else _NOT_PROVIDED
             ),
-            lifecycle_rules=(config["lifecycle_rules"] if config is not None else None),
-            redemption_policy=(config["redemption_policy"] if config is not None else None),
-            exposure_profile=(config["exposure_profile"] if config is not None else None),
-            fund_destination=(config["fund_destination"] if config is not None else None),
+            maximum_position_weight_bps=(
+                config["maximum_position_weight_bps"]
+                if config is not None
+                else _NOT_PROVIDED
+            ),
+            lifecycle_rules=(
+                config["lifecycle_rules"] if config is not None else _NOT_PROVIDED
+            ),
+            redemption_policy=(
+                config["redemption_policy"] if config is not None else _NOT_PROVIDED
+            ),
+            exposure_profile=(
+                config["exposure_profile"] if config is not None else _NOT_PROVIDED
+            ),
+            fund_destination=(
+                config["fund_destination"] if config is not None else _NOT_PROVIDED
+            ),
+            actor_ref=actor_ref,
         )
-        return {
+        created["role_change"] = {
             "portfolio_id": portfolio_id,
             "instrument_code": normalized_code,
-            "previous_role": current_role,
-            "changed": current_role != role.strip().upper(),
-            "assignment": updated,
+            "registration_role": (
+                str(config["registration_role"]) if config is not None else None
+            ),
+            "previous_strategy_role": current_role,
+            "proposed_strategy_role": normalized_role,
+            "mutation_applied": False,
         }
+        return created
+
+    def update_instrument_role(
+        self,
+        *,
+        portfolio_id: str,
+        instrument_code: str,
+        role: str,
+        expected_current_role: str,
+        reason: str,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Deprecated compatibility alias that now creates a governed draft."""
+        result = self.create_instrument_role_draft(
+            portfolio_id=portfolio_id,
+            instrument_code=instrument_code,
+            strategy_role=role,
+            expected_current_strategy_role=expected_current_role,
+            reason=reason,
+            actor_ref=actor_ref,
+        )
+        result["deprecation"] = {
+            "deprecated": True,
+            "replacement": "strategy_instrument_role_draft_create",
+            "message": "instrument_role_update no longer applies a role immediately",
+        }
+        return result
 
     def create_config_draft(
         self,

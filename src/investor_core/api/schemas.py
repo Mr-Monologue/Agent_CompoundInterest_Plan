@@ -43,10 +43,22 @@ class InstrumentCreateRequest(RequestModel):
 
 class InstrumentRoleUpdateRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
-    role: Literal["CORE", "SATELLITE", "UNASSIGNED"]
-    expected_current_role: Literal["CORE", "SATELLITE", "UNASSIGNED"]
+    role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"]
+    expected_current_role: Literal[
+        "CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"
+    ]
     reason: str = Field(min_length=1, max_length=500)
     actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
+
+
+class StrategyInstrumentRoleDraftRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    strategy_role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"]
+    expected_current_strategy_role: Literal[
+        "CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"
+    ]
+    reason: str = Field(min_length=1, max_length=500)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
 class StrategyInstrumentConfigDraftRequest(RequestModel):

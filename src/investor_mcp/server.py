@@ -1499,21 +1499,64 @@ async def instrument_create(
 
 
 @mcp.tool()
-async def instrument_list() -> dict[str, Any]:
-    """List instruments registered for local transaction recording."""
-    return await core_request("GET", "/v1/instruments")
+async def instrument_list(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
+    """List registration classification and authoritative portfolio strategy role."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        if portfolio_id or account_id:
+            return error
+        return await core_request("GET", "/v1/instruments")
+    return await core_request(
+        "GET",
+        "/v1/instruments",
+        params={"portfolio_id": resolved_portfolio_id},
+    )
+
+
+@mcp.tool()
+async def strategy_instrument_role_draft_create(
+    instrument_code: str,
+    strategy_role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"],
+    expected_current_strategy_role: Literal[
+        "CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"
+    ],
+    reason: str,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Create a governed strategy-role draft; a later explicit commit is required."""
+    resolved_portfolio_id, _, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        f"/v1/strategy-instruments/{instrument_code}/role-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "strategy_role": strategy_role,
+            "expected_current_strategy_role": expected_current_strategy_role,
+            "reason": reason,
+            "actor_ref": "hermes",
+        },
+    )
 
 
 @mcp.tool()
 async def instrument_role_update(
     code: str,
-    role: Literal["CORE", "SATELLITE", "UNASSIGNED"],
-    expected_current_role: Literal["CORE", "SATELLITE", "UNASSIGNED"],
+    role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"],
+    expected_current_role: Literal[
+        "CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"
+    ],
     reason: str,
     portfolio_id: str = "",
     account_id: str = "",
 ) -> dict[str, Any]:
-    """Update an explicitly requested portfolio-local role with stale-write protection."""
+    """Deprecated alias: create a strategy-role draft without applying any change."""
     resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error

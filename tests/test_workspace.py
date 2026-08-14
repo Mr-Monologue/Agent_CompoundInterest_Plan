@@ -212,6 +212,20 @@ def test_daily_and_weekly_reports_show_partial_plan_progress(tmp_path: Path) -> 
         approved_by="test-user",
         reason="测试周计划进度",
     )
+    strategy.configure_instrument(
+        portfolio_id=portfolio_id,
+        instrument_code="SAT01",
+        role="SATELLITE",
+        contribution_eligible=False,
+        target_weight_bps=None,
+        priority=2,
+        minimum_amount_minor=1,
+        maximum_amount_minor=None,
+        benchmark_code=None,
+        thesis_status="ACTIVE",
+        approved_by="test-user",
+        reason="explicit satellite strategy role for the fixture",
+    )
     planning = PlanningService(settings, now=fixed_now)
     created = planning.create_draft(
         portfolio_id=portfolio_id,

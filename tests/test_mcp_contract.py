@@ -81,6 +81,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "strategy_current_get",
         "instrument_create",
         "instrument_list",
+        "strategy_instrument_role_draft_create",
         "instrument_role_update",
         "strategy_instrument_config_draft_create",
         "strategy_instrument_config_draft_get",
@@ -342,6 +343,33 @@ def test_opening_position_uses_default_context_when_ids_are_omitted(
     assert calls[1][2]["account_id"] == "account-default"
 
 
+def test_instrument_list_preserves_context_free_registration_listing(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        del payload
+        calls.append((method, path, params))
+        if path == "/v1/investment-context":
+            return {"ok": False, "error": {"code": "INVESTMENT_CONTEXT_REQUIRED"}}
+        return {"ok": True, "data": {"items": []}}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+
+    result = asyncio.run(server.instrument_list())
+
+    assert result["ok"] is True
+    assert calls == [
+        ("GET", "/v1/investment-context", None),
+        ("GET", "/v1/instruments", None),
+    ]
+
+
 def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     calls: list[tuple[str, str, dict[str, Any] | None]] = []
 
@@ -362,6 +390,16 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
     asyncio.run(server.account_create("portfolio-1", "测试账户", "测试平台"))
     asyncio.run(server.instrument_create("INDEX001", "测试指数", "INDEX"))
     asyncio.run(server.instrument_create("FUND007", "测试基金G", "FUND"))
+    asyncio.run(
+        server.strategy_instrument_role_draft_create(
+            "FUND007",
+            "SATELLITE",
+            "CORE",
+            "用户明确将该标的归入卫星角色",
+            portfolio_id="portfolio-1",
+            account_id="account-1",
+        )
+    )
     asyncio.run(
         server.instrument_role_update(
             "FUND007",
@@ -409,6 +447,17 @@ def test_setup_tools_send_guarded_idempotent_core_payloads(monkeypatch) -> None:
                 "name": "测试基金G",
                 "asset_type": "FUND",
                 "currency": "CNY",
+                "actor_ref": "hermes",
+            },
+        ),
+        (
+            "POST",
+            "/v1/strategy-instruments/FUND007/role-drafts",
+            {
+                "portfolio_id": "portfolio-1",
+                "strategy_role": "SATELLITE",
+                "expected_current_strategy_role": "CORE",
+                "reason": "用户明确将该标的归入卫星角色",
                 "actor_ref": "hermes",
             },
         ),
