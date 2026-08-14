@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from investor_core.api.app import create_app
 from investor_core.config import Environment, Settings
+from investor_core.ledger import LedgerService
 from investor_core.strategy import StrategyService
 
 
@@ -99,7 +100,7 @@ def test_ready_fails_when_business_timezone_is_unavailable(tmp_path: Path) -> No
     assert checks["business-timezone"]["status"] == "FAIL"
 
 
-def test_instrument_role_update_api_requires_current_role_match(tmp_path: Path) -> None:
+def test_instrument_role_update_api_is_deprecated_draft_alias(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"
     migrate_database(database_path)
     settings = Settings(environment=Environment.TEST, db_path=database_path)
@@ -132,17 +133,89 @@ def test_instrument_role_update_api_requires_current_role_match(tmp_path: Path) 
         json={
             "portfolio_id": portfolio["id"],
             "role": "CORE",
-            "expected_current_role": "UNASSIGNED",
+            "expected_current_role": "CORE",
             "reason": "陈旧请求",
         },
     )
 
     assert changed.status_code == 200
-    config = changed.json()["data"]["assignment"]["instruments"][0]
-    assert config["role"] == "SATELLITE"
-    assert config["contribution_eligible"] is False
+    data = changed.json()["data"]
+    assert data["draft"]["status"] == "PENDING"
+    assert data["role_change"]["mutation_applied"] is False
+    assert data["deprecation"]["replacement"] == "strategy_instrument_role_draft_create"
+    current = StrategyService(settings).get_assignment(portfolio_id=str(portfolio["id"]))
+    assert current["instruments"] == []
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "ROLE_CONFLICT"
+
+
+def test_instrument_list_distinguishes_registration_and_strategy_roles(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_database(database_path)
+    settings = Settings(environment=Environment.TEST, db_path=database_path)
+    ledger = LedgerService(settings)
+    strategy = StrategyService(settings)
+    portfolio = ledger.create_portfolio(name="role-contract")
+    scenarios = (
+        ("040046", "UNASSIGNED", "CORE", True, 2000),
+        ("000083", "CORE", "SATELLITE", False, None),
+        ("003765", "SATELLITE", "UNASSIGNED", False, None),
+    )
+    for code, registration_role, _strategy_role, _eligible, _weight in scenarios:
+        ledger.create_instrument(
+            code=code,
+            name=f"fund-{code}",
+            registration_role=registration_role,
+        )
+    strategy.assign(
+        portfolio_id=str(portfolio["id"]),
+        strategy_key="value-dca",
+        strategy_version="1.6",
+        instance_config={},
+        approved_by="test-user",
+        reason="role-contract",
+    )
+    for code, _registration_role, strategy_role, eligible, weight in scenarios:
+        strategy.configure_instrument(
+            portfolio_id=str(portfolio["id"]),
+            instrument_code=code,
+            role=strategy_role,
+            contribution_eligible=eligible,
+            target_weight_bps=weight,
+            priority=1,
+            minimum_amount_minor=1,
+            maximum_amount_minor=None,
+            benchmark_code=None,
+            thesis_status="ACTIVE",
+            approved_by="test-user",
+            reason="role-contract",
+        )
+
+    response = TestClient(create_app(settings)).get(
+        "/v1/instruments", params={"portfolio_id": portfolio["id"]}
+    )
+
+    assert response.status_code == 200
+    items = {item["code"]: item for item in response.json()["data"]["items"]}
+    for code, registration_role, strategy_role, _eligible, _weight in scenarios:
+        assert items[code]["registration_role"] == registration_role
+        assert items[code]["strategy_role"] == strategy_role
+        assert items[code]["role"] == registration_role
+        assert "deprecated" in items[code]["role_deprecation"]
+
+    current = TestClient(create_app(settings)).get(
+        "/v1/strategy-assignment", params={"portfolio_id": portfolio["id"]}
+    )
+    configs = {
+        item["instrument_code"]: item for item in current.json()["data"]["instruments"]
+    }
+    for code, registration_role, strategy_role, _eligible, _weight in scenarios:
+        assert configs[code]["registration_role"] == registration_role
+        assert configs[code]["strategy_role"] == strategy_role
+        assert configs[code]["role"] == strategy_role
+        assert "deprecated" in configs[code]["role_deprecation"]
 
 
 def test_strategy_config_api_preserves_omitted_field_and_clears_explicit_null(

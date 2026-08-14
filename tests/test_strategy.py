@@ -159,7 +159,7 @@ def test_index_cannot_become_a_contribution_target(tmp_path: Path) -> None:
     assert error.value.code == "INDEX_NOT_TRADABLE"
 
 
-def test_role_update_preserves_explicit_contribution_eligibility(tmp_path: Path) -> None:
+def test_role_change_requires_draft_commit_and_preserves_other_config(tmp_path: Path) -> None:
     ledger, strategy = services(tmp_path / "investor.db")
     portfolio = ledger.create_portfolio(name="测试组合")
     ledger.create_instrument(code="FUND001", name="测试基金")
@@ -194,8 +194,19 @@ def test_role_update_preserves_explicit_contribution_eligibility(tmp_path: Path)
         reason="用户明确修改角色",
     )
 
-    config = updated["assignment"]["instruments"][0]
-    assert config["role"] == "SATELLITE"
+    assert updated["draft"]["status"] == "PENDING"
+    assert updated["role_change"]["mutation_applied"] is False
+    assert updated["deprecation"]["replacement"] == "strategy_instrument_role_draft_create"
+    unchanged = strategy.get_assignment(portfolio_id=str(portfolio["id"]))["instruments"][0]
+    assert unchanged["strategy_role"] == "CORE"
+
+    committed = strategy.commit_config_draft(
+        draft_id=str(updated["draft"]["id"]),
+        confirmation_token=str(updated["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    config = committed["assignment"]["instruments"][0]
+    assert config["strategy_role"] == "SATELLITE"
     assert config["contribution_eligible"] is True
     assert config["target_weight_bps"] == 10000
     assert config["maximum_amount_minor"] == 5000

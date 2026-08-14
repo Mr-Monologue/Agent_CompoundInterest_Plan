@@ -88,6 +88,20 @@ def configured_services(
         approved_by="test-user",
         reason="明确批准核心候选",
     )
+    strategy.configure_instrument(
+        portfolio_id=str(portfolio["id"]),
+        instrument_code="SAT01",
+        role="SATELLITE",
+        contribution_eligible=False,
+        target_weight_bps=None,
+        priority=2,
+        minimum_amount_minor=1,
+        maximum_amount_minor=None,
+        benchmark_code=None,
+        thesis_status="ACTIVE",
+        approved_by="test-user",
+        reason="explicit satellite strategy role for the fixture",
+    )
     return (
         ledger,
         PlanningService(settings),

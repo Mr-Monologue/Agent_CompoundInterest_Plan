@@ -102,7 +102,55 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0029_weekly_plan_skip_reconfirmation",)
+    assert revision == ("0030_instrument_role_contract",)
+
+
+def test_instrument_role_contract_migration_renames_and_preserves_registration_role(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0029_weekly_plan_skip_reconfirmation")
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO instruments (
+                id, code, name, asset_type, currency, role, status, created_at
+            ) VALUES (
+                'instrument-role-contract', '040046', '华安纳斯达克100ETF联接A',
+                'FUND', 'CNY', 'UNASSIGNED', 'ACTIVE', '2026-08-14T00:00:00Z'
+            )
+            """
+        )
+        connection.commit()
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(instruments)")
+        }
+        saved_role = connection.execute(
+            "SELECT registration_role FROM instruments WHERE code = '040046'"
+        ).fetchone()
+
+    assert "registration_role" in columns
+    assert "role" not in columns
+    assert saved_role == ("UNASSIGNED",)
+
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", f"sqlite+pysqlite:///{database_path}")
+    command.downgrade(config, "0029_weekly_plan_skip_reconfirmation")
+    with sqlite3.connect(database_path) as connection:
+        downgraded_columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(instruments)")
+        }
+        downgraded_role = connection.execute(
+            "SELECT role FROM instruments WHERE code = '040046'"
+        ).fetchone()
+
+    assert "role" in downgraded_columns
+    assert "registration_role" not in downgraded_columns
+    assert downgraded_role == ("UNASSIGNED",)
 
 
 def test_opening_position_migration_preserves_phase1_ledger_records(tmp_path: Path) -> None:
@@ -192,7 +240,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0029_weekly_plan_skip_reconfirmation",
+            "0030_instrument_role_contract",
         )
 
 
@@ -297,7 +345,7 @@ def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
         "2026-07-02T00:01:00Z",
         None,
     )
-    assert revision == ("0029_weekly_plan_skip_reconfirmation",)
+    assert revision == ("0030_instrument_role_contract",)
     snapshot = ResearchService(settings).build_watchlist_review_snapshot(
         portfolio_id=str(portfolio["id"]),
         as_of_date=date(2026, 9, 1),
@@ -327,7 +375,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0029_weekly_plan_skip_reconfirmation",)
+    assert revision == ("0030_instrument_role_contract",)
 
 
 def test_alert_recovery_migration_resolves_only_recovered_job_runs(tmp_path: Path) -> None:
@@ -465,7 +513,7 @@ def test_satellite_signal_migration_preserves_alert_resolution_schema(
         "resolution_code",
         "resolution_context_json",
     } <= alert_columns
-    assert revision == ("0029_weekly_plan_skip_reconfirmation",)
+    assert revision == ("0030_instrument_role_contract",)
 
 
 def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
@@ -506,7 +554,7 @@ def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
         ).fetchone()
     assert after == before
     assert set(new_counts.values()) == {0}
-    assert revision == ("0029_weekly_plan_skip_reconfirmation",)
+    assert revision == ("0030_instrument_role_contract",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(

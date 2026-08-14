@@ -8,6 +8,7 @@ from conftest import migrate_database
 
 from investor_core.config import Environment, Settings
 from investor_core.ledger import LedgerError, LedgerService
+from investor_core.strategy import StrategyService
 
 
 def build_service(
@@ -84,6 +85,34 @@ def opening_draft(
         idempotency_key=idempotency_key,
         note="平台持仓页",
     )
+
+
+def test_holding_uses_unassigned_strategy_role_not_registration_fallback(
+    tmp_path: Path,
+) -> None:
+    service, context = build_service(tmp_path)
+    portfolio = context["portfolio"]
+    assert isinstance(portfolio, dict)
+    StrategyService(service.settings).assign(
+        portfolio_id=str(portfolio["id"]),
+        strategy_key="value-dca",
+        strategy_version="1.6",
+        instance_config={},
+        approved_by="test-user",
+        reason="role-contract",
+    )
+    draft = opening_draft(service, context, idempotency_key="opening-role-contract")
+    service.commit_opening_position_draft(
+        draft_id=str(draft["draft"]["id"]),
+        confirmation_token=str(draft["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+
+    holding = service.list_holdings(portfolio_id=str(portfolio["id"]))[0]
+
+    assert holding["registration_role"] == "CORE"
+    assert holding["strategy_role"] == "UNASSIGNED"
+    assert holding["role"] == "UNASSIGNED"
 
 
 def test_single_portfolio_and_account_become_persistent_default_context(

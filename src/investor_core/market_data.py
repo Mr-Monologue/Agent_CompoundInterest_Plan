@@ -265,7 +265,7 @@ def _instrument_plan_items(
         authorized = [
             config
             for config in assignment["instruments"]
-            if config["role"] == role
+            if config["strategy_role"] == role
             and config["status"] == "ACTIVE"
             and config["contribution_eligible"]
             and config["thesis_status"] == "ACTIVE"
@@ -323,7 +323,9 @@ def _instrument_plan_items(
                     "instrument_id": None,
                     "instrument_code": None,
                     "instrument_name": None,
+                    "strategy_role": role,
                     "role": role,
+                    "role_deprecation": "role is a deprecated alias of strategy_role",
                     "valuation_state": "NOT_EVALUATED",
                     "base_amount": "0.00",
                     "multiplier": "0.0000",
@@ -386,7 +388,9 @@ def _instrument_plan_items(
                     "instrument_id": config["instrument_id"],
                     "instrument_code": config["instrument_code"],
                     "instrument_name": config["instrument_name"],
+                    "strategy_role": role,
                     "role": role,
+                    "role_deprecation": "role is a deprecated alias of strategy_role",
                     "valuation_state": "NAV_ONLY",
                     "base_amount": _money(base_minor),
                     "multiplier": "1.0000",
@@ -1304,7 +1308,7 @@ class MarketDataService:
         source_lineages: set[str] = set()
         for position in valuation["positions"]:
             holding = position["holding"]
-            role = str(holding["role"])
+            role = str(holding["strategy_role"])
             group = role_summary.setdefault(
                 role,
                 {
@@ -1336,7 +1340,7 @@ class MarketDataService:
                         "finding_code": "ROLE_UNASSIGNED",
                         "severity": "INFO",
                         "mutation_available": True,
-                        "mutation_tool": "instrument_role_update",
+                        "mutation_tool": "strategy_instrument_role_draft_create",
                     }
                 )
             config = strategy_configs.get(str(holding["instrument_code"]))
@@ -1438,9 +1442,15 @@ class MarketDataService:
                 "reason_code": "REQUIRES_EXPLICIT_CONTRIBUTION_AMOUNT",
                 "tool": "weekly_plan_preview",
             },
+            "strategy_instrument_role_draft_create": {
+                "available": True,
+                "reason_code": "DRAFT_CONFIRM_COMMIT_REQUIRED",
+            },
             "instrument_role_update": {
                 "available": True,
-                "reason_code": "AVAILABLE_WITH_EXPECTED_CURRENT_ROLE",
+                "deprecated": True,
+                "replacement": "strategy_instrument_role_draft_create",
+                "reason_code": "DEPRECATED_DRAFT_ALIAS",
             },
             "strategy_instrument_configuration": {
                 "available": True,

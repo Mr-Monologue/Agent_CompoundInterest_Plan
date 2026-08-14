@@ -225,6 +225,8 @@ def test_instrument_plan_requires_open_signal_when_policy_is_active() -> None:
                 "instrument_id": "instrument-1",
                 "instrument_code": "SAT001",
                 "instrument_name": "卫星测试基金",
+                "registration_role": "UNASSIGNED",
+                "strategy_role": "SATELLITE",
                 "role": "SATELLITE",
                 "status": "ACTIVE",
                 "contribution_eligible": True,
