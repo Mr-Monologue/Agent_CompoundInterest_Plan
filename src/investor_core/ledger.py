@@ -149,6 +149,33 @@ class LedgerService:
         connection.execute("BEGIN IMMEDIATE")
 
     @staticmethod
+    def _instrument_registration_column(connection: sqlite3.Connection) -> str:
+        columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(instruments)")
+        }
+        return "registration_role" if "registration_role" in columns else "role"
+
+    @staticmethod
+    def _instrument_contract(
+        row: sqlite3.Row | JsonDict,
+        *,
+        registration_role: str,
+        strategy_role: str | None,
+    ) -> JsonDict:
+        result = dict(row)
+        result.pop("role", None)
+        result.pop("resolved_registration_role", None)
+        result.pop("resolved_strategy_role", None)
+        result["registration_role"] = registration_role
+        result["strategy_role"] = strategy_role
+        result["role"] = registration_role
+        result["role_deprecation"] = (
+            "role is a deprecated alias of registration_role; use strategy_role for "
+            "portfolio decisions"
+        )
+        return result
+
+    @staticmethod
     def _rollback_and_raise(connection: sqlite3.Connection, error: LedgerError) -> NoReturn:
         connection.rollback()
         raise error
@@ -667,14 +694,24 @@ class LedgerService:
         name: str,
         asset_type: str = "FUND",
         currency: str = "CNY",
-        role: str = "UNASSIGNED",
+        registration_role: str = "UNASSIGNED",
+        role: str | None = None,
         actor_ref: str = "local-user",
     ) -> JsonDict:
         normalized_code = code.strip().upper()
         normalized_name = name.strip()
         normalized_type = asset_type.strip().upper()
         normalized_currency = currency.strip().upper()
-        normalized_role = role.strip().upper()
+        if (
+            role is not None
+            and registration_role != "UNASSIGNED"
+            and role.strip().upper() != registration_role.strip().upper()
+        ):
+            raise LedgerError(
+                "REGISTRATION_ROLE_CONFLICT",
+                "role and registration_role disagree",
+            )
+        normalized_role = (role or registration_role).strip().upper()
         if not normalized_code or not normalized_name:
             raise LedgerError("INVALID_INSTRUMENT", "instrument code and name are required")
         if normalized_type not in {"FUND", "ETF", "STOCK", "INDEX", "CASH"}:
@@ -685,6 +722,7 @@ class LedgerService:
         connection = self._connect()
         try:
             self._begin(connection)
+            registration_column = self._instrument_registration_column(connection)
             existing = connection.execute(
                 "SELECT * FROM instruments WHERE code = ?", (normalized_code,)
             ).fetchone()
@@ -694,7 +732,7 @@ class LedgerService:
                     existing["name"],
                     existing["asset_type"],
                     existing["currency"],
-                    existing["role"],
+                    existing[registration_column],
                 )
                 if actual != expected:
                     self._rollback_and_raise(
@@ -706,14 +744,22 @@ class LedgerService:
                         ),
                     )
                 connection.commit()
-                return {**dict(existing), "created": False}
+                return {
+                    **self._instrument_contract(
+                        existing,
+                        registration_role=str(existing[registration_column]),
+                        strategy_role=None,
+                    ),
+                    "created": False,
+                }
 
             instrument_id = str(uuid4())
             created_at = _iso(self._now())
             connection.execute(
-                """
+                f"""
                 INSERT INTO instruments (
-                    id, code, name, asset_type, currency, role, status, created_at
+                    id, code, name, asset_type, currency, {registration_column}, status,
+                    created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
                 """,
                 (
@@ -736,7 +782,7 @@ class LedgerService:
                 details={
                     "code": normalized_code,
                     "asset_type": normalized_type,
-                    "role": normalized_role,
+                    "registration_role": normalized_role,
                 },
             )
             connection.commit()
@@ -746,7 +792,13 @@ class LedgerService:
                 "name": normalized_name,
                 "asset_type": normalized_type,
                 "currency": normalized_currency,
+                "registration_role": normalized_role,
+                "strategy_role": None,
                 "role": normalized_role,
+                "role_deprecation": (
+                    "role is a deprecated alias of registration_role; use strategy_role "
+                    "for portfolio decisions"
+                ),
                 "status": "ACTIVE",
                 "created_at": created_at,
                 "created": True,
@@ -774,14 +826,46 @@ class LedgerService:
                 ).fetchall()
             return [dict(row) for row in rows]
 
-    def list_instruments(self) -> list[JsonDict]:
+    def list_instruments(self, *, portfolio_id: str | None = None) -> list[JsonDict]:
         with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM instruments ORDER BY code"
-            ).fetchall()
-            return [dict(row) for row in rows]
+            registration_column = self._instrument_registration_column(connection)
+            if portfolio_id:
+                rows = connection.execute(
+                    f"""
+                    SELECT i.*, i.{registration_column} AS resolved_registration_role,
+                           COALESCE(sic.role, 'UNASSIGNED') AS resolved_strategy_role
+                    FROM instruments i
+                    LEFT JOIN strategy_assignments sa
+                      ON sa.portfolio_id=? AND sa.status='ACTIVE'
+                    LEFT JOIN strategy_instrument_configs sic
+                      ON sic.strategy_assignment_id=sa.id
+                     AND sic.instrument_id=i.id AND sic.status='ACTIVE'
+                    ORDER BY i.code
+                    """,
+                    (portfolio_id,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    f"""
+                    SELECT i.*, i.{registration_column} AS resolved_registration_role,
+                           NULL AS resolved_strategy_role
+                    FROM instruments i ORDER BY i.code
+                    """
+                ).fetchall()
+            return [
+                self._instrument_contract(
+                    row,
+                    registration_role=str(row["resolved_registration_role"]),
+                    strategy_role=(
+                        str(row["resolved_strategy_role"])
+                        if row["resolved_strategy_role"] is not None
+                        else None
+                    ),
+                )
+                for row in rows
+            ]
 
-    def update_instrument_role(
+    def update_instrument_registration_role(
         self,
         *,
         code: str,
@@ -790,7 +874,7 @@ class LedgerService:
         reason: str,
         actor_ref: str = "local-user",
     ) -> JsonDict:
-        """Change one instrument role with compare-and-swap and an audit event."""
+        """Change registration classification without changing portfolio strategy."""
         normalized_code = code.strip().upper()
         normalized_role = role.strip().upper()
         normalized_expected = expected_current_role.strip().upper()
@@ -806,14 +890,15 @@ class LedgerService:
         connection = self._connect()
         try:
             self._begin(connection)
+            registration_column = self._instrument_registration_column(connection)
             instrument = self._instrument_by_code(connection, normalized_code)
-            current_role = str(instrument["role"])
+            current_role = str(instrument[registration_column])
             if current_role != normalized_expected:
                 self._rollback_and_raise(
                     connection,
                     LedgerError(
                         "ROLE_CONFLICT",
-                        "instrument role changed since it was last read",
+                        "instrument registration role changed since it was last read",
                         http_status=409,
                         details={
                             "instrument_code": normalized_code,
@@ -825,7 +910,11 @@ class LedgerService:
             if current_role == normalized_role:
                 connection.commit()
                 return {
-                    "instrument": dict(instrument),
+                    "instrument": self._instrument_contract(
+                        instrument,
+                        registration_role=current_role,
+                        strategy_role=None,
+                    ),
                     "previous_role": current_role,
                     "changed": False,
                     "reason": normalized_reason,
@@ -833,7 +922,7 @@ class LedgerService:
 
             before = dict(instrument)
             connection.execute(
-                "UPDATE instruments SET role = ? WHERE id = ?",
+                f"UPDATE instruments SET {registration_column} = ? WHERE id = ?",
                 (normalized_role, instrument["id"]),
             )
             updated = self._require_row(
@@ -848,13 +937,13 @@ class LedgerService:
                 connection,
                 actor_type="AGENT",
                 actor_ref=actor_ref,
-                action="INSTRUMENT_ROLE_UPDATED",
+                action="INSTRUMENT_REGISTRATION_ROLE_UPDATED",
                 entity_type="instrument",
                 entity_id=str(instrument["id"]),
                 details={
                     "instrument_code": normalized_code,
-                    "previous_role": current_role,
-                    "new_role": normalized_role,
+                    "previous_registration_role": current_role,
+                    "new_registration_role": normalized_role,
                     "reason": normalized_reason,
                 },
                 before_hash=_canonical_hash(before),
@@ -862,13 +951,39 @@ class LedgerService:
             )
             connection.commit()
             return {
-                "instrument": after,
+                "instrument": self._instrument_contract(
+                    after,
+                    registration_role=normalized_role,
+                    strategy_role=None,
+                ),
                 "previous_role": current_role,
                 "changed": True,
                 "reason": normalized_reason,
             }
         finally:
             connection.close()
+
+    def update_instrument_role(
+        self,
+        *,
+        code: str,
+        role: str,
+        expected_current_role: str,
+        reason: str,
+        actor_ref: str = "local-user",
+    ) -> JsonDict:
+        """Deprecated alias for registration metadata updates."""
+        result = self.update_instrument_registration_role(
+            code=code,
+            role=role,
+            expected_current_role=expected_current_role,
+            reason=reason,
+            actor_ref=actor_ref,
+        )
+        result["deprecation"] = (
+            "update_instrument_role is deprecated; it changes registration metadata only"
+        )
+        return result
 
     def _instrument_by_code(self, connection: sqlite3.Connection, code: str) -> sqlite3.Row:
         return self._require_row(
@@ -2268,7 +2383,12 @@ class LedgerService:
             )
             """
         ).fetchone()[0] == 2
-        role_expression = "COALESCE(sic.role, i.role)" if strategy_schema else "i.role"
+        registration_column = self._instrument_registration_column(connection)
+        strategy_role_expression = (
+            "COALESCE(sic.role, 'UNASSIGNED')"
+            if strategy_schema
+            else f"i.{registration_column}"
+        )
         strategy_joins = (
             """
             LEFT JOIN strategy_assignments sa
@@ -2284,7 +2404,8 @@ class LedgerService:
         row = connection.execute(
             f"""
             SELECT hs.*, i.code AS instrument_code, i.name AS instrument_name,
-                   {role_expression} AS role
+                   i.{registration_column} AS registration_role,
+                   {strategy_role_expression} AS strategy_role
             FROM holding_snapshots hs
             JOIN instruments i ON i.id = hs.instrument_id
             {strategy_joins}
@@ -2303,7 +2424,10 @@ class LedgerService:
             "instrument_id": row["instrument_id"],
             "instrument_code": row["instrument_code"],
             "instrument_name": row["instrument_name"],
-            "role": row["role"],
+            "registration_role": row["registration_role"],
+            "strategy_role": row["strategy_role"],
+            "role": row["strategy_role"],
+            "role_deprecation": "role is a deprecated alias of strategy_role",
             "as_of": row["as_of"],
             "total_shares": _format_scaled(int(row["total_shares_micros"]), 1_000_000, 6),
             "cost_amount": _format_scaled(int(row["cost_amount_minor"]), 100, 2),
@@ -2325,8 +2449,11 @@ class LedgerService:
                 )
                 """
             ).fetchone()[0] == 2
-            role_expression = (
-                "COALESCE(sic.role, i.role)" if strategy_schema else "i.role"
+            registration_column = self._instrument_registration_column(connection)
+            strategy_role_expression = (
+                "COALESCE(sic.role, 'UNASSIGNED')"
+                if strategy_schema
+                else f"i.{registration_column}"
             )
             strategy_joins = (
                 """
@@ -2350,7 +2477,8 @@ class LedgerService:
                 FROM holding_snapshots hs
             )
             SELECT ranked.*, i.code AS instrument_code, i.name AS instrument_name,
-                   {role_expression} AS role
+                   i.{registration_column} AS registration_role,
+                   {strategy_role_expression} AS strategy_role
             FROM ranked
             JOIN instruments i ON i.id = ranked.instrument_id
             {strategy_joins}
@@ -2374,7 +2502,10 @@ class LedgerService:
                         "instrument_id": row["instrument_id"],
                         "instrument_code": row["instrument_code"],
                         "instrument_name": row["instrument_name"],
-                        "role": row["role"],
+                        "registration_role": row["registration_role"],
+                        "strategy_role": row["strategy_role"],
+                        "role": row["strategy_role"],
+                        "role_deprecation": "role is a deprecated alias of strategy_role",
                         "as_of": row["as_of"],
                         "total_shares": _format_scaled(
                             int(row["total_shares_micros"]), 1_000_000, 6

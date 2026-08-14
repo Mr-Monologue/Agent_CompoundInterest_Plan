@@ -95,7 +95,9 @@ def test_skill_does_not_invent_allocation_or_sell_triggers() -> None:
     assert "return\n    `display_text` verbatim as the entire answer" in skill
     assert "AKShare, 东方财富 and 天天基金" in skill
     assert "`ROLE_UNASSIGNED`" in skill
-    assert "Use\n`instrument_role_update` only after the user explicitly states" in skill
+    assert "`strategy_instrument_role_draft_create` only after" in skill
+    assert "`registration_role` is registration\nmetadata" in skill
+    assert "deprecated\ncompatibility alias with the same draft-only behavior" in skill
     assert "observations, not allocation or\nsell rules" in policy
 
 
