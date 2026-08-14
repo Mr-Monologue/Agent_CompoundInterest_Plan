@@ -64,6 +64,29 @@ def _client_with_holding(tmp_path: Path) -> tuple[TestClient, str, str]:
     return client, str(portfolio["id"]), str(account["id"])
 
 
+def _commit_strategy_role(
+    strategy: StrategyService,
+    *,
+    portfolio_id: str,
+    instrument_code: str,
+    role: str,
+    expected_current_role: str,
+    reason: str,
+) -> None:
+    created = strategy.create_instrument_role_draft(
+        portfolio_id=portfolio_id,
+        instrument_code=instrument_code,
+        strategy_role=role,
+        expected_current_strategy_role=expected_current_role,
+        reason=reason,
+    )
+    strategy.commit_config_draft(
+        draft_id=str(created["draft"]["id"]),
+        confirmation_token=str(created["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+
+
 def test_market_nav_is_idempotent_and_preserves_source_evidence(tmp_path: Path) -> None:
     client, _, _ = _client_with_holding(tmp_path)
     payload = {
@@ -384,10 +407,11 @@ def test_portfolio_brief_exposes_versioned_allocation_policy(tmp_path: Path) -> 
         "available": True,
         "reason_code": "VERSIONED_POLICY_CONFIGURED",
     }
-    assert data["capabilities"]["instrument_role_update"] == {
+    assert data["capabilities"]["strategy_instrument_role_draft_create"] == {
         "available": True,
-        "reason_code": "AVAILABLE_WITH_EXPECTED_CURRENT_ROLE",
+        "reason_code": "DRAFT_CONFIRM_COMMIT_REQUIRED",
     }
+    assert data["capabilities"]["instrument_role_update"]["deprecated"] is True
     assert data["allocation_assessment"]["state"] == "BLOCKED_UNASSIGNED"
     assert data["allocation_assessment"]["policy"]["version"] == "1.6"
     assert data["allocation_assessment"]["policy"]["policy"]["core_target_pct"] == "65.00"
@@ -395,7 +419,9 @@ def test_portfolio_brief_exposes_versioned_allocation_policy(tmp_path: Path) -> 
     assert data["role_summary"]["CORE"]["assessment"] == "UNDER_TARGET"
     assert data["role_summary"]["SATELLITE"]["assessment"] == "UNDER_TARGET"
     assert data["factual_findings"][0]["mutation_available"] is True
-    assert data["factual_findings"][0]["mutation_tool"] == "instrument_role_update"
+    assert data["factual_findings"][0]["mutation_tool"] == (
+        "strategy_instrument_role_draft_create"
+    )
     assert data["source_evidence"] == {
         "upstream_lineages": ["EASTMONEY"],
         "independence_assessment": "SINGLE_UPSTREAM",
@@ -425,7 +451,8 @@ def test_portfolio_brief_deterministically_flags_transition_and_formats_losses(
             market_nav_max_age_days=7,
         )
     )
-    strategy.update_instrument_role(
+    _commit_strategy_role(
+        strategy,
         portfolio_id=portfolio_id,
         instrument_code="FUND001",
         role="CORE",
@@ -436,7 +463,8 @@ def test_portfolio_brief_deterministically_flags_transition_and_formats_losses(
         "/v1/instruments",
         json={"code": "FUND002", "name": "测试基金B"},
     )
-    strategy.update_instrument_role(
+    _commit_strategy_role(
+        strategy,
         portfolio_id=portfolio_id,
         instrument_code="FUND002",
         role="SATELLITE",
@@ -487,6 +515,13 @@ def test_portfolio_brief_deterministically_flags_transition_and_formats_losses(
     ).json()["data"]
 
     assert data["allocation_assessment"]["state"] == "TRANSITION_REQUIRED"
+    holdings = {
+        position["holding"]["instrument_code"]: position["holding"]
+        for position in data["valuation"]["positions"]
+    }
+    assert holdings["FUND001"]["registration_role"] == "UNASSIGNED"
+    assert holdings["FUND001"]["strategy_role"] == "CORE"
+    assert holdings["FUND001"]["role"] == "CORE"
     assert data["allocation_assessment"]["reason_code"] == (
         "DEVIATION_EXCEEDS_TRANSITION_TRIGGER"
     )
@@ -551,7 +586,8 @@ def test_weekly_plan_preview_routes_incremental_funds_to_underweight_role(
         "/v1/instruments",
         json={"code": "FUND002", "name": "测试基金B"},
     )
-    strategy.update_instrument_role(
+    _commit_strategy_role(
+        strategy,
         portfolio_id=portfolio_id,
         instrument_code="FUND002",
         role="SATELLITE",
@@ -621,6 +657,9 @@ def test_weekly_plan_preview_routes_incremental_funds_to_underweight_role(
     }
     assert data["plan"]["scope"] == "INSTRUMENT"
     assert data["plan"]["instrument_items"][0]["instrument_code"] == "FUND001"
+    assert data["plan"]["instrument_items"][0]["strategy_role"] == "CORE"
+    assert data["plan"]["instrument_items"][0]["role"] == "CORE"
+    assert "deprecated" in data["plan"]["instrument_items"][0]["role_deprecation"]
     assert data["plan"]["instrument_items"][0]["candidate_amount"] == "100.00"
     assert "CORE ¥100.00 | SATELLITE ¥0.00" in data["display_text"]
     assert "FUND001 测试基金A" in data["display_text"]

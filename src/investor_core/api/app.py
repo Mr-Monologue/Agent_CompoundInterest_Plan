@@ -55,6 +55,7 @@ from investor_core.api.schemas import (
     SellDecisionDraftCreateRequest,
     SellFollowupEvaluateRequest,
     StrategyInstrumentConfigDraftRequest,
+    StrategyInstrumentRoleDraftRequest,
     TransactionDraftCommitRequest,
     TransactionDraftCreateRequest,
     TransactionReversalDraftCreateRequest,
@@ -1005,13 +1006,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/v1/instruments")
-    def instrument_list() -> dict[str, Any]:
-        return success({"items": ledger.list_instruments()})
+    def instrument_list(portfolio_id: str | None = None) -> dict[str, Any]:
+        return success(
+            {
+                "items": ledger.list_instruments(portfolio_id=portfolio_id),
+                "role_contract": {
+                    "registration_role": "classification saved when the instrument is registered",
+                    "strategy_role": "authoritative role in the active portfolio strategy",
+                    "role": "deprecated alias of registration_role",
+                },
+            }
+        )
 
-    @app.patch("/v1/strategy-instruments/{instrument_code}/role")
+    @app.post("/v1/strategy-instruments/{instrument_code}/role-drafts")
+    def strategy_instrument_role_draft_create(
+        instrument_code: str,
+        request: StrategyInstrumentRoleDraftRequest,
+    ) -> dict[str, Any]:
+        return success(
+            strategies.create_instrument_role_draft(
+                portfolio_id=request.portfolio_id,
+                instrument_code=instrument_code,
+                strategy_role=request.strategy_role,
+                expected_current_strategy_role=request.expected_current_strategy_role,
+                reason=request.reason,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.patch(
+        "/v1/strategy-instruments/{instrument_code}/role",
+        deprecated=True,
+        summary="Deprecated: create a governed strategy-role draft",
+    )
     def instrument_role_update(
         instrument_code: str, request: InstrumentRoleUpdateRequest
     ) -> dict[str, Any]:
+        """Deprecated compatibility route; creates a draft and applies nothing."""
         return success(
             strategies.update_instrument_role(
                 portfolio_id=request.portfolio_id,

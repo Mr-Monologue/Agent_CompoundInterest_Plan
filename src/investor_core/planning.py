@@ -310,7 +310,9 @@ class PlanningService:
                         if item["instrument_name"] is not None
                         else None
                     ),
+                    "strategy_role": str(item["role"]),
                     "role": str(item["role"]),
+                    "role_deprecation": "role is a deprecated alias of strategy_role",
                     "valuation_state": str(item["valuation_state"]),
                     "base_amount": (f"{Decimal(int(item['base_amount_minor'])) / MONEY_SCALE:.2f}"),
                     "multiplier": f"{Decimal(int(item['multiplier_bps'])) / 10000:.4f}",

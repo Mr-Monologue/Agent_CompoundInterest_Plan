@@ -1,5 +1,20 @@
 # Value DCA Agent
 
+## Instrument role contract (v0.31.2)
+
+Instrument registration metadata and portfolio strategy configuration are separate concepts.
+`registration_role` is the classification saved when an instrument is registered.
+`strategy_role` is the authoritative role for the active portfolio strategy and is used by
+holdings, portfolio reports, the investment workspace and weekly plans. The legacy `role` field
+remains temporarily available as a deprecated compatibility alias; each response documents which
+canonical field it aliases.
+
+Use `strategy_instrument_role_draft_create` to propose a portfolio strategy-role change. It creates
+a short-lived strategy configuration draft and never applies the change immediately. The existing
+`strategy_instrument_config_draft_commit` confirmation remains mandatory. The deprecated
+`instrument_role_update` tool is retained for older clients but now has the same draft-only safety
+boundary.
+
 面向不同用户复用的价值定投 Agent。公共仓库只发布通用策略规则、确定性计算能力和
 安全工作流；基金代码、账户、持仓、角色、基准映射及可定投白名单均属于用户本地的
 策略实例，不写入公共策略，也不进入 Git 仓库。
@@ -123,8 +138,9 @@ stderr 的行为，不再把正常的 `Resolved ... packages` 信息当作终止
 上游发布方血缘；AKShare、东方财富和天天基金统一属于 `EASTMONEY`，不能互相充当独立验证源。
 
 0.8.0 起，组合概览包含 Core 生成的 `display_text`，Hermes 必须原样返回，不能追加配置评价、
-收益形容词、优先级或建议。`instrument_role_update` 支持用户明确指定后的角色修正，并以
-`expected_current_role` 防止旧会话覆盖新值；每次实际变更写入审计事件。
+收益形容词、优先级或建议。v0.31.2 起应使用 `strategy_instrument_role_draft_create` 创建
+策略角色草稿，并以 `expected_current_strategy_role` 防止旧会话覆盖新值；只有再次明确确认并
+提交该草稿后才会实际变更。`instrument_role_update` 仅作为弃用兼容入口保留，同样只创建草稿。
 
 0.9.0 起，每个组合保存带版本、审批人、哈希和审计事件的 CORE/SATELLITE 分配策略。
 已批准的 v1.6 默认策略为 CORE 65%、SATELLITE 35%，正常容差 10 个百分点，偏离超过

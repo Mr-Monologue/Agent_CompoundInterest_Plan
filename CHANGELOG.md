@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.31.2 — 2026-08-14
+
+- Rename the stored instrument registration classification to `registration_role` and expose the active portfolio configuration as `strategy_role`.
+- Keep the legacy `role` response field as an explicitly deprecated compatibility alias whose meaning is documented per endpoint.
+- Replace immediate strategy-role mutation with a governed draft that still requires the existing explicit commit confirmation.
+- Make strategy configuration authoritative for holdings, reports, workspace views and weekly plans; registration metadata is never used as a portfolio decision fallback.
+- Add migration and regression coverage for 040046, 000083 and 003765 role mismatches without reading or changing production data.
+
 ## v0.31.1 — 2026-08-11
 
 - Distinguish omitted nullable strategy fields from explicit clearing in API drafts and expose explicit MCP clear-field semantics.
