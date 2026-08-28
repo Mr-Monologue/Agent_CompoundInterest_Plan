@@ -2581,6 +2581,16 @@ async def external_subscription_draft_get(draft_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+async def external_subscription_draft_renew(draft_id: str) -> dict[str, Any]:
+    """Renew one expired unchanged draft; create no subscription or financial fact."""
+    return await core_request(
+        "POST",
+        f"/v1/external-subscription-drafts/{draft_id}/renew",
+        payload={"actor_ref": "hermes"},
+    )
+
+
+@mcp.tool()
 async def external_subscription_confirmation_reversal_draft_create(
     subscription_id: str,
     confirmation_id: str,

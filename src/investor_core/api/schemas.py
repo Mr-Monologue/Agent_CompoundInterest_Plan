@@ -628,6 +628,10 @@ class ExternalSubscriptionDraftCommitRequest(RequestModel):
     confirmed_by: str = Field(min_length=1, max_length=120)
 
 
+class ExternalSubscriptionDraftRenewRequest(RequestModel):
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class ExternalSubscriptionConfirmationReversalDraftRequest(RequestModel):
     confirmation_id: str = Field(min_length=1, max_length=80)
     reason: str = Field(min_length=1, max_length=1000)
