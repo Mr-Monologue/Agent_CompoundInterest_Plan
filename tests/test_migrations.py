@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
 
 from alembic import command
@@ -18,6 +19,12 @@ def migrate_to(database_path: Path, revision: str) -> None:
     config = Config(str(PROJECT_ROOT / "alembic.ini"))
     config.set_main_option("sqlalchemy.url", f"sqlite+pysqlite:///{database_path}")
     command.upgrade(config, revision)
+
+
+def downgrade_to(database_path: Path, revision: str) -> None:
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", f"sqlite+pysqlite:///{database_path}")
+    command.downgrade(config, revision)
 
 
 def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
@@ -102,7 +109,89 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0030_instrument_role_contract",)
+    assert revision == ("0031_external_subscription_draft_renewal",)
+
+def test_external_subscription_draft_renewal_migration_preserves_existing_drafts(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    migrate_to(database_path, "0030_instrument_role_contract")
+    payload_json = "{}"
+    payload_hash = sha256(payload_json.encode("utf-8")).hexdigest()
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO external_subscription_drafts (
+                id, action, subscription_id, payload_json, payload_hash, status,
+                idempotency_key, confirmation_digest, expires_at, created_at,
+                committed_at, committed_entity_id, actor_ref
+            ) VALUES (
+                'legacy-expired-draft', 'SUBMIT', NULL, ?, ?, 'PENDING',
+                'legacy-idempotency-key', 'legacy-digest',
+                '2026-08-18T00:15:00Z', '2026-08-18T00:00:00Z',
+                NULL, NULL, 'hermes'
+            )
+            """,
+            (payload_json, payload_hash),
+        )
+        connection.commit()
+
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        columns = {
+            str(row[1])
+            for row in connection.execute(
+                "PRAGMA table_info(external_subscription_drafts)"
+            )
+        }
+        row = connection.execute(
+            """
+            SELECT id, idempotency_key, payload_json, payload_hash, status,
+                   renewed_at, renewal_count
+            FROM external_subscription_drafts WHERE id='legacy-expired-draft'
+            """
+        ).fetchone()
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+    assert {"renewed_at", "renewal_count"} <= columns
+    assert row == (
+        "legacy-expired-draft",
+        "legacy-idempotency-key",
+        payload_json,
+        payload_hash,
+        "PENDING",
+        None,
+        0,
+    )
+    assert revision == ("0031_external_subscription_draft_renewal",)
+
+    downgrade_to(database_path, "0030_instrument_role_contract")
+    with sqlite3.connect(database_path) as connection:
+        downgraded_columns = {
+            str(column[1])
+            for column in connection.execute(
+                "PRAGMA table_info(external_subscription_drafts)"
+            )
+        }
+        downgraded_row = connection.execute(
+            """
+            SELECT id, idempotency_key, payload_json, payload_hash, status
+            FROM external_subscription_drafts WHERE id='legacy-expired-draft'
+            """
+        ).fetchone()
+        downgraded_revision = connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()
+    assert "renewed_at" not in downgraded_columns
+    assert "renewal_count" not in downgraded_columns
+    assert downgraded_row == (
+        "legacy-expired-draft",
+        "legacy-idempotency-key",
+        payload_json,
+        payload_hash,
+        "PENDING",
+    )
+    assert downgraded_revision == ("0030_instrument_role_contract",)
 
 
 def test_instrument_role_contract_migration_renames_and_preserves_registration_role(
@@ -240,7 +329,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0030_instrument_role_contract",
+            "0031_external_subscription_draft_renewal",
         )
 
 
@@ -345,7 +434,7 @@ def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
         "2026-07-02T00:01:00Z",
         None,
     )
-    assert revision == ("0030_instrument_role_contract",)
+    assert revision == ("0031_external_subscription_draft_renewal",)
     snapshot = ResearchService(settings).build_watchlist_review_snapshot(
         portfolio_id=str(portfolio["id"]),
         as_of_date=date(2026, 9, 1),
@@ -375,7 +464,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0030_instrument_role_contract",)
+    assert revision == ("0031_external_subscription_draft_renewal",)
 
 
 def test_alert_recovery_migration_resolves_only_recovered_job_runs(tmp_path: Path) -> None:
@@ -513,7 +602,7 @@ def test_satellite_signal_migration_preserves_alert_resolution_schema(
         "resolution_code",
         "resolution_context_json",
     } <= alert_columns
-    assert revision == ("0030_instrument_role_contract",)
+    assert revision == ("0031_external_subscription_draft_renewal",)
 
 
 def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
@@ -554,7 +643,7 @@ def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
         ).fetchone()
     assert after == before
     assert set(new_counts.values()) == {0}
-    assert revision == ("0030_instrument_role_contract",)
+    assert revision == ("0031_external_subscription_draft_renewal",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(

@@ -1,16 +1,35 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 from test_planning import configured_services
 
-from investor_core.ledger import LedgerError
+from investor_core.ledger import JsonDict, LedgerError
 from investor_core.market_data import MarketDataService
 from investor_core.strategy import StrategyService
 from investor_core.subscriptions import SubscriptionService
 from investor_core.workspace import WorkspaceService
+
+
+def _business_fact_counts(database_path: Path) -> dict[str, int]:
+    tables = (
+        "external_subscriptions",
+        "external_subscription_confirmations",
+        "transactions",
+        "holding_snapshots",
+        "cash_ledger_events",
+        "plan_execution_links",
+    )
+    with sqlite3.connect(database_path) as connection:
+        return {
+            table: int(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+            for table in tables
+        }
 
 
 def frozen_plan(database_path: Path, *, amount: str = "100.00"):
@@ -342,6 +361,263 @@ def test_idempotency_and_exact_confirmation_are_enforced(tmp_path: Path) -> None
             confirmed_by="test-user",
         )
     assert wrong.value.code == "INVALID_CONFIRMATION_TOKEN"
+
+
+def test_expired_submission_draft_renews_in_place_without_business_side_effects(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    _, planning, _, portfolio_id, account_id, plan = frozen_plan(database_path)
+    clock = [datetime(2026, 8, 7, tzinfo=UTC)]
+    service = SubscriptionService(planning.settings, now=lambda: clock[0])
+    created = service.create_submission_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        weekly_plan_id=str(plan["id"]),
+        instrument_code="CORE01",
+        requested_amount="100.00",
+        submitted_at="2026-08-07T10:00:00+08:00",
+        submitted_business_date="2026-08-07",
+        external_platform="测试平台",
+        idempotency_key="renew-submit",
+    )
+    original = created["draft"]
+    original_token = str(created["confirmation_token"])
+    assert datetime.fromisoformat(str(original["expires_at"]).replace("Z", "+00:00")) == (
+        clock[0] + timedelta(hours=24)
+    )
+    clock[0] += timedelta(hours=24, seconds=1)
+    assert service.get_draft(draft_id=str(original["id"]))["status"] == "EXPIRED"
+    reused = service.create_submission_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        weekly_plan_id=str(plan["id"]),
+        instrument_code="CORE01",
+        requested_amount="100.00",
+        submitted_at="2026-08-07T10:00:00+08:00",
+        submitted_business_date="2026-08-07",
+        external_platform="测试平台",
+        idempotency_key="renew-submit",
+    )
+    assert reused["draft"]["id"] == original["id"]
+    assert reused["confirmation_token"] is None
+    assert "external_subscription_draft_renew" in reused["warnings"][0]
+    with pytest.raises(LedgerError) as expired:
+        service.commit_draft(
+            draft_id=str(original["id"]),
+            confirmation_token=original_token,
+            confirmed_by="test-user",
+        )
+    assert expired.value.code == "CONFIRMATION_TOKEN_EXPIRED"
+    assert "external_subscription_draft_renew" in expired.value.message
+    before = _business_fact_counts(database_path)
+
+    renewed = service.renew_draft(draft_id=str(original["id"]), actor_ref="test-user")
+
+    assert renewed["draft"]["id"] == original["id"]
+    assert renewed["draft"]["idempotency_key"] == original["idempotency_key"]
+    assert renewed["draft"]["payload"] == original["payload"]
+    assert renewed["draft"]["payload_hash"] == original["payload_hash"]
+    assert renewed["draft"]["status"] == "PENDING"
+    assert renewed["draft"]["renewal_count"] == 1
+    assert renewed["draft"]["renewed_at"] is not None
+    assert renewed["business_facts_created"] is False
+    assert _business_fact_counts(database_path) == before
+    with pytest.raises(LedgerError) as stale:
+        service.commit_draft(
+            draft_id=str(original["id"]),
+            confirmation_token=original_token,
+            confirmed_by="test-user",
+        )
+    assert stale.value.code == "INVALID_CONFIRMATION_TOKEN"
+
+    committed = service.commit_draft(
+        draft_id=str(original["id"]),
+        confirmation_token=str(renewed["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    assert committed["subscription"]["status"] == "SUBMITTED"
+
+
+def test_unexpired_or_committed_external_subscription_draft_cannot_renew(
+    tmp_path: Path,
+) -> None:
+    _, planning, _, portfolio_id, account_id, plan = frozen_plan(tmp_path / "investor.db")
+    clock = [datetime(2026, 8, 7, tzinfo=UTC)]
+    service = SubscriptionService(planning.settings, now=lambda: clock[0])
+    created = service.create_submission_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        weekly_plan_id=str(plan["id"]),
+        instrument_code="CORE01",
+        requested_amount="100.00",
+        submitted_at="2026-08-07T10:00:00+08:00",
+        submitted_business_date="2026-08-07",
+        external_platform="测试平台",
+        idempotency_key="renew-state-guards",
+    )
+    with pytest.raises(LedgerError) as active:
+        service.renew_draft(draft_id=str(created["draft"]["id"]))
+    assert active.value.code == "DRAFT_NOT_EXPIRED"
+    service.commit_draft(
+        draft_id=str(created["draft"]["id"]),
+        confirmation_token=str(created["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    clock[0] += timedelta(days=2)
+    with pytest.raises(LedgerError) as committed:
+        service.renew_draft(draft_id=str(created["draft"]["id"]))
+    assert committed.value.code == "DRAFT_ALREADY_COMMITTED"
+
+
+def test_external_subscription_draft_renew_rejects_changed_payload(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    _, planning, _, portfolio_id, account_id, plan = frozen_plan(database_path)
+    clock = [datetime(2026, 8, 7, tzinfo=UTC)]
+    service = SubscriptionService(planning.settings, now=lambda: clock[0])
+    created = service.create_submission_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        weekly_plan_id=str(plan["id"]),
+        instrument_code="CORE01",
+        requested_amount="100.00",
+        submitted_at="2026-08-07T10:00:00+08:00",
+        submitted_business_date="2026-08-07",
+        external_platform="测试平台",
+        idempotency_key="renew-payload-guard",
+    )
+    clock[0] += timedelta(days=2)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE external_subscription_drafts SET payload_json=? WHERE id=?",
+            ('{"requested_amount_minor":1}', created["draft"]["id"]),
+        )
+        connection.commit()
+
+    with pytest.raises(LedgerError) as changed:
+        service.renew_draft(draft_id=str(created["draft"]["id"]))
+    assert changed.value.code == "DRAFT_PAYLOAD_CHANGED"
+
+
+def test_concurrent_external_subscription_renew_issues_only_one_token(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    _, planning, _, portfolio_id, account_id, plan = frozen_plan(database_path)
+    clock = [datetime(2026, 8, 7, tzinfo=UTC)]
+    creator = SubscriptionService(planning.settings, now=lambda: clock[0])
+    created = creator.create_submission_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        weekly_plan_id=str(plan["id"]),
+        instrument_code="CORE01",
+        requested_amount="100.00",
+        submitted_at="2026-08-07T10:00:00+08:00",
+        submitted_business_date="2026-08-07",
+        external_platform="测试平台",
+        idempotency_key="renew-concurrent",
+    )
+    clock[0] += timedelta(days=2)
+    barrier = Barrier(2)
+
+    def attempt() -> JsonDict | str:
+        service = SubscriptionService(planning.settings, now=lambda: clock[0])
+        barrier.wait()
+        try:
+            return service.renew_draft(draft_id=str(created["draft"]["id"]))
+        except LedgerError as exc:
+            return exc.code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _index: attempt(), range(2)))
+
+    successes = [item for item in results if isinstance(item, dict)]
+    failures = [item for item in results if isinstance(item, str)]
+    assert len(successes) == 1
+    assert failures == ["DRAFT_NOT_EXPIRED"]
+    with sqlite3.connect(database_path) as connection:
+        audit_count = connection.execute(
+            """
+            SELECT COUNT(*) FROM audit_events
+            WHERE entity_id=? AND action='EXTERNAL_SUBSCRIPTION_DRAFT_RENEWED'
+            """,
+            (created["draft"]["id"],),
+        ).fetchone()[0]
+    assert audit_count == 1
+
+
+def test_expired_confirmation_draft_renews_with_same_contract(tmp_path: Path) -> None:
+    _, planning, service, portfolio_id, account_id, plan = frozen_plan(
+        tmp_path / "investor.db"
+    )
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+    )
+    clock = [datetime(2026, 8, 7, tzinfo=UTC)]
+    governed = SubscriptionService(planning.settings, now=lambda: clock[0])
+    created = governed.create_confirmation_draft(
+        subscription_id=str(subscription["id"]),
+        confirmed_at="2026-08-07T18:00:00+08:00",
+        confirmation_business_date="2026-08-07",
+        nav_date="2026-08-07",
+        nav="1.000000",
+        confirmed_shares="100.000000",
+        confirmed_amount="100.00",
+        fee="0",
+        refunded_amount="0",
+        idempotency_key="renew-confirm",
+    )
+    original = created["draft"]
+    original_token = str(created["confirmation_token"])
+    clock[0] += timedelta(hours=24, seconds=1)
+
+    renewed = governed.renew_draft(draft_id=str(original["id"]))
+
+    assert renewed["draft"]["id"] == original["id"]
+    assert renewed["draft"]["idempotency_key"] == original["idempotency_key"]
+    assert renewed["draft"]["payload"] == original["payload"]
+    assert renewed["draft"]["payload_hash"] == original["payload_hash"]
+    with pytest.raises(LedgerError) as stale:
+        governed.commit_draft(
+            draft_id=str(original["id"]),
+            confirmation_token=original_token,
+            confirmed_by="test-user",
+        )
+    assert stale.value.code == "INVALID_CONFIRMATION_TOKEN"
+    result = governed.commit_draft(
+        draft_id=str(original["id"]),
+        confirmation_token=str(renewed["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    assert result["subscription"]["status"] == "CONFIRMED"
+
+
+def test_external_subscription_ttl_is_configurable_without_extending_existing_drafts(
+    tmp_path: Path,
+) -> None:
+    _, planning, _, portfolio_id, account_id, plan = frozen_plan(tmp_path / "investor.db")
+    clock = [datetime(2026, 8, 7, tzinfo=UTC)]
+    settings = planning.settings.model_copy(
+        update={"external_subscription_confirmation_ttl_minutes": 60}
+    )
+    service = SubscriptionService(settings, now=lambda: clock[0])
+    created = service.create_submission_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        weekly_plan_id=str(plan["id"]),
+        instrument_code="CORE01",
+        requested_amount="10.00",
+        submitted_at="2026-08-07T10:00:00+08:00",
+        submitted_business_date="2026-08-07",
+        external_platform="测试平台",
+        idempotency_key="renew-configurable-ttl",
+    )
+    assert datetime.fromisoformat(
+        str(created["draft"]["expires_at"]).replace("Z", "+00:00")
+    ) == clock[0] + timedelta(hours=1)
 
 
 def test_expected_date_only_marks_review_and_never_infers_failure(tmp_path: Path) -> None:

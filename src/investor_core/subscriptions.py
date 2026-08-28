@@ -301,15 +301,31 @@ class SubscriptionService:
             "trade_executed": False,
         }
 
+    def _draft_ttl_minutes(self, action: str) -> int:
+        if action in {"SUBMIT", "CONFIRM"}:
+            return self.settings.external_subscription_confirmation_ttl_minutes
+        return self.settings.confirmation_ttl_minutes
+
     def _draft_data(self, row: sqlite3.Row) -> JsonDict:
+        status = str(row["status"])
+        if (
+            row["committed_at"] is None
+            and status in {"PENDING", "EXPIRED"}
+            and _parse_iso(str(row["expires_at"])) <= self._now()
+        ):
+            status = "EXPIRED"
         return {
             "id": str(row["id"]),
             "action": str(row["action"]),
             "subscription_id": row["subscription_id"],
             "payload": json.loads(str(row["payload_json"])),
-            "status": str(row["status"]),
+            "payload_hash": str(row["payload_hash"]),
+            "idempotency_key": str(row["idempotency_key"]),
+            "status": status,
             "expires_at": str(row["expires_at"]),
             "created_at": str(row["created_at"]),
+            "renewed_at": row["renewed_at"],
+            "renewal_count": int(row["renewal_count"]),
             "committed_at": row["committed_at"],
             "committed_entity_id": row["committed_entity_id"],
         }
@@ -348,18 +364,26 @@ class SubscriptionService:
                         ),
                     )
                 connection.commit()
+                draft_data = self._draft_data(existing)
                 return {
-                    "draft": self._draft_data(existing),
+                    "draft": draft_data,
                     "confirmation_token": None,
                     "reused": True,
-                    "warnings": ["已复用相同草稿; 请使用原确认信息。"],
+                    "warnings": [
+                        (
+                            "已复用相同的过期草稿; 请调用 "
+                            "external_subscription_draft_renew 获取新的短期确认信息。"
+                            if draft_data["status"] == "EXPIRED"
+                            else "已复用相同草稿; 请使用原确认信息。"
+                        )
+                    ],
                 }
             if subscription_id is not None:
                 self._subscription_row(connection, subscription_id)
             now = self._now()
             draft_id = str(uuid4())
             token = secrets.token_urlsafe(24)
-            expires_at = now + timedelta(minutes=self.settings.confirmation_ttl_minutes)
+            expires_at = now + timedelta(minutes=self._draft_ttl_minutes(action))
             connection.execute(
                 """
                 INSERT INTO external_subscription_drafts (
@@ -602,6 +626,134 @@ class SubscriptionService:
                 )
             return self._draft_data(row)
 
+    def renew_draft(
+        self,
+        *,
+        draft_id: str,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Issue one new token for an expired, unchanged and uncommitted draft."""
+        actor = actor_ref.strip()
+        if not actor:
+            raise LedgerError("MISSING_REQUIRED_FIELD", "重签操作人不能为空。")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM external_subscription_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if draft is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "EXTERNAL_SUBSCRIPTION_DRAFT_NOT_FOUND",
+                        "没有找到该申购草稿。",
+                        http_status=404,
+                    ),
+                )
+            if draft["committed_at"] is not None or str(draft["status"]) == "COMMITTED":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_ALREADY_COMMITTED",
+                        "已经成功提交的申购草稿不能重签。",
+                        http_status=409,
+                    ),
+                )
+            now = self._now()
+            if _parse_iso(str(draft["expires_at"])) > now:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_NOT_EXPIRED",
+                        "申购草稿尚未过期, 不能重签。",
+                        http_status=409,
+                    ),
+                )
+            if str(draft["status"]) not in {"PENDING", "EXPIRED"}:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_NOT_RENEWABLE",
+                        f"草稿当前状态为 {draft['status']}, 不能重签。",
+                        http_status=409,
+                    ),
+                )
+            payload = json.loads(str(draft["payload_json"]))
+            payload_hash = str(draft["payload_hash"])
+            if _hash(payload) != payload_hash:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_PAYLOAD_CHANGED",
+                        "申购草稿载荷与原始摘要不一致, 拒绝重签。",
+                        http_status=409,
+                    ),
+                )
+            token = secrets.token_urlsafe(24)
+            expires_at = now + timedelta(
+                minutes=self._draft_ttl_minutes(str(draft["action"]))
+            )
+            now_iso = _iso(now)
+            updated = connection.execute(
+                """
+                UPDATE external_subscription_drafts
+                SET confirmation_digest=?, expires_at=?, status='PENDING',
+                    renewed_at=?, renewal_count=renewal_count + 1
+                WHERE id=? AND committed_at IS NULL
+                  AND status IN ('PENDING','EXPIRED') AND expires_at<=?
+                  AND payload_hash=? AND idempotency_key=?
+                """,
+                (
+                    _token_digest(token),
+                    _iso(expires_at),
+                    now_iso,
+                    draft_id,
+                    now_iso,
+                    payload_hash,
+                    str(draft["idempotency_key"]),
+                ),
+            )
+            if updated.rowcount != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_RENEWAL_CONFLICT",
+                        "申购草稿已被其他请求提交或重签, 请重新读取状态。",
+                        http_status=409,
+                    ),
+                )
+            self._audit(
+                connection,
+                actor_type="AGENT",
+                actor_ref=actor,
+                action="EXTERNAL_SUBSCRIPTION_DRAFT_RENEWED",
+                entity_type="external_subscription_draft",
+                entity_id=draft_id,
+                details={
+                    "action": str(draft["action"]),
+                    "idempotency_key": str(draft["idempotency_key"]),
+                    "payload_hash": payload_hash,
+                    "previous_expires_at": str(draft["expires_at"]),
+                    "expires_at": _iso(expires_at),
+                    "renewal_count": int(draft["renewal_count"]) + 1,
+                },
+            )
+            row = connection.execute(
+                "SELECT * FROM external_subscription_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            assert row is not None
+            connection.commit()
+            return {
+                "draft": self._draft_data(row),
+                "confirmation_token": token,
+                "renewed": True,
+                "warnings": [],
+                "business_facts_created": False,
+            }
+        finally:
+            connection.close()
+
     def _plan_capacity(
         self,
         connection: sqlite3.Connection,
@@ -731,6 +883,15 @@ class SubscriptionService:
                 )
                 connection.commit()
                 return {"subscription": result, "idempotent_replay": True}
+            if str(draft["status"]) == "EXPIRED" and draft["committed_at"] is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "CONFIRMATION_TOKEN_EXPIRED",
+                        "草稿已经过期; 请调用 external_subscription_draft_renew 重签后再次确认。",
+                        http_status=410,
+                    ),
+                )
             if str(draft["status"]) != "PENDING":
                 self._rollback_and_raise(
                     connection,
@@ -748,7 +909,7 @@ class SubscriptionService:
                 connection.commit()
                 raise LedgerError(
                     "CONFIRMATION_TOKEN_EXPIRED",
-                    "草稿已经过期; 请重新创建相同草稿后再次确认。",
+                    "草稿已经过期; 请调用 external_subscription_draft_renew 重签后再次确认。",
                     http_status=410,
                 )
             payload = json.loads(str(draft["payload_json"]))

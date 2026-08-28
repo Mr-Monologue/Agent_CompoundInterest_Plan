@@ -129,6 +129,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "external_subscription_status_draft_create",
         "external_subscription_confirmation_draft_create",
         "external_subscription_draft_get",
+        "external_subscription_draft_renew",
         "external_subscription_confirmation_reversal_draft_create",
         "external_subscription_draft_commit",
         "external_subscription_list",
@@ -150,8 +151,11 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         for tool in tools
         if tool.name.startswith("external_subscription_")
     }
-    assert len(subscription_tools) == 10
+    assert len(subscription_tools) == 11
     assert "never place an order" in subscription_tools["external_subscription_draft_create"]
+    assert "create no subscription or financial fact" in subscription_tools[
+        "external_subscription_draft_renew"
+    ]
     assert "never trade" in subscription_tools[
         "external_subscription_transaction_draft_create"
     ]
@@ -163,6 +167,34 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
     }
     assert len(skip_tools) == 3
     assert "never recovers" in skip_tools["weekly_plan_skip_draft_create"]
+
+
+def test_external_subscription_draft_renew_calls_exact_core_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        del params
+        calls.append((method, path, payload))
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+
+    result = asyncio.run(server.external_subscription_draft_renew("draft-1"))
+
+    assert result["ok"] is True
+    assert calls == [
+        (
+            "POST",
+            "/v1/external-subscription-drafts/draft-1/renew",
+            {"actor_ref": "hermes"},
+        )
+    ]
 
 
 def test_strategy_config_mcp_omits_unset_nullable_fields_and_clears_explicitly(
