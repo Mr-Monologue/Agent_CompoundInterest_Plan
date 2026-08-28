@@ -18,6 +18,7 @@ from investor_core.api.schemas import (
     ExternalSubscriptionConfirmationDraftRequest,
     ExternalSubscriptionConfirmationReversalDraftRequest,
     ExternalSubscriptionDraftCommitRequest,
+    ExternalSubscriptionDraftRenewRequest,
     ExternalSubscriptionStatusDraftRequest,
     ExternalSubscriptionSubmissionDraftRequest,
     ExternalSubscriptionTransactionCommitRequest,
@@ -1480,6 +1481,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/external-subscription-drafts/{draft_id}")
     def external_subscription_draft_get(draft_id: str) -> dict[str, Any]:
         return success(subscriptions.get_draft(draft_id=draft_id))
+
+    @app.post("/v1/external-subscription-drafts/{draft_id}/renew")
+    def external_subscription_draft_renew(
+        draft_id: str,
+        request: ExternalSubscriptionDraftRenewRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.renew_draft(
+                draft_id=draft_id,
+                actor_ref=request.actor_ref,
+            )
+        )
 
     @app.post(
         "/v1/external-subscriptions/{subscription_id}/confirmation-reversal-drafts"

@@ -136,6 +136,16 @@ infer execution from a frozen plan, screenshots, intent, or an external platform
 not been recorded. Ledger transaction `amount` is the plan-progress amount; fees are not separately
 recorded or counted. Never reuse a transaction across plans or associate a reversed transaction.
 
+External-subscription drafts have separate create, renew, and commit semantics. When
+`external_subscription_draft_get` reports an uncommitted draft as `EXPIRED`, use
+`external_subscription_draft_renew` only after the user asks to continue that same business
+operation. Never create a replacement idempotency key, alter the payload, recover an old token,
+or claim that renewal submitted an external subscription. Renewal keeps the original draft and
+business facts unchanged and returns one new short-lived token for the current confirmation
+lifecycle. Show the unchanged subscription details again and obtain the required explicit user
+confirmation before calling `external_subscription_draft_commit`. For an active or committed
+draft, obey the Core rejection and do not attempt renewal.
+
 For `strategy_instrument_config_draft_create`, omitted optional values keep their current setting.
 To clear a nullable value, put its exact field name in `clear_fields`; never send an empty/default
 value and claim it was cleared. The draft preview must show the resulting null or empty governed
