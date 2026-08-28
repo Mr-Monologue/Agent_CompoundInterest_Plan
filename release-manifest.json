@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.31.2",
+  "version": "0.31.3",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
-  "database_revision": "0030_instrument_role_contract",
+  "database_revision": "0031_external_subscription_draft_renewal",
   "minimum_current_version": "0.5.3",
-  "notes": "Disambiguate instrument registration classification from the authoritative portfolio strategy role, deprecate ambiguous role aliases, and route role changes through the existing draft-confirm-commit governance; no production configuration or financial fact is changed automatically."
+  "notes": "Add explicit, audited and concurrency-safe renewal for expired uncommitted external subscription drafts, derive EXPIRED status on reads, and use a configurable 24-hour default TTL for SUBMIT and CONFIRM drafts; renewal creates no subscription or financial fact."
 }

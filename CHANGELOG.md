@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.31.3 — 2026-08-28
+
+- Add an explicit, audited and concurrency-safe renewal operation for expired, uncommitted external-subscription drafts while preserving the draft ID, idempotency key, payload and payload hash.
+- Rotate the confirmation digest and expiry in one conditional transaction so concurrent renewal attempts produce at most one new valid token and immediately invalidate the old token.
+- Derive `EXPIRED` on reads after expiry and direct expired commits to the supported renewal operation.
+- Set the configurable default TTL for external-subscription `SUBMIT` and `CONFIRM` drafts to 24 hours without extending existing drafts or creating any subscription or financial fact.
+
 ## v0.31.2 — 2026-08-14
 
 - Rename the stored instrument registration classification to `registration_role` and expose the active portfolio configuration as `strategy_role`.
