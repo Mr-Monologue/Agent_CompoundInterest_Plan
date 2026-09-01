@@ -162,6 +162,19 @@ def test_cron_examples_are_disabled() -> None:
         assert '"enabled": false' in path.read_text(encoding="utf-8")
 
 
+def test_external_subscription_date_only_and_revision_skill_contract() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'confirmed_at_precision="DATE_ONLY"' in skill
+    assert "never invent midnight and describe\nit as a real confirmation time" in skill
+    assert "never the normalized internal timestamp" in skill
+    assert "Draft revision is separate from creation, renewal, and commit" in skill
+    assert "Never use a new idempotency\nkey" in skill
+    assert "require a fresh explicit confirmation before commit" in skill
+
+
 def test_automation_skill_keeps_cron_read_only_and_silent() -> None:
     skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
     template = (PROJECT_ROOT / "cron/agent-jobs/automation-report-delivery.example.json").read_text(
