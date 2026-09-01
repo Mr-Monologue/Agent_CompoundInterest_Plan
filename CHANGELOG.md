@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.31.4 — 2026-09-01
+
+- Add structured `EXACT` and `DATE_ONLY` precision for external-subscription confirmation drafts and committed confirmation facts.
+- Normalize date-only confirmations to business-date midnight internally while exposing a date-only display value and never presenting the normalized timestamp as a sourced confirmation time.
+- Add an explicit, audited and concurrency-safe revision operation for uncommitted `PENDING` or `EXPIRED` confirmation drafts while preserving draft, subscription, idempotency and order identity.
+- Rotate the confirmation credential after a successful revision, require an expected payload hash, and create no confirmation, transaction, holding, cash or plan-execution fact.
+- Migrate historical confirmation facts and drafts to the backward-compatible `EXACT` classification without guessing precision from midnight timestamps.
+
 ## v0.31.3 — 2026-08-28
 
 - Add an explicit, audited and concurrency-safe renewal operation for expired, uncommitted external-subscription drafts while preserving the draft ID, idempotency key, payload and payload hash.

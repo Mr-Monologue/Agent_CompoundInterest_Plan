@@ -8,7 +8,7 @@ import json
 import secrets
 import sqlite3
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, NoReturn
@@ -230,6 +230,8 @@ class SubscriptionService:
         confirmed_unbooked = 0
         booked_plan_amount = 0
         for item in confirmations:
+            precision = str(item["confirmed_at_precision"])
+            confirmed_at = str(item["confirmed_at"])
             active_transaction = (
                 item["transaction_id"] is not None
                 and item["reversed_by_transaction_id"] is None
@@ -243,7 +245,14 @@ class SubscriptionService:
                 {
                     "id": str(item["id"]),
                     "confirmation_business_date": str(item["confirmation_business_date"]),
-                    "confirmed_at": str(item["confirmed_at"]),
+                    "confirmed_at": confirmed_at,
+                    "confirmed_at_precision": precision,
+                    "confirmed_at_is_exact": precision == "EXACT",
+                    "confirmed_at_display": (
+                        confirmed_at
+                        if precision == "EXACT"
+                        else str(item["confirmation_business_date"])
+                    ),
                     "nav_date": str(item["nav_date"]),
                     "nav": _decimal(int(item["nav_micros"]), NAV_SCALE, 6),
                     "confirmed_shares": _decimal(
@@ -326,6 +335,9 @@ class SubscriptionService:
             "created_at": str(row["created_at"]),
             "renewed_at": row["renewed_at"],
             "renewal_count": int(row["renewal_count"]),
+            "confirmed_at_precision": row["confirmed_at_precision"],
+            "revised_at": row["revised_at"],
+            "revision_count": int(row["revision_count"]),
             "committed_at": row["committed_at"],
             "committed_entity_id": row["committed_entity_id"],
         }
@@ -389,8 +401,10 @@ class SubscriptionService:
                 INSERT INTO external_subscription_drafts (
                     id, action, subscription_id, payload_json, payload_hash, status,
                     idempotency_key, confirmation_digest, expires_at, created_at,
-                    committed_at, committed_entity_id, actor_ref
-                ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, NULL, NULL, ?)
+                    committed_at, committed_entity_id, actor_ref,
+                    confirmed_at_precision, revised_at, revision_count
+                ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, NULL, NULL, ?,
+                          ?, NULL, 0)
                 """,
                 (
                     draft_id,
@@ -403,6 +417,7 @@ class SubscriptionService:
                     _iso(expires_at),
                     _iso(now),
                     actor,
+                    payload.get("confirmed_at_precision") if action == "CONFIRM" else None,
                 ),
             )
             self._audit(
@@ -513,11 +528,11 @@ class SubscriptionService:
             actor_ref=actor_ref,
         )
 
-    def create_confirmation_draft(
+    def _confirmation_payload(
         self,
         *,
-        subscription_id: str,
-        confirmed_at: str,
+        confirmed_at: str | None,
+        confirmed_at_precision: str,
         confirmation_business_date: str,
         nav_date: str,
         nav: str,
@@ -525,27 +540,50 @@ class SubscriptionService:
         confirmed_amount: str,
         fee: str,
         refunded_amount: str,
-        idempotency_key: str,
-        external_reference: str | None = None,
-        reversal_of_confirmation_id: str | None = None,
-        actor_ref: str = "hermes",
+        external_reference: str | None,
     ) -> JsonDict:
-        if reversal_of_confirmation_id:
-            reversal_payload: JsonDict = {
-                "reversal_of_confirmation_id": reversal_of_confirmation_id,
-                "reason": external_reference or "用户确认冲销错误的份额确认事实",
-            }
-            return self._create_draft(
-                action="REVERSE_CONFIRMATION",
-                subscription_id=subscription_id,
-                payload=reversal_payload,
-                idempotency_key=idempotency_key,
-                actor_ref=actor_ref,
+        precision = confirmed_at_precision.strip().upper()
+        if precision not in {"EXACT", "DATE_ONLY"}:
+            raise LedgerError(
+                "INVALID_CONFIRMED_AT_PRECISION",
+                "确认时间精度只能是 EXACT 或 DATE_ONLY。",
             )
-        timestamp = _parse_iso(confirmed_at)
-        if timestamp.utcoffset() is None:
-            raise LedgerError("TIMEZONE_REQUIRED", "确认时间必须包含时区。")
         confirmation_date = date.fromisoformat(confirmation_business_date)
+        business_timezone = ZoneInfo(self.settings.timezone)
+        if precision == "EXACT":
+            if not confirmed_at:
+                raise LedgerError(
+                    "CONFIRMED_AT_REQUIRED",
+                    "精确确认时间必须包含真实的带时区时间戳。",
+                )
+            timestamp = _parse_iso(confirmed_at)
+            if timestamp.utcoffset() is None:
+                raise LedgerError("TIMEZONE_REQUIRED", "确认时间必须包含时区。")
+            if timestamp.astimezone(business_timezone).date() != confirmation_date:
+                raise LedgerError(
+                    "CONFIRMED_AT_DATE_MISMATCH",
+                    "精确确认时间在业务时区的日期必须等于确认日期。",
+                )
+        else:
+            normalized_local = datetime.combine(
+                confirmation_date,
+                time.min,
+                tzinfo=business_timezone,
+            )
+            if confirmed_at:
+                supplied = _parse_iso(confirmed_at)
+                if supplied.utcoffset() is None:
+                    raise LedgerError("TIMEZONE_REQUIRED", "确认时间必须包含时区。")
+                supplied_local = supplied.astimezone(business_timezone)
+                if (
+                    supplied_local.date() != confirmation_date
+                    or supplied_local.timetz().replace(tzinfo=None) != time.min
+                ):
+                    raise LedgerError(
+                        "DATE_ONLY_TIMESTAMP_NOT_NORMALIZED",
+                        "仅日期确认不能携带虚构时刻; 请省略确认时间或使用业务日期零点。",
+                    )
+            timestamp = normalized_local
         nav_day = date.fromisoformat(nav_date)
         amount_minor = _scaled(confirmed_amount, MONEY_SCALE, "confirmed_amount")
         nav_micros = _scaled(nav, NAV_SCALE, "nav")
@@ -571,8 +609,9 @@ class SubscriptionService:
                     "allowed_difference": _money(allowed),
                 },
             )
-        payload: JsonDict = {
+        return {
             "confirmed_at": _iso(timestamp),
+            "confirmed_at_precision": precision,
             "confirmation_business_date": confirmation_date.isoformat(),
             "nav_date": nav_day.isoformat(),
             "nav_micros": nav_micros,
@@ -580,8 +619,53 @@ class SubscriptionService:
             "confirmed_amount_minor": amount_minor,
             "fee_minor": fee_minor,
             "refunded_amount_minor": refunded_minor,
-            "external_reference": external_reference.strip() if external_reference else None,
+            "external_reference": (
+                external_reference.strip() if external_reference else None
+            ),
         }
+
+    def create_confirmation_draft(
+        self,
+        *,
+        subscription_id: str,
+        confirmed_at: str | None,
+        confirmation_business_date: str,
+        nav_date: str,
+        nav: str,
+        confirmed_shares: str,
+        confirmed_amount: str,
+        fee: str,
+        refunded_amount: str,
+        idempotency_key: str,
+        external_reference: str | None = None,
+        reversal_of_confirmation_id: str | None = None,
+        confirmed_at_precision: str = "EXACT",
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        if reversal_of_confirmation_id:
+            reversal_payload: JsonDict = {
+                "reversal_of_confirmation_id": reversal_of_confirmation_id,
+                "reason": external_reference or "用户确认冲销错误的份额确认事实",
+            }
+            return self._create_draft(
+                action="REVERSE_CONFIRMATION",
+                subscription_id=subscription_id,
+                payload=reversal_payload,
+                idempotency_key=idempotency_key,
+                actor_ref=actor_ref,
+            )
+        payload = self._confirmation_payload(
+            confirmed_at=confirmed_at,
+            confirmed_at_precision=confirmed_at_precision,
+            confirmation_business_date=confirmation_business_date,
+            nav_date=nav_date,
+            nav=nav,
+            confirmed_shares=confirmed_shares,
+            confirmed_amount=confirmed_amount,
+            fee=fee,
+            refunded_amount=refunded_amount,
+            external_reference=external_reference,
+        )
         return self._create_draft(
             action="CONFIRM",
             subscription_id=subscription_id,
@@ -750,6 +834,269 @@ class SubscriptionService:
                 "renewed": True,
                 "warnings": [],
                 "business_facts_created": False,
+            }
+        finally:
+            connection.close()
+
+    def _validate_confirmation_business_payload(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        subscription_id: str,
+        payload: JsonDict,
+    ) -> None:
+        subscription = self._subscription_row(connection, subscription_id)
+        if str(subscription["status"]) not in {
+            "SUBMITTED",
+            "PENDING_CONFIRMATION",
+            "PARTIALLY_CONFIRMED",
+        }:
+            raise LedgerError(
+                "INVALID_SUBSCRIPTION_TRANSITION",
+                "当前申购状态不能新增或修订份额确认草稿。",
+                http_status=409,
+            )
+        submitted_day = date.fromisoformat(str(subscription["submitted_business_date"]))
+        confirmation_day = date.fromisoformat(str(payload["confirmation_business_date"]))
+        nav_day = date.fromisoformat(str(payload["nav_date"]))
+        if confirmation_day < submitted_day or not (
+            submitted_day <= nav_day <= confirmation_day
+        ):
+            raise LedgerError(
+                "INVALID_CONFIRMATION_DATES",
+                "净值日期和确认日期必须晚于或等于申购日期; "
+                "且净值日期不能晚于确认日期。",
+            )
+        consumed = (
+            int(payload["confirmed_amount_minor"])
+            + int(payload["fee_minor"])
+            + int(payload["refunded_amount_minor"])
+        )
+        if consumed > int(subscription["pending_amount_minor"]):
+            raise LedgerError(
+                "SUBSCRIPTION_CONFIRMATION_EXCEEDS_PENDING",
+                "本次确认、费用和退款超过剩余在途金额。",
+                http_status=409,
+            )
+
+    def revise_confirmation_draft(
+        self,
+        *,
+        draft_id: str,
+        expected_payload_hash: str,
+        confirmed_at_precision: str,
+        confirmed_at: str | None = None,
+        confirmation_business_date: str | None = None,
+        nav_date: str | None = None,
+        nav: str | None = None,
+        confirmed_shares: str | None = None,
+        confirmed_amount: str | None = None,
+        fee: str | None = None,
+        refunded_amount: str | None = None,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Atomically revise one uncommitted confirmation draft in place."""
+        actor = actor_ref.strip()
+        expected_hash = expected_payload_hash.strip()
+        if not actor or not expected_hash:
+            raise LedgerError(
+                "MISSING_REQUIRED_FIELD",
+                "预期载荷摘要和修订操作人不能为空。",
+            )
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM external_subscription_drafts WHERE id=?",
+                (draft_id,),
+            ).fetchone()
+            if draft is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "EXTERNAL_SUBSCRIPTION_DRAFT_NOT_FOUND",
+                        "没有找到该申购草稿。",
+                        http_status=404,
+                    ),
+                )
+            if str(draft["action"]) != "CONFIRM":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_NOT_CONFIRMATION",
+                        "只有份额确认草稿可以使用该修订接口。",
+                        http_status=409,
+                    ),
+                )
+            if draft["committed_at"] is not None or str(draft["status"]) == "COMMITTED":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_ALREADY_COMMITTED",
+                        "已经成功提交的份额确认草稿不能修订。",
+                        http_status=409,
+                    ),
+                )
+            if str(draft["status"]) not in {"PENDING", "EXPIRED"}:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_NOT_REVISABLE",
+                        f"草稿当前状态为 {draft['status']}, 不能修订。",
+                        http_status=409,
+                    ),
+                )
+            old_payload_hash = str(draft["payload_hash"])
+            if not hmac.compare_digest(old_payload_hash, expected_hash):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_PAYLOAD_HASH_MISMATCH",
+                        "份额确认草稿已经变化; 请重新读取后再修订。",
+                        http_status=409,
+                    ),
+                )
+            old_payload = json.loads(str(draft["payload_json"]))
+            if _hash(old_payload) != old_payload_hash:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_PAYLOAD_CHANGED",
+                        "份额确认草稿载荷与保存的摘要不一致, 拒绝修订。",
+                        http_status=409,
+                    ),
+                )
+            requested_precision = confirmed_at_precision.strip().upper()
+            effective_confirmed_at = (
+                confirmed_at
+                if confirmed_at is not None or requested_precision == "DATE_ONLY"
+                else str(old_payload["confirmed_at"])
+            )
+            new_payload = self._confirmation_payload(
+                confirmed_at=effective_confirmed_at,
+                confirmed_at_precision=confirmed_at_precision,
+                confirmation_business_date=(
+                    confirmation_business_date
+                    or str(old_payload["confirmation_business_date"])
+                ),
+                nav_date=nav_date or str(old_payload["nav_date"]),
+                nav=(
+                    nav
+                    or _decimal(int(old_payload["nav_micros"]), NAV_SCALE, 6)
+                ),
+                confirmed_shares=(
+                    confirmed_shares
+                    or _decimal(
+                        int(old_payload["confirmed_shares_micros"]),
+                        SHARE_SCALE,
+                        6,
+                    )
+                ),
+                confirmed_amount=(
+                    confirmed_amount
+                    or _money(int(old_payload["confirmed_amount_minor"]))
+                ),
+                fee=fee if fee is not None else _money(int(old_payload["fee_minor"])),
+                refunded_amount=(
+                    refunded_amount
+                    if refunded_amount is not None
+                    else _money(int(old_payload["refunded_amount_minor"]))
+                ),
+                external_reference=old_payload.get("external_reference"),
+            )
+            new_payload_hash = _hash(new_payload)
+            if hmac.compare_digest(new_payload_hash, old_payload_hash):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_REVISION_NO_CHANGES",
+                        "修订后的份额确认事实与当前草稿完全相同。",
+                        http_status=409,
+                    ),
+                )
+            subscription_id = str(draft["subscription_id"])
+            self._validate_confirmation_business_payload(
+                connection,
+                subscription_id=subscription_id,
+                payload=new_payload,
+            )
+            changed_fields = sorted(
+                key
+                for key in set(old_payload) | set(new_payload)
+                if old_payload.get(key) != new_payload.get(key)
+            )
+            token = secrets.token_urlsafe(24)
+            now = self._now()
+            now_iso = _iso(now)
+            expires_at = _iso(
+                now + timedelta(minutes=self._draft_ttl_minutes("CONFIRM"))
+            )
+            updated = connection.execute(
+                """
+                UPDATE external_subscription_drafts
+                SET payload_json=?, payload_hash=?, confirmed_at_precision=?,
+                    confirmation_digest=?, expires_at=?, status='PENDING',
+                    revised_at=?, revision_count=revision_count + 1
+                WHERE id=? AND action='CONFIRM' AND subscription_id=?
+                  AND idempotency_key=? AND committed_at IS NULL
+                  AND status IN ('PENDING','EXPIRED') AND payload_hash=?
+                """,
+                (
+                    json.dumps(new_payload, ensure_ascii=False, sort_keys=True),
+                    new_payload_hash,
+                    new_payload["confirmed_at_precision"],
+                    _token_digest(token),
+                    expires_at,
+                    now_iso,
+                    draft_id,
+                    subscription_id,
+                    str(draft["idempotency_key"]),
+                    expected_hash,
+                ),
+            )
+            if updated.rowcount != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_REVISION_CONFLICT",
+                        "份额确认草稿已被其他请求提交或修订; 请重新读取状态。",
+                        http_status=409,
+                    ),
+                )
+            self._audit(
+                connection,
+                actor_type="AGENT",
+                actor_ref=actor,
+                action="EXTERNAL_SUBSCRIPTION_CONFIRMATION_DRAFT_REVISED",
+                entity_type="external_subscription_draft",
+                entity_id=draft_id,
+                details={
+                    "subscription_id": subscription_id,
+                    "idempotency_key": str(draft["idempotency_key"]),
+                    "old_payload_hash": old_payload_hash,
+                    "new_payload_hash": new_payload_hash,
+                    "changed_fields": changed_fields,
+                    "confirmed_at_precision": new_payload["confirmed_at_precision"],
+                    "confirmation_business_date": new_payload[
+                        "confirmation_business_date"
+                    ],
+                    "revision_count": int(draft["revision_count"]) + 1,
+                    "expires_at": expires_at,
+                },
+            )
+            row = connection.execute(
+                "SELECT * FROM external_subscription_drafts WHERE id=?",
+                (draft_id,),
+            ).fetchone()
+            assert row is not None
+            connection.commit()
+            return {
+                "draft": self._draft_data(row),
+                "confirmation_token": token,
+                "revised": True,
+                "changed_fields": changed_fields,
+                "business_facts_created": False,
+                "warnings": [],
             }
         finally:
             connection.close()
@@ -1082,53 +1429,61 @@ class SubscriptionService:
                                 http_status=409,
                             ),
                         )
-                    submitted_day = date.fromisoformat(str(row["submitted_business_date"]))
-                    confirmation_day = date.fromisoformat(
-                        payload["confirmation_business_date"]
+                    validated_payload = self._confirmation_payload(
+                        confirmed_at=str(payload["confirmed_at"]),
+                        confirmed_at_precision=str(
+                            payload.get("confirmed_at_precision", "EXACT")
+                        ),
+                        confirmation_business_date=str(
+                            payload["confirmation_business_date"]
+                        ),
+                        nav_date=str(payload["nav_date"]),
+                        nav=_decimal(int(payload["nav_micros"]), NAV_SCALE, 6),
+                        confirmed_shares=_decimal(
+                            int(payload["confirmed_shares_micros"]),
+                            SHARE_SCALE,
+                            6,
+                        ),
+                        confirmed_amount=_money(
+                            int(payload["confirmed_amount_minor"])
+                        ),
+                        fee=_money(int(payload["fee_minor"])),
+                        refunded_amount=_money(int(payload["refunded_amount_minor"])),
+                        external_reference=payload.get("external_reference"),
                     )
-                    nav_day = date.fromisoformat(payload["nav_date"])
-                    if confirmation_day < submitted_day or not (
-                        submitted_day <= nav_day <= confirmation_day
-                    ):
+                    if validated_payload != payload:
                         self._rollback_and_raise(
                             connection,
                             LedgerError(
-                                "INVALID_CONFIRMATION_DATES",
-                                "净值日期和确认日期必须晚于或等于申购日期; "
-                                "且净值日期不能晚于确认日期。",
-                            ),
-                        )
-                    consumed = (
-                        int(payload["confirmed_amount_minor"])
-                        + int(payload["fee_minor"])
-                        + int(payload["refunded_amount_minor"])
-                    )
-                    if consumed > int(row["pending_amount_minor"]):
-                        self._rollback_and_raise(
-                            connection,
-                            LedgerError(
-                                "SUBSCRIPTION_CONFIRMATION_EXCEEDS_PENDING",
-                                "本次确认、费用和退款超过剩余在途金额。",
+                                "DRAFT_PAYLOAD_NOT_CANONICAL",
+                                "份额确认草稿不符合当前时间精度和账务契约。",
                                 http_status=409,
                             ),
                         )
+                    self._validate_confirmation_business_payload(
+                        connection,
+                        subscription_id=subscription_id,
+                        payload=payload,
+                    )
                     confirmation_id = str(uuid4())
                     connection.execute(
                         """
                         INSERT INTO external_subscription_confirmations (
                             id, subscription_id, kind, confirmed_at,
+                            confirmed_at_precision,
                             confirmation_business_date, nav_date, nav_micros,
                             confirmed_shares_micros, confirmed_amount_minor,
                             fee_minor, refunded_amount_minor, external_reference,
                             reversal_of_confirmation_id, reversed_by_confirmation_id,
                             recorded_by, idempotency_key, created_at
-                        ) VALUES (?, ?, 'CONFIRMATION', ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ) VALUES (?, ?, 'CONFIRMATION', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                                   NULL, NULL, ?, ?, ?)
                         """,
                         (
                             confirmation_id,
                             subscription_id,
                             payload["confirmed_at"],
+                            payload["confirmed_at_precision"],
                             payload["confirmation_business_date"],
                             payload["nav_date"],
                             payload["nav_micros"],
@@ -1239,7 +1594,27 @@ class SubscriptionService:
                     else "external_subscription"
                 ),
                 entity_id=committed_entity_id,
-                details={"draft_id": draft_id, "subscription_id": subscription_id},
+                details={
+                    "draft_id": draft_id,
+                    "subscription_id": subscription_id,
+                    **(
+                        {
+                            "confirmed_at_precision": payload[
+                                "confirmed_at_precision"
+                            ],
+                            "confirmation_business_date": payload[
+                                "confirmation_business_date"
+                            ],
+                            "confirmed_at": (
+                                payload["confirmed_at"]
+                                if payload["confirmed_at_precision"] == "EXACT"
+                                else None
+                            ),
+                        }
+                        if action == "CONFIRM"
+                        else {}
+                    ),
+                },
             )
             refreshed = self._subscription_row(connection, subscription_id)
             result = self._subscription_data(connection, refreshed)

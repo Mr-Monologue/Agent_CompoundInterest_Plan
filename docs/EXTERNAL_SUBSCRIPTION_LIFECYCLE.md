@@ -38,6 +38,49 @@ request accepts no payload, order number, subscription ID or idempotency-key rep
 It creates no subscription, confirmation, transaction, plan-execution link, cash event or
 holding fact.
 
+## Confirmation time precision
+
+From v0.31.4 every confirmation draft and committed confirmation carries
+`confirmed_at_precision`:
+
+- `EXACT` means the source supplied a real timezone-aware confirmation timestamp. Its
+  date in the configured business timezone must equal `confirmation_business_date`.
+- `DATE_ONLY` means the source supplied only the confirmation date. Core stores business
+  date midnight as a normalized internal timestamp for ordering compatibility, but
+  `confirmation_business_date` is authoritative. API and MCP output include
+  `confirmed_at_precision=DATE_ONLY`, `confirmed_at_is_exact=false`, and a
+  `confirmed_at_display` containing only the date. User-facing reports must use the
+  display value and must not describe the normalized timestamp as a sourced time.
+
+Existing API and MCP clients that omit precision retain the old contract: precision
+defaults to `EXACT` and `confirmed_at` remains required. A new date-level confirmation
+must explicitly pass `DATE_ONLY`; it may omit `confirmed_at`, in which case Core creates
+the normalized internal value. Migration classifies pre-v0.31.4 rows and CONFIRM drafts
+as `EXACT` for backward compatibility. This is not an inference from a midnight value and
+does not prove that every historical source exposed time-of-day precision.
+
+## Uncommitted confirmation draft revision
+
+`POST /v1/external-subscription-confirmation-drafts/{draft_id}/revise` and MCP tool
+`external_subscription_confirmation_draft_revise` revise only an uncommitted CONFIRM
+draft whose state is `PENDING` or `EXPIRED`. The request must carry the latest
+`expected_payload_hash`. Omitted confirmation fields retain their current values, so a
+precision-only correction can pass only `DATE_ONLY`; supplied fields still undergo the
+complete timestamp, amount/share, subscription-state and business-date validation.
+
+The transaction preserves `draft_id`, `subscription_id`, `idempotency_key` and the saved
+external reference. Account, fund and plan identity continue to come from that immutable
+subscription. A successful revision replaces payload and hash, increments
+`revision_count`, records `revised_at` plus old-to-new hash audit evidence, rotates the
+confirmation digest and returns one new 24-hour credential. The previous token fails
+immediately. A stale expected hash, committed draft, wrong action, invalid payload or
+concurrent loser is rejected. A no-op revision is also rejected so revision cannot be
+used as an implicit renewal operation.
+
+Revision creates no confirmation, transaction, holding, cash or plan-execution fact.
+The caller must show the revised business preview and obtain a fresh explicit user
+confirmation before calling the existing commit operation.
+
 ## Cash and holding semantics
 
 Amounts use integer minor currency units. NAV and shares use integer millionths. The
@@ -75,3 +118,12 @@ export and explicit operator decision; it is not an automatic data-preserving ro
 Migration `0031_external_subscription_draft_renewal` adds only nullable `renewed_at` and
 non-negative `renewal_count` audit fields. Existing drafts retain their IDs, payloads,
 digests, expiries and stored statuses; the read API derives expiry without rewriting them.
+
+Migration `0032_confirmation_time_precision_revision` adds precision to committed
+confirmations and adds precision, `revised_at` and non-negative `revision_count` to
+drafts. It adds the backward-compatible `EXACT` field to existing CONFIRM payloads and
+recomputes their payload hashes, while preserving draft IDs, idempotency keys, tokens,
+expiries and commit state. Clients must read the post-upgrade draft before revision and
+use its current hash. Downgrade removes structured precision and revision audit columns;
+it cannot preserve a `DATE_ONLY` distinction, so production downgrade requires an
+explicit operator decision.

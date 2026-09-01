@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -618,6 +619,316 @@ def test_external_subscription_ttl_is_configurable_without_extending_existing_dr
     assert datetime.fromisoformat(
         str(created["draft"]["expires_at"]).replace("Z", "+00:00")
     ) == clock[0] + timedelta(hours=1)
+
+
+def test_exact_and_date_only_confirmation_precision_contract(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    _, _, service, portfolio_id, account_id, plan = frozen_plan(database_path)
+    first_subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+        amount="50.00",
+        key="precision-submit-one",
+    )
+    exact = service.create_confirmation_draft(
+        subscription_id=str(first_subscription["id"]),
+        confirmed_at="2026-07-22T18:30:00+08:00",
+        confirmed_at_precision="EXACT",
+        confirmation_business_date="2026-07-22",
+        nav_date="2026-07-22",
+        nav="1.000000",
+        confirmed_shares="50.000000",
+        confirmed_amount="50.00",
+        fee="0",
+        refunded_amount="0",
+        idempotency_key="precision-exact",
+    )
+    exact_result = service.commit_draft(
+        draft_id=str(exact["draft"]["id"]),
+        confirmation_token=str(exact["confirmation_token"]),
+        confirmed_by="test-user",
+    )["subscription"]["confirmations"][0]
+    assert exact_result["confirmed_at_precision"] == "EXACT"
+    assert exact_result["confirmed_at_is_exact"] is True
+    assert exact_result["confirmed_at_display"] == "2026-07-22T10:30:00Z"
+
+    _, _, second_service, second_portfolio, second_account, second_plan = frozen_plan(
+        tmp_path / "date-only.db"
+    )
+    second_subscription = submit(
+        second_service,
+        portfolio_id=second_portfolio,
+        account_id=second_account,
+        plan_id=str(second_plan["id"]),
+        key="precision-submit-two",
+    )
+    date_only = second_service.create_confirmation_draft(
+        subscription_id=str(second_subscription["id"]),
+        confirmed_at=None,
+        confirmed_at_precision="DATE_ONLY",
+        confirmation_business_date="2026-07-22",
+        nav_date="2026-07-22",
+        nav="1.000000",
+        confirmed_shares="100.000000",
+        confirmed_amount="100.00",
+        fee="0",
+        refunded_amount="0",
+        idempotency_key="precision-date-only",
+    )
+    assert date_only["draft"]["payload"]["confirmed_at"] == "2026-07-21T16:00:00Z"
+    date_only_result = second_service.commit_draft(
+        draft_id=str(date_only["draft"]["id"]),
+        confirmation_token=str(date_only["confirmation_token"]),
+        confirmed_by="test-user",
+    )["subscription"]["confirmations"][0]
+    assert date_only_result["confirmed_at_precision"] == "DATE_ONLY"
+    assert date_only_result["confirmed_at_is_exact"] is False
+    assert date_only_result["confirmed_at_display"] == "2026-07-22"
+    assert ":" not in date_only_result["confirmed_at_display"]
+    assert date_only_result["confirmed_at"] == "2026-07-21T16:00:00Z"
+    report_item = second_service.summary(
+        portfolio_id=second_portfolio,
+        account_id=second_account,
+        as_of_date=datetime(2026, 8, 7, tzinfo=UTC).date(),
+    )["items"][0]["confirmations"][0]
+    assert report_item["confirmed_at_precision"] == "DATE_ONLY"
+    assert report_item["confirmed_at_display"] == "2026-07-22"
+    assert ":" not in report_item["confirmed_at_display"]
+
+
+def test_confirmation_precision_rejects_false_or_mismatched_exact_time(
+    tmp_path: Path,
+) -> None:
+    _, _, service, portfolio_id, account_id, plan = frozen_plan(tmp_path / "investor.db")
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+    )
+    with pytest.raises(LedgerError) as exact_mismatch:
+        service.create_confirmation_draft(
+            subscription_id=str(subscription["id"]),
+            confirmed_at="2026-07-23T00:01:00+08:00",
+            confirmed_at_precision="EXACT",
+            confirmation_business_date="2026-07-22",
+            nav_date="2026-07-22",
+            nav="1",
+            confirmed_shares="100",
+            confirmed_amount="100",
+            fee="0",
+            refunded_amount="0",
+            idempotency_key="precision-exact-mismatch",
+        )
+    assert exact_mismatch.value.code == "CONFIRMED_AT_DATE_MISMATCH"
+    with pytest.raises(LedgerError) as false_time:
+        service.create_confirmation_draft(
+            subscription_id=str(subscription["id"]),
+            confirmed_at="2026-07-22T09:30:00+08:00",
+            confirmed_at_precision="DATE_ONLY",
+            confirmation_business_date="2026-07-22",
+            nav_date="2026-07-22",
+            nav="1",
+            confirmed_shares="100",
+            confirmed_amount="100",
+            fee="0",
+            refunded_amount="0",
+            idempotency_key="precision-date-only-false-time",
+        )
+    assert false_time.value.code == "DATE_ONLY_TIMESTAMP_NOT_NORMALIZED"
+
+
+@pytest.mark.parametrize("expired", [False, True])
+def test_uncommitted_confirmation_draft_revises_precision_in_place(
+    tmp_path: Path,
+    expired: bool,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    _, planning, service, portfolio_id, account_id, plan = frozen_plan(database_path)
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+    )
+    clock = [datetime(2026, 8, 20, tzinfo=UTC)]
+    governed = SubscriptionService(planning.settings, now=lambda: clock[0])
+    created = governed.create_confirmation_draft(
+        subscription_id=str(subscription["id"]),
+        confirmed_at="2026-08-20T00:00:00+08:00",
+        confirmed_at_precision="EXACT",
+        confirmation_business_date="2026-08-20",
+        nav_date="2026-08-20",
+        nav="1.000000",
+        confirmed_shares="100.000000",
+        confirmed_amount="100.00",
+        fee="0",
+        refunded_amount="0",
+        external_reference="immutable-order-reference",
+        idempotency_key=f"revise-precision-{expired}",
+    )
+    original = created["draft"]
+    original_token = str(created["confirmation_token"])
+    if expired:
+        clock[0] += timedelta(days=2)
+        assert governed.get_draft(draft_id=str(original["id"]))["status"] == "EXPIRED"
+    before = _business_fact_counts(database_path)
+
+    revised = governed.revise_confirmation_draft(
+        draft_id=str(original["id"]),
+        expected_payload_hash=str(original["payload_hash"]),
+        confirmed_at_precision="DATE_ONLY",
+        actor_ref="test-user",
+    )
+
+    assert revised["draft"]["id"] == original["id"]
+    assert revised["draft"]["subscription_id"] == original["subscription_id"]
+    assert revised["draft"]["idempotency_key"] == original["idempotency_key"]
+    assert revised["draft"]["payload_hash"] != original["payload_hash"]
+    assert revised["draft"]["revision_count"] == 1
+    assert revised["draft"]["revised_at"] is not None
+    assert revised["draft"]["status"] == "PENDING"
+    assert revised["changed_fields"] == ["confirmed_at_precision"]
+    assert revised["draft"]["payload"]["external_reference"] == (
+        "immutable-order-reference"
+    )
+    assert revised["business_facts_created"] is False
+    assert _business_fact_counts(database_path) == before
+    with sqlite3.connect(database_path) as connection:
+        revision_audit = json.loads(
+            connection.execute(
+                """
+                SELECT details_json FROM audit_events
+                WHERE entity_id=?
+                  AND action='EXTERNAL_SUBSCRIPTION_CONFIRMATION_DRAFT_REVISED'
+                """,
+                (original["id"],),
+            ).fetchone()[0]
+        )
+    assert revision_audit["old_payload_hash"] == original["payload_hash"]
+    assert revision_audit["new_payload_hash"] == revised["draft"]["payload_hash"]
+    assert revision_audit["confirmed_at_precision"] == "DATE_ONLY"
+    with pytest.raises(LedgerError) as stale:
+        governed.commit_draft(
+            draft_id=str(original["id"]),
+            confirmation_token=original_token,
+            confirmed_by="test-user",
+        )
+    assert stale.value.code == "INVALID_CONFIRMATION_TOKEN"
+
+    committed = governed.commit_draft(
+        draft_id=str(original["id"]),
+        confirmation_token=str(revised["confirmation_token"]),
+        confirmed_by="test-user",
+    )["subscription"]["confirmations"][0]
+    assert committed["confirmed_at_precision"] == "DATE_ONLY"
+    assert committed["confirmed_at_display"] == "2026-08-20"
+    with sqlite3.connect(database_path) as connection:
+        commit_audit = json.loads(
+            connection.execute(
+                """
+                SELECT details_json FROM audit_events
+                WHERE action='EXTERNAL_SUBSCRIPTION_CONFIRM_COMMITTED'
+                ORDER BY occurred_at DESC LIMIT 1
+                """
+            ).fetchone()[0]
+        )
+    assert commit_audit["confirmed_at_precision"] == "DATE_ONLY"
+    assert commit_audit["confirmation_business_date"] == "2026-08-20"
+    assert commit_audit["confirmed_at"] is None
+
+
+def test_confirmation_draft_revision_guards_hash_commit_and_concurrency(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    _, planning, service, portfolio_id, account_id, plan = frozen_plan(database_path)
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+    )
+    created = service.create_confirmation_draft(
+        subscription_id=str(subscription["id"]),
+        confirmed_at="2026-07-22T00:00:00+08:00",
+        confirmed_at_precision="EXACT",
+        confirmation_business_date="2026-07-22",
+        nav_date="2026-07-22",
+        nav="1",
+        confirmed_shares="100",
+        confirmed_amount="100",
+        fee="0",
+        refunded_amount="0",
+        idempotency_key="revise-guards",
+    )
+    with pytest.raises(LedgerError) as mismatch:
+        service.revise_confirmation_draft(
+            draft_id=str(created["draft"]["id"]),
+            expected_payload_hash="0" * 64,
+            confirmed_at_precision="DATE_ONLY",
+        )
+    assert mismatch.value.code == "DRAFT_PAYLOAD_HASH_MISMATCH"
+    with pytest.raises(LedgerError) as invalid_dates:
+        service.revise_confirmation_draft(
+            draft_id=str(created["draft"]["id"]),
+            expected_payload_hash=str(created["draft"]["payload_hash"]),
+            confirmed_at_precision="DATE_ONLY",
+            confirmation_business_date="2026-07-20",
+            nav_date="2026-07-20",
+        )
+    assert invalid_dates.value.code == "INVALID_CONFIRMATION_DATES"
+
+    barrier = Barrier(2)
+
+    def attempt() -> JsonDict | str:
+        concurrent = SubscriptionService(planning.settings)
+        barrier.wait()
+        try:
+            return concurrent.revise_confirmation_draft(
+                draft_id=str(created["draft"]["id"]),
+                expected_payload_hash=str(created["draft"]["payload_hash"]),
+                confirmed_at_precision="DATE_ONLY",
+            )
+        except LedgerError as exc:
+            return exc.code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _index: attempt(), range(2)))
+    assert len([result for result in results if isinstance(result, dict)]) == 1
+    assert [result for result in results if isinstance(result, str)] == [
+        "DRAFT_PAYLOAD_HASH_MISMATCH"
+    ]
+
+    current = service.get_draft(draft_id=str(created["draft"]["id"]))
+    with pytest.raises(LedgerError) as no_changes:
+        service.revise_confirmation_draft(
+            draft_id=str(current["id"]),
+            expected_payload_hash=str(current["payload_hash"]),
+            confirmed_at_precision="DATE_ONLY",
+        )
+    assert no_changes.value.code == "DRAFT_REVISION_NO_CHANGES"
+    committed = service.commit_draft(
+        draft_id=str(current["id"]),
+        confirmation_token=str(
+            next(
+                result["confirmation_token"]
+                for result in results
+                if isinstance(result, dict)
+            )
+        ),
+        confirmed_by="test-user",
+    )
+    assert committed["subscription"]["status"] == "CONFIRMED"
+    with pytest.raises(LedgerError) as already_committed:
+        service.revise_confirmation_draft(
+            draft_id=str(current["id"]),
+            expected_payload_hash=str(current["payload_hash"]),
+            confirmed_at_precision="EXACT",
+        )
+    assert already_committed.value.code == "DRAFT_ALREADY_COMMITTED"
 
 
 def test_expected_date_only_marks_review_and_never_infers_failure(tmp_path: Path) -> None:

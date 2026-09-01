@@ -2543,13 +2543,14 @@ async def external_subscription_status_draft_create(
 @mcp.tool()
 async def external_subscription_confirmation_draft_create(
     subscription_id: str,
-    confirmed_at: str,
     confirmation_business_date: str,
     nav_date: str,
     nav: str,
     confirmed_shares: str,
     confirmed_amount: str,
     idempotency_key: str,
+    confirmed_at: str = "",
+    confirmed_at_precision: Literal["EXACT", "DATE_ONLY"] = "EXACT",
     fee: str = "0",
     refunded_amount: str = "0",
     external_reference: str = "",
@@ -2559,7 +2560,8 @@ async def external_subscription_confirmation_draft_create(
         "POST",
         f"/v1/external-subscriptions/{subscription_id}/confirmation-drafts",
         payload={
-            "confirmed_at": confirmed_at,
+            "confirmed_at": confirmed_at or None,
+            "confirmed_at_precision": confirmed_at_precision,
             "confirmation_business_date": confirmation_business_date,
             "nav_date": nav_date,
             "nav": nav,
@@ -2587,6 +2589,40 @@ async def external_subscription_draft_renew(draft_id: str) -> dict[str, Any]:
         "POST",
         f"/v1/external-subscription-drafts/{draft_id}/renew",
         payload={"actor_ref": "hermes"},
+    )
+
+
+@mcp.tool()
+async def external_subscription_confirmation_draft_revise(
+    draft_id: str,
+    expected_payload_hash: str,
+    confirmed_at_precision: Literal["EXACT", "DATE_ONLY"],
+    confirmed_at: str = "",
+    confirmation_business_date: str = "",
+    nav_date: str = "",
+    nav: str = "",
+    confirmed_shares: str = "",
+    confirmed_amount: str = "",
+    fee: str = "",
+    refunded_amount: str = "",
+) -> dict[str, Any]:
+    """Revise one uncommitted confirmation draft in place; create no financial fact."""
+    return await core_request(
+        "POST",
+        f"/v1/external-subscription-confirmation-drafts/{draft_id}/revise",
+        payload={
+            "expected_payload_hash": expected_payload_hash,
+            "confirmed_at_precision": confirmed_at_precision,
+            "confirmed_at": confirmed_at or None,
+            "confirmation_business_date": confirmation_business_date or None,
+            "nav_date": nav_date or None,
+            "nav": nav or None,
+            "confirmed_shares": confirmed_shares or None,
+            "confirmed_amount": confirmed_amount or None,
+            "fee": fee or None,
+            "refunded_amount": refunded_amount or None,
+            "actor_ref": "hermes",
+        },
     )
 
 
