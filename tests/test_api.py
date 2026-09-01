@@ -4,6 +4,7 @@ from pathlib import Path
 
 from conftest import migrate_database
 from fastapi.testclient import TestClient
+from test_subscriptions import frozen_plan, submit
 
 from investor_core.api.app import create_app
 from investor_core.config import Environment, Settings
@@ -481,3 +482,61 @@ def test_opening_position_api_requires_exactly_one_cost_basis(tmp_path: Path) ->
 
     assert missing.status_code == 422
     assert both.status_code == 422
+
+
+def test_confirmation_date_only_create_and_revision_api_contract(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    _, planning, service, portfolio_id, account_id, plan = frozen_plan(database_path)
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+    )
+    client = TestClient(create_app(planning.settings))
+
+    date_only_response = client.post(
+        f"/v1/external-subscriptions/{subscription['id']}/confirmation-drafts",
+        json={
+            "confirmed_at_precision": "DATE_ONLY",
+            "confirmation_business_date": "2026-07-22",
+            "nav_date": "2026-07-22",
+            "nav": "1",
+            "confirmed_shares": "100",
+            "confirmed_amount": "100",
+            "fee": "0",
+            "refunded_amount": "0",
+            "idempotency_key": "api-date-only-create",
+        },
+    )
+    assert date_only_response.status_code == 200
+    date_only_draft = date_only_response.json()["data"]["draft"]
+    assert date_only_draft["payload"]["confirmed_at_precision"] == "DATE_ONLY"
+    assert date_only_draft["payload"]["confirmed_at"] == "2026-07-21T16:00:00Z"
+
+    exact = service.create_confirmation_draft(
+        subscription_id=str(subscription["id"]),
+        confirmed_at="2026-07-22T00:00:00+08:00",
+        confirmation_business_date="2026-07-22",
+        nav_date="2026-07-22",
+        nav="1",
+        confirmed_shares="100",
+        confirmed_amount="100",
+        fee="0",
+        refunded_amount="0",
+        idempotency_key="api-revise-existing",
+    )
+    revised_response = client.post(
+        "/v1/external-subscription-confirmation-drafts/"
+        f"{exact['draft']['id']}/revise",
+        json={
+            "expected_payload_hash": exact["draft"]["payload_hash"],
+            "confirmed_at_precision": "DATE_ONLY",
+        },
+    )
+    assert revised_response.status_code == 200
+    revised = revised_response.json()["data"]
+    assert revised["draft"]["id"] == exact["draft"]["id"]
+    assert revised["draft"]["idempotency_key"] == exact["draft"]["idempotency_key"]
+    assert revised["changed_fields"] == ["confirmed_at_precision"]
+    assert revised["business_facts_created"] is False

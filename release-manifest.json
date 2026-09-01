@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.31.3",
+  "version": "0.31.4",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
-  "database_revision": "0031_external_subscription_draft_renewal",
+  "database_revision": "0032_confirmation_time_precision_revision",
   "minimum_current_version": "0.5.3",
-  "notes": "Add explicit, audited and concurrency-safe renewal for expired uncommitted external subscription drafts, derive EXPIRED status on reads, and use a configurable 24-hour default TTL for SUBMIT and CONFIRM drafts; renewal creates no subscription or financial fact."
+  "notes": "Represent exact versus date-only external subscription confirmation time without false precision, and add an atomic audited revision workflow for uncommitted confirmation drafts while preserving draft identity and creating no financial fact."
 }

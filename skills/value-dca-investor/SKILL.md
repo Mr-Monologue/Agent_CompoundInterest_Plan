@@ -146,6 +146,23 @@ lifecycle. Show the unchanged subscription details again and obtain the required
 confirmation before calling `external_subscription_draft_commit`. For an active or committed
 draft, obey the Core rejection and do not attempt renewal.
 
+For a platform confirmation source, use `confirmed_at_precision="EXACT"` only when the source
+actually exposes a timezone-aware time of day. Its business-timezone date must match the supplied
+confirmation date. When the source exposes only a date, use
+`confirmed_at_precision="DATE_ONLY"` and omit `confirmed_at`; never invent midnight and describe
+it as a real confirmation time. For `DATE_ONLY`, show only `confirmation_business_date` or the
+Core-provided `confirmed_at_display`, never the normalized internal timestamp.
+
+Draft revision is separate from creation, renewal, and commit. When the user corrects an
+uncommitted CONFIRM draft, first read it with `external_subscription_draft_get`, then call
+`external_subscription_confirmation_draft_revise` with the returned payload hash and only the
+fields the user actually corrected. Omitted facts remain unchanged. Never use a new idempotency
+key, change the subscription or external order reference, or use revision as token renewal. A
+successful revision creates no confirmation or financial fact; retain its new token only in the
+current interaction, show the revised date, precision, amount, fee, shares, NAV, and NAV date in
+plain language, then require a fresh explicit confirmation before commit. If Core reports a stale
+hash or concurrent revision, read the draft again and do not overwrite it automatically.
+
 For `strategy_instrument_config_draft_create`, omitted optional values keep their current setting.
 To clear a nullable value, put its exact field name in `clear_fields`; never send an empty/default
 value and claim it was cleared. The draft preview must show the resulting null or empty governed

@@ -603,7 +603,8 @@ class ExternalSubscriptionStatusDraftRequest(RequestModel):
 
 
 class ExternalSubscriptionConfirmationDraftRequest(RequestModel):
-    confirmed_at: datetime
+    confirmed_at: datetime | None = None
+    confirmed_at_precision: Literal["EXACT", "DATE_ONLY"] = "EXACT"
     confirmation_business_date: date
     nav_date: date
     nav: Decimal = Field(gt=0)
@@ -618,7 +619,9 @@ class ExternalSubscriptionConfirmationDraftRequest(RequestModel):
 
     @model_validator(mode="after")
     def validate_confirmation_time(self) -> Self:
-        if self.confirmed_at.utcoffset() is None:
+        if self.confirmed_at_precision == "EXACT" and self.confirmed_at is None:
+            raise ValueError("confirmed_at is required when precision is EXACT")
+        if self.confirmed_at is not None and self.confirmed_at.utcoffset() is None:
             raise ValueError("confirmed_at must include a timezone")
         return self
 
@@ -630,6 +633,26 @@ class ExternalSubscriptionDraftCommitRequest(RequestModel):
 
 class ExternalSubscriptionDraftRenewRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class ExternalSubscriptionConfirmationDraftReviseRequest(RequestModel):
+    expected_payload_hash: str = Field(min_length=64, max_length=64)
+    confirmed_at_precision: Literal["EXACT", "DATE_ONLY"]
+    confirmed_at: datetime | None = None
+    confirmation_business_date: date | None = None
+    nav_date: date | None = None
+    nav: Decimal | None = Field(default=None, gt=0)
+    confirmed_shares: Decimal | None = Field(default=None, gt=0)
+    confirmed_amount: Decimal | None = Field(default=None, gt=0)
+    fee: Decimal | None = Field(default=None, ge=0)
+    refunded_amount: Decimal | None = Field(default=None, ge=0)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def validate_revised_confirmation_time(self) -> Self:
+        if self.confirmed_at is not None and self.confirmed_at.utcoffset() is None:
+            raise ValueError("confirmed_at must include a timezone")
+        return self
 
 
 class ExternalSubscriptionConfirmationReversalDraftRequest(RequestModel):
