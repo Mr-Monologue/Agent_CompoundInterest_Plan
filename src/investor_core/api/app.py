@@ -16,6 +16,7 @@ from investor_core.api.schemas import (
     AutomationSchedulerSnapshotRequest,
     CashEventDraftCreateRequest,
     ExternalSubscriptionConfirmationDraftRequest,
+    ExternalSubscriptionConfirmationDraftReviseRequest,
     ExternalSubscriptionConfirmationReversalDraftRequest,
     ExternalSubscriptionDraftCommitRequest,
     ExternalSubscriptionDraftRenewRequest,
@@ -1461,7 +1462,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return success(
             subscriptions.create_confirmation_draft(
                 subscription_id=subscription_id,
-                confirmed_at=request.confirmed_at.isoformat(),
+                confirmed_at=(
+                    request.confirmed_at.isoformat() if request.confirmed_at else None
+                ),
+                confirmed_at_precision=request.confirmed_at_precision,
                 confirmation_business_date=(
                     request.confirmation_business_date.isoformat()
                 ),
@@ -1490,6 +1494,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return success(
             subscriptions.renew_draft(
                 draft_id=draft_id,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post(
+        "/v1/external-subscription-confirmation-drafts/{draft_id}/revise"
+    )
+    def external_subscription_confirmation_draft_revise(
+        draft_id: str,
+        request: ExternalSubscriptionConfirmationDraftReviseRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.revise_confirmation_draft(
+                draft_id=draft_id,
+                expected_payload_hash=request.expected_payload_hash,
+                confirmed_at_precision=request.confirmed_at_precision,
+                confirmed_at=(
+                    request.confirmed_at.isoformat() if request.confirmed_at else None
+                ),
+                confirmation_business_date=(
+                    request.confirmation_business_date.isoformat()
+                    if request.confirmation_business_date
+                    else None
+                ),
+                nav_date=request.nav_date.isoformat() if request.nav_date else None,
+                nav=str(request.nav) if request.nav is not None else None,
+                confirmed_shares=(
+                    str(request.confirmed_shares)
+                    if request.confirmed_shares is not None
+                    else None
+                ),
+                confirmed_amount=(
+                    str(request.confirmed_amount)
+                    if request.confirmed_amount is not None
+                    else None
+                ),
+                fee=str(request.fee) if request.fee is not None else None,
+                refunded_amount=(
+                    str(request.refunded_amount)
+                    if request.refunded_amount is not None
+                    else None
+                ),
                 actor_ref=request.actor_ref,
             )
         )

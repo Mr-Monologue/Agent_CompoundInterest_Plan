@@ -130,6 +130,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "external_subscription_confirmation_draft_create",
         "external_subscription_draft_get",
         "external_subscription_draft_renew",
+        "external_subscription_confirmation_draft_revise",
         "external_subscription_confirmation_reversal_draft_create",
         "external_subscription_draft_commit",
         "external_subscription_list",
@@ -151,10 +152,13 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         for tool in tools
         if tool.name.startswith("external_subscription_")
     }
-    assert len(subscription_tools) == 11
+    assert len(subscription_tools) == 12
     assert "never place an order" in subscription_tools["external_subscription_draft_create"]
     assert "create no subscription or financial fact" in subscription_tools[
         "external_subscription_draft_renew"
+    ]
+    assert "create no financial fact" in subscription_tools[
+        "external_subscription_confirmation_draft_revise"
     ]
     assert "never trade" in subscription_tools[
         "external_subscription_transaction_draft_create"
@@ -193,6 +197,54 @@ def test_external_subscription_draft_renew_calls_exact_core_endpoint(monkeypatch
             "POST",
             "/v1/external-subscription-drafts/draft-1/renew",
             {"actor_ref": "hermes"},
+        )
+    ]
+
+
+def test_external_subscription_confirmation_revision_calls_exact_core_endpoint(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        del params
+        calls.append((method, path, payload))
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+
+    result = asyncio.run(
+        server.external_subscription_confirmation_draft_revise(
+            draft_id="draft-1",
+            expected_payload_hash="a" * 64,
+            confirmed_at_precision="DATE_ONLY",
+        )
+    )
+
+    assert result["ok"] is True
+    assert calls == [
+        (
+            "POST",
+            "/v1/external-subscription-confirmation-drafts/draft-1/revise",
+            {
+                "expected_payload_hash": "a" * 64,
+                "confirmed_at_precision": "DATE_ONLY",
+                "confirmed_at": None,
+                "confirmation_business_date": None,
+                "nav_date": None,
+                "nav": None,
+                "confirmed_shares": None,
+                "confirmed_amount": None,
+                "fee": None,
+                "refunded_amount": None,
+                "actor_ref": "hermes",
+            },
         )
     ]
 
