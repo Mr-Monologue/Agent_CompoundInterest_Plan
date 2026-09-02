@@ -352,11 +352,14 @@ catch {
                 if ($LASTEXITCODE -ne 0) { throw "rollback diagnostics failed" }
 
                 $ProfilePath = Join-Path $env:LOCALAPPDATA "hermes\profiles\$HermesProfile"
-                $SkillSource = Join-Path $InstallDir "skills\value-dca-investor"
-                $SkillTarget = Join-Path $ProfilePath "skills\value-dca-investor"
-                if ((Test-Path $ProfilePath) -and (Test-Path $SkillSource)) {
-                    New-Item -ItemType Directory -Force $SkillTarget | Out-Null
-                    Copy-Item (Join-Path $SkillSource "*") $SkillTarget -Recurse -Force
+                $SkillNames = @("value-dca-investor", "investor-core-operations")
+                foreach ($SkillName in $SkillNames) {
+                    $SkillSource = Join-Path $InstallDir "skills\$SkillName"
+                    $SkillTarget = Join-Path $ProfilePath "skills\$SkillName"
+                    if ((Test-Path $ProfilePath) -and (Test-Path $SkillSource)) {
+                        New-Item -ItemType Directory -Force $SkillTarget | Out-Null
+                        Copy-Item (Join-Path $SkillSource "*") $SkillTarget -Recurse -Force
+                    }
                 }
             }
             finally {

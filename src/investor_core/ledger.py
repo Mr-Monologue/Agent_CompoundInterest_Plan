@@ -186,9 +186,7 @@ class LedgerService:
 
     @staticmethod
     def _instrument_registration_column(connection: sqlite3.Connection) -> str:
-        columns = {
-            str(row[1]) for row in connection.execute("PRAGMA table_info(instruments)")
-        }
+        columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(instruments)")}
         return "registration_role" if "registration_role" in columns else "role"
 
     @staticmethod
@@ -252,9 +250,7 @@ class LedgerService:
         )
 
     @staticmethod
-    def _context_payload(
-        portfolio: sqlite3.Row, account: sqlite3.Row, *, source: str
-    ) -> JsonDict:
+    def _context_payload(portfolio: sqlite3.Row, account: sqlite3.Row, *, source: str) -> JsonDict:
         return {
             "portfolio": {
                 "id": str(portfolio["id"]),
@@ -358,12 +354,8 @@ class LedgerService:
             ).fetchone()
             if assignment is not None:
                 try:
-                    instance_config = json.loads(
-                        str(assignment["instance_config_json"])
-                    )
-                    version_parameters = json.loads(
-                        str(assignment["parameters_json"])
-                    )
+                    instance_config = json.loads(str(assignment["instance_config_json"]))
+                    version_parameters = json.loads(str(assignment["parameters_json"]))
                     policy = instance_config.get(
                         "allocation_policy",
                         version_parameters,
@@ -1181,21 +1173,15 @@ class LedgerService:
                 row["origin_reference_id"] if "origin_reference_id" in row_keys else None
             ),
             "revised_at": row["revised_at"] if "revised_at" in row_keys else None,
-            "revision_count": (
-                int(row["revision_count"]) if "revision_count" in row_keys else 0
-            ),
+            "revision_count": (int(row["revision_count"]) if "revision_count" in row_keys else 0),
         }
         if row["action"] == "OPENING":
             result.update(
                 {
                     "as_of_date": row["trade_date"],
                     "cost_amount": _format_scaled(int(row["amount_minor"]), 100, 2),
-                    "average_cost_nav": _format_scaled(
-                        int(row["nav_micros"]), 1_000_000, 6
-                    ),
-                    "total_shares": _format_scaled(
-                        int(row["shares_micros"]), 1_000_000, 6
-                    ),
+                    "average_cost_nav": _format_scaled(int(row["nav_micros"]), 1_000_000, 6),
+                    "total_shares": _format_scaled(int(row["shares_micros"]), 1_000_000, 6),
                 }
             )
         return result
@@ -1235,9 +1221,7 @@ class LedgerService:
         normalized_platform = platform.strip()
         normalized_key = idempotency_key.strip()
         if not normalized_platform or not normalized_key:
-            raise LedgerError(
-                "MISSING_REQUIRED_FIELD", "platform and idempotency_key are required"
-            )
+            raise LedgerError("MISSING_REQUIRED_FIELD", "platform and idempotency_key are required")
 
         amount_minor = _scaled_decimal(amount, 100, "amount")
         consistency_amount_minor = (
@@ -1357,12 +1341,8 @@ class LedgerService:
                             "sell draft exceeds the currently recorded shares",
                             http_status=409,
                             details={
-                                "available_shares": _format_scaled(
-                                    available_shares, 1_000_000, 6
-                                ),
-                                "requested_shares": _format_scaled(
-                                    shares_micros, 1_000_000, 6
-                                ),
+                                "available_shares": _format_scaled(available_shares, 1_000_000, 6),
+                                "requested_shares": _format_scaled(shares_micros, 1_000_000, 6),
                             },
                         ),
                     )
@@ -1585,9 +1565,7 @@ class LedgerService:
         normalized_platform = platform.strip()
         normalized_key = idempotency_key.strip()
         if not normalized_platform or not normalized_key:
-            raise LedgerError(
-                "MISSING_REQUIRED_FIELD", "platform and idempotency_key are required"
-            )
+            raise LedgerError("MISSING_REQUIRED_FIELD", "platform and idempotency_key are required")
 
         total_shares_micros = _scaled_decimal(total_shares, 1_000_000, "total_shares")
         normalized_cost_amount = (cost_amount or "").strip()
@@ -1603,9 +1581,7 @@ class LedgerService:
             "verified by Investor Core"
         ]
         if normalized_cost_amount:
-            cost_amount_minor = _scaled_decimal(
-                normalized_cost_amount, 100, "cost_amount"
-            )
+            cost_amount_minor = _scaled_decimal(normalized_cost_amount, 100, "cost_amount")
             average_cost_nav_micros = _round_div(
                 cost_amount_minor * 10_000_000_000, total_shares_micros
             )
@@ -1691,7 +1667,7 @@ class LedgerService:
                     "warnings": [
                         *warnings,
                         "Duplicate request reused the existing opening-position draft; "
-                        "use its original token"
+                        "use its original token",
                     ],
                 }
 
@@ -1950,12 +1926,8 @@ class LedgerService:
                 {
                     "as_of_date": row["trade_date"],
                     "cost_amount": _format_scaled(int(row["amount_minor"]), 100, 2),
-                    "average_cost_nav": _format_scaled(
-                        int(row["nav_micros"]), 1_000_000, 6
-                    ),
-                    "total_shares": _format_scaled(
-                        int(row["shares_micros"]), 1_000_000, 6
-                    ),
+                    "average_cost_nav": _format_scaled(int(row["nav_micros"]), 1_000_000, 6),
+                    "total_shares": _format_scaled(int(row["shares_micros"]), 1_000_000, 6),
                 }
             )
         return result
@@ -2115,9 +2087,7 @@ class LedgerService:
                     ),
                 )
             draft_keys = set(draft.keys())
-            draft_origin = (
-                str(draft["origin"]) if "origin" in draft_keys else "GENERIC"
-            )
+            draft_origin = str(draft["origin"]) if "origin" in draft_keys else "GENERIC"
             if draft_origin == "EXTERNAL_SUBSCRIPTION" and not allow_external_subscription:
                 self._rollback_and_raise(
                     connection,
@@ -2187,10 +2157,14 @@ class LedgerService:
             if draft["action"] == "REVERSAL":
                 original_id = str(draft["reversal_of_transaction_id"])
                 original = self._transaction_row(connection, original_id)
-                if original["kind"] not in {
-                    "TRADE",
-                    "OPENING",
-                } or original["reversed_by_transaction_id"]:
+                if (
+                    original["kind"]
+                    not in {
+                        "TRADE",
+                        "OPENING",
+                    }
+                    or original["reversed_by_transaction_id"]
+                ):
                     self._rollback_and_raise(
                         connection,
                         LedgerError(
@@ -2426,8 +2400,14 @@ class LedgerService:
                         connection.execute(
                             """
                             UPDATE investment_plans
-                            SET status = 'PARTIALLY_EXECUTED', executed_at = NULL, updated_at = ?
-                            WHERE id = ? AND status IN ('PARTIALLY_EXECUTED','EXECUTED')
+                            SET status = 'PARTIALLY_EXECUTED', executed_at = NULL,
+                                closed_at = NULL, closure_business_date = NULL,
+                                closure_reason_code = NULL, closure_note = NULL,
+                                abandoned_amount_minor = NULL, carry_forward = NULL,
+                                updated_at = ?
+                            WHERE id = ? AND status IN (
+                                'PARTIALLY_EXECUTED','PARTIALLY_EXECUTED_CLOSED','EXECUTED'
+                            )
                             """,
                             (committed_at, plan_id),
                         )
@@ -2504,19 +2484,20 @@ class LedgerService:
         account_id: str,
         instrument_id: str,
     ) -> JsonDict | None:
-        strategy_schema = connection.execute(
-            """
+        strategy_schema = (
+            connection.execute(
+                """
             SELECT COUNT(*) FROM sqlite_master
             WHERE type = 'table' AND name IN (
                 'strategy_assignments', 'strategy_instrument_configs'
             )
             """
-        ).fetchone()[0] == 2
+            ).fetchone()[0]
+            == 2
+        )
         registration_column = self._instrument_registration_column(connection)
         strategy_role_expression = (
-            "COALESCE(sic.role, 'UNASSIGNED')"
-            if strategy_schema
-            else f"i.{registration_column}"
+            "COALESCE(sic.role, 'UNASSIGNED')" if strategy_schema else f"i.{registration_column}"
         )
         strategy_joins = (
             """
@@ -2560,9 +2541,7 @@ class LedgerService:
             "as_of": row["as_of"],
             "total_shares": _format_scaled(int(row["total_shares_micros"]), 1_000_000, 6),
             "cost_amount": _format_scaled(int(row["cost_amount_minor"]), 100, 2),
-            "average_cost_nav": _format_scaled(
-                int(row["average_cost_nav_micros"]), 1_000_000, 6
-            ),
+            "average_cost_nav": _format_scaled(int(row["average_cost_nav_micros"]), 1_000_000, 6),
             "created_at": row["created_at"],
         }
 
@@ -2570,14 +2549,17 @@ class LedgerService:
         self, *, portfolio_id: str | None = None, account_id: str | None = None
     ) -> list[JsonDict]:
         with self._connect() as connection:
-            strategy_schema = connection.execute(
-                """
+            strategy_schema = (
+                connection.execute(
+                    """
                 SELECT COUNT(*) FROM sqlite_master
                 WHERE type = 'table' AND name IN (
                     'strategy_assignments', 'strategy_instrument_configs'
                 )
                 """
-            ).fetchone()[0] == 2
+                ).fetchone()[0]
+                == 2
+            )
             registration_column = self._instrument_registration_column(connection)
             strategy_role_expression = (
                 "COALESCE(sic.role, 'UNASSIGNED')"
