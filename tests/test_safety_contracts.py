@@ -6,6 +6,19 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_versioned_operations_skill_governs_gross_cost_and_partial_closure() -> None:
+    skill = (PROJECT_ROOT / "skills/investor-core-operations/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "actual gross cash paid" in skill
+    assert "Never add or deduct the fee twice" in skill
+    assert "weekly_plan_partial_close_draft_create" in skill
+    assert "weekly_plan_partial_close_draft_commit" in skill
+    assert "PARTIALLY_EXECUTED_CLOSED" in skill
+    assert "Never fabricate execution" in skill
+
+
 def test_skill_has_valid_minimal_frontmatter() -> None:
     skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
     match = re.match(r"^---\n(.*?)\n---\n", skill, re.DOTALL)

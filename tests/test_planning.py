@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -261,9 +263,7 @@ def test_frozen_plan_can_be_skipped_with_fresh_short_lived_confirmation(
     )
     assert close["draft"]["status"] == "PENDING"
     assert close["plan"]["status"] == "FROZEN"
-    assert reconfirming.get_skip_draft(draft_id=str(close["draft"]["id"]))[
-        "status"
-    ] == "PENDING"
+    assert reconfirming.get_skip_draft(draft_id=str(close["draft"]["id"]))["status"] == "PENDING"
 
     with pytest.raises(LedgerError) as mismatch:
         reconfirming.commit_skip_draft(
@@ -364,11 +364,11 @@ def test_plan_accumulates_multiple_buy_records_across_trade_dates(tmp_path: Path
         "instrument_name": partial["items"][0]["instrument_name"],
         "planned_amount": "100.00",
         "executed_amount": "40.00",
-            "remaining_amount": "60.00",
-            "in_flight_amount": "0.00",
-            "unsubmitted_amount": "60.00",
-            "cancelled_or_refunded_amount": "0.00",
-            "excess_amount": "0.00",
+        "remaining_amount": "60.00",
+        "in_flight_amount": "0.00",
+        "unsubmitted_amount": "60.00",
+        "cancelled_or_refunded_amount": "0.00",
+        "excess_amount": "0.00",
         "complete": False,
     }
 
@@ -398,6 +398,207 @@ def test_plan_accumulates_multiple_buy_records_across_trade_dates(tmp_path: Path
     assert completed["execution_progress"]["linked_transaction_count"] == 2
     assert completed["execution_progress"]["executed_amount"] == "100.00"
     assert completed["execution_progress"]["remaining_amount"] == "0.00"
+
+
+def test_partial_plan_closure_preserves_200_170_30_and_releases_commitment(
+    tmp_path: Path,
+) -> None:
+    ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
+    created = planning.create_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        contribution_amount="100.00",
+        plan_date_value="2026-07-20",
+        idempotency_key="weekly-partial-close",
+        as_of_date_value="2026-07-21",
+    )
+    plan_id = str(created["plan"]["id"])
+    planning.freeze(
+        plan_id=plan_id,
+        confirmation_token=str(created["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    with sqlite3.connect(planning.settings.db_path) as connection:
+        connection.execute(
+            "UPDATE investment_plans SET contribution_amount_minor=20000 WHERE id=?",
+            (plan_id,),
+        )
+        connection.execute(
+            """
+            UPDATE plan_items SET base_amount_minor=20000, candidate_amount_minor=20000
+            WHERE plan_revision_id=(
+                SELECT id FROM plan_revisions WHERE plan_id=? AND revision=1
+            ) AND action='CONTRIBUTE'
+            """,
+            (plan_id,),
+        )
+    trade = commit_buy(
+        ledger,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        instrument_code="CORE01",
+        trade_date="2026-07-20",
+        amount="170.00",
+        key="partial-close-buy",
+    )
+    partial = planning.link_transaction(
+        plan_id=plan_id,
+        transaction_id=str(trade["transaction"]["id"]),
+        confirmed_by="test-user",
+    )
+    assert partial["status"] == "PARTIALLY_EXECUTED"
+
+    before_transaction_count = len(
+        ledger.list_transactions(portfolio_id=portfolio_id, account_id=account_id)
+    )
+    draft = planning.create_partial_close_draft(
+        plan_id=plan_id,
+        closure_business_date="2026-07-26",
+        closure_reason_code="PLATFORM_LIMIT_REMAINDER_ABANDONED",
+        closure_note="周期结束; 平台限额导致剩余30元不再执行, 且不结转。",
+        carry_forward=False,
+        idempotency_key="partial-close-governed",
+    )
+    assert draft["draft"]["planned_amount"] == "200.00"
+    assert draft["draft"]["executed_amount"] == "170.00"
+    assert draft["draft"]["abandoned_amount"] == "30.00"
+    assert planning.get(plan_id=plan_id)["status"] == "PARTIALLY_EXECUTED"
+
+    def commit_close() -> JsonDict:
+        return planning.commit_partial_close_draft(
+            draft_id=str(draft["draft"]["id"]),
+            confirmation_token=str(draft["confirmation_token"]),
+            confirmed_by="test-user",
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        close_results = list(pool.map(lambda _index: commit_close(), range(2)))
+    assert sorted(result["idempotent_replay"] for result in close_results) == [False, True]
+    closed = next(result for result in close_results if not result["idempotent_replay"])
+    assert closed["plan"]["status"] == "PARTIALLY_EXECUTED_CLOSED"
+    assert closed["plan"]["state_contract"]["blocks_future_plans"] is False
+    assert closed["plan"]["execution_progress"]["planned_amount"] == "200.00"
+    assert closed["plan"]["execution_progress"]["executed_amount"] == "170.00"
+    assert closed["plan"]["execution_progress"]["remaining_amount"] == "30.00"
+    assert closed["plan"]["execution_progress"]["abandoned_amount"] == "30.00"
+    assert closed["plan"]["execution_progress"]["execution_rate_pct"] == "85.00"
+    assert closed["plan"]["closure"]["carry_forward"] is False
+    assert closed["financial_facts_created"] is False
+    assert len(ledger.list_transactions(portfolio_id=portfolio_id, account_id=account_id)) == (
+        before_transaction_count
+    )
+
+    preview = MarketDataService(planning.settings).weekly_plan_preview(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        contribution_amount="200.00",
+        as_of_date_value="2026-07-21",
+    )
+    assert preview["available"] is True
+    assert preview["plan"]["requested_contribution_amount"] == "200.00"
+    assert preview["plan"]["available_contribution_amount"] == "200.00"
+    assert preview["plan"]["prior_commitments"]["outstanding_amount"] == "0.00"
+
+
+def test_partial_close_expiry_renews_same_draft_and_invalidates_old_token(
+    tmp_path: Path,
+) -> None:
+    ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
+    clock = datetime(2026, 8, 24, 1, 0, tzinfo=UTC)
+    service = PlanningService(planning.settings, now=lambda: clock)
+    created = service.create_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        contribution_amount="100.00",
+        plan_date_value="2026-08-17",
+        idempotency_key="renewable-partial-plan",
+        as_of_date_value="2026-07-21",
+    )
+    plan_id = str(created["plan"]["id"])
+    service.freeze(
+        plan_id=plan_id,
+        confirmation_token=str(created["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    trade = commit_buy(
+        ledger,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        instrument_code="CORE01",
+        trade_date="2026-08-18",
+        amount="40.00",
+        key="renewable-partial-buy",
+    )
+    service.link_transaction(
+        plan_id=plan_id,
+        transaction_id=str(trade["transaction"]["id"]),
+        confirmed_by="test-user",
+    )
+    with sqlite3.connect(planning.settings.db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO external_subscription_drafts (
+                id, action, subscription_id, payload_json, payload_hash, status,
+                idempotency_key, confirmation_digest, expires_at, created_at,
+                committed_at, committed_entity_id, actor_ref
+            ) VALUES (
+                'active-submit-draft', 'SUBMIT', NULL, ?, 'payload-hash', 'PENDING',
+                'active-submit-idempotency', 'digest', ?, ?, NULL, NULL, 'hermes'
+            )
+            """,
+            (
+                f'{{"weekly_plan_id":"{plan_id}"}}',
+                (clock + timedelta(hours=2)).isoformat().replace("+00:00", "Z"),
+                clock.isoformat().replace("+00:00", "Z"),
+            ),
+        )
+    with pytest.raises(LedgerError) as active_draft:
+        service.create_partial_close_draft(
+            plan_id=plan_id,
+            closure_business_date="2026-08-23",
+            closure_reason_code="PERIOD_ENDED_REMAINDER_ABANDONED",
+            closure_note="周期结束, 剩余金额不再执行。",
+            carry_forward=False,
+            idempotency_key="blocked-partial-close",
+        )
+    assert active_draft.value.code == "PLAN_PARTIAL_CLOSE_HAS_ACTIVE_FACTS"
+    with sqlite3.connect(planning.settings.db_path) as connection:
+        connection.execute(
+            "UPDATE external_subscription_drafts SET status='EXPIRED' "
+            "WHERE id='active-submit-draft'"
+        )
+    close = service.create_partial_close_draft(
+        plan_id=plan_id,
+        closure_business_date="2026-08-23",
+        closure_reason_code="PERIOD_ENDED_REMAINDER_ABANDONED",
+        closure_note="周期结束, 剩余金额不再执行。",
+        carry_forward=False,
+        idempotency_key="renewable-partial-close",
+    )
+    old_token = str(close["confirmation_token"])
+    clock += timedelta(hours=1)
+    assert (
+        service.get_partial_close_draft(draft_id=str(close["draft"]["id"]))["status"] == "EXPIRED"
+    )
+
+    renewed = service.renew_partial_close_draft(
+        draft_id=str(close["draft"]["id"]), actor_ref="hermes"
+    )
+    assert renewed["draft"]["id"] == close["draft"]["id"]
+    assert renewed["draft"]["renewal_count"] == 1
+    with pytest.raises(LedgerError) as old_rejected:
+        service.commit_partial_close_draft(
+            draft_id=str(close["draft"]["id"]),
+            confirmation_token=old_token,
+            confirmed_by="test-user",
+        )
+    assert old_rejected.value.code == "CONFIRMATION_MISMATCH"
+    committed = service.commit_partial_close_draft(
+        draft_id=str(close["draft"]["id"]),
+        confirmation_token=str(renewed["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    assert committed["plan"]["status"] == "PARTIALLY_EXECUTED_CLOSED"
 
 
 def test_plan_requires_every_fund_and_exact_amount_before_execution(tmp_path: Path) -> None:
@@ -645,11 +846,14 @@ def test_reversing_linked_buy_reopens_execution_progress(tmp_path: Path) -> None
         key="reversal-buy",
     )
     buy_id = str(buy["transaction"]["id"])
-    assert planning.link_transaction(
-        plan_id=plan_id,
-        transaction_id=buy_id,
-        confirmed_by="test-user",
-    )["status"] == "EXECUTED"
+    assert (
+        planning.link_transaction(
+            plan_id=plan_id,
+            transaction_id=buy_id,
+            confirmed_by="test-user",
+        )["status"]
+        == "EXECUTED"
+    )
 
     reversal = ledger.create_reversal_draft(
         transaction_id=buy_id,

@@ -123,6 +123,10 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "weekly_plan_skip_draft_create",
         "weekly_plan_skip_draft_get",
         "weekly_plan_skip_draft_commit",
+        "weekly_plan_partial_close_draft_create",
+        "weekly_plan_partial_close_draft_get",
+        "weekly_plan_partial_close_draft_renew",
+        "weekly_plan_partial_close_draft_commit",
         "weekly_plan_mark_executed",
         "weekly_plan_transaction_link",
         "external_subscription_draft_create",
@@ -175,6 +179,19 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
     }
     assert len(skip_tools) == 3
     assert "never recovers" in skip_tools["weekly_plan_skip_draft_create"]
+
+    partial_close_tools = {
+        tool.name: tool.description or ""
+        for tool in tools
+        if tool.name.startswith("weekly_plan_partial_close_draft_")
+    }
+    assert len(partial_close_tools) == 4
+    assert "creates only a confirmation draft" in partial_close_tools[
+        "weekly_plan_partial_close_draft_create"
+    ]
+    assert "create no financial facts" in partial_close_tools[
+        "weekly_plan_partial_close_draft_commit"
+    ]
 
 
 def test_external_subscription_draft_renew_calls_exact_core_endpoint(monkeypatch) -> None:  # type: ignore[no-untyped-def]

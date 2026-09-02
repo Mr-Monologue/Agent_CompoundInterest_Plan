@@ -44,9 +44,7 @@ class InstrumentCreateRequest(RequestModel):
 class InstrumentRoleUpdateRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"]
-    expected_current_role: Literal[
-        "CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"
-    ]
+    expected_current_role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"]
     reason: str = Field(min_length=1, max_length=500)
     actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
 
@@ -54,9 +52,7 @@ class InstrumentRoleUpdateRequest(RequestModel):
 class StrategyInstrumentRoleDraftRequest(RequestModel):
     portfolio_id: str = Field(min_length=1, max_length=80)
     strategy_role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"]
-    expected_current_strategy_role: Literal[
-        "CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"
-    ]
+    expected_current_strategy_role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"]
     reason: str = Field(min_length=1, max_length=500)
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
@@ -560,6 +556,23 @@ class WeeklyPlanSkipRequest(WeeklyPlanConfirmRequest):
 
 class WeeklyPlanSkipDraftCreateRequest(RequestModel):
     reason: str = Field(min_length=1, max_length=500)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class WeeklyPlanPartialCloseDraftCreateRequest(RequestModel):
+    closure_business_date: date
+    closure_reason_code: Literal[
+        "PLATFORM_LIMIT_REMAINDER_ABANDONED",
+        "PERIOD_ENDED_REMAINDER_ABANDONED",
+        "USER_DECLINED_REMAINDER",
+    ]
+    closure_note: str = Field(min_length=1, max_length=1000)
+    carry_forward: Literal[False] = False
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class WeeklyPlanPartialCloseDraftRenewRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 

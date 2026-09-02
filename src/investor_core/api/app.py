@@ -66,6 +66,8 @@ from investor_core.api.schemas import (
     WeeklyPlanConfirmRequest,
     WeeklyPlanDraftCreateRequest,
     WeeklyPlanExecutedRequest,
+    WeeklyPlanPartialCloseDraftCreateRequest,
+    WeeklyPlanPartialCloseDraftRenewRequest,
     WeeklyPlanSkipDraftCreateRequest,
     WeeklyPlanSkipRequest,
     WeeklyPlanTransactionLinkRequest,
@@ -317,9 +319,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/notification-tests/{test_request_id}")
     def notification_test_get(test_request_id: str) -> dict[str, Any]:
-        return success(
-            operations.get_notification_test(test_request_id=test_request_id)
-        )
+        return success(operations.get_notification_test(test_request_id=test_request_id))
 
     @app.post("/v1/notification-deliveries/claim")
     def notification_delivery_claim(
@@ -536,9 +536,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return success(
             result,
             warnings=(
-                []
-                if quality == "PASS"
-                else ["One or more sourced research items were rejected"]
+                [] if quality == "PASS" else ["One or more sourced research items were rejected"]
             ),
             data_quality=quality,
         )
@@ -719,9 +717,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         portfolio_id: str,
         limit: int = Query(default=100, ge=1, le=500),
     ) -> dict[str, Any]:
-        return success(
-            {"items": research.list_runs(portfolio_id=portfolio_id, limit=limit)}
-        )
+        return success({"items": research.list_runs(portfolio_id=portfolio_id, limit=limit)})
 
     @app.get("/v1/market-discovery-changes")
     def market_discovery_change_list(
@@ -770,9 +766,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def research_watchlist_transition_draft_create(
         request: ResearchWatchlistTransitionDraftRequest,
     ) -> dict[str, Any]:
-        return success(
-            research.create_watchlist_transition_draft(**request.model_dump())
-        )
+        return success(research.create_watchlist_transition_draft(**request.model_dump()))
 
     @app.post("/v1/research-watchlist-transition-drafts/{draft_id}/commit")
     def research_watchlist_transition_draft_commit(
@@ -807,9 +801,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def research_watchlist_review_snapshot_build(
         request: ResearchWatchlistReviewSnapshotRequest,
     ) -> dict[str, Any]:
-        return success(
-            research.build_watchlist_review_snapshot(**request.model_dump())
-        )
+        return success(research.build_watchlist_review_snapshot(**request.model_dump()))
 
     @app.get("/v1/research-watchlist-review-snapshots")
     def research_watchlist_review_snapshot_list(
@@ -1257,9 +1249,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         view: str = "DAILY",
         as_of_date: date | None = None,
     ) -> dict[str, Any]:
-        business_date = as_of_date or datetime.now(
-            ZoneInfo(runtime_settings.timezone)
-        ).date()
+        business_date = as_of_date or datetime.now(ZoneInfo(runtime_settings.timezone)).date()
         result = workspace.get(
             portfolio_id=portfolio_id,
             account_id=account_id,
@@ -1414,6 +1404,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
 
+    @app.post("/v1/weekly-plans/{plan_id}/partial-close-drafts")
+    def weekly_plan_partial_close_draft_create(
+        plan_id: str,
+        request: WeeklyPlanPartialCloseDraftCreateRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.create_partial_close_draft(
+                plan_id=plan_id,
+                closure_business_date=request.closure_business_date.isoformat(),
+                closure_reason_code=request.closure_reason_code,
+                closure_note=request.closure_note,
+                carry_forward=request.carry_forward,
+                idempotency_key=request.idempotency_key,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.get("/v1/weekly-plan-partial-close-drafts/{draft_id}")
+    def weekly_plan_partial_close_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(planning.get_partial_close_draft(draft_id=draft_id))
+
+    @app.post("/v1/weekly-plan-partial-close-drafts/{draft_id}/renew")
+    def weekly_plan_partial_close_draft_renew(
+        draft_id: str,
+        request: WeeklyPlanPartialCloseDraftRenewRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.renew_partial_close_draft(
+                draft_id=draft_id,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post("/v1/weekly-plan-partial-close-drafts/{draft_id}/commit")
+    def weekly_plan_partial_close_draft_commit(
+        draft_id: str,
+        request: WeeklyPlanConfirmRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.commit_partial_close_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
     @app.post("/v1/external-subscription-drafts")
     def external_subscription_submission_draft_create(
         request: ExternalSubscriptionSubmissionDraftRequest,
@@ -1463,13 +1499,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return success(
             subscriptions.create_confirmation_draft(
                 subscription_id=subscription_id,
-                confirmed_at=(
-                    request.confirmed_at.isoformat() if request.confirmed_at else None
-                ),
+                confirmed_at=(request.confirmed_at.isoformat() if request.confirmed_at else None),
                 confirmed_at_precision=request.confirmed_at_precision,
-                confirmation_business_date=(
-                    request.confirmation_business_date.isoformat()
-                ),
+                confirmation_business_date=(request.confirmation_business_date.isoformat()),
                 nav_date=request.nav_date.isoformat(),
                 nav=str(request.nav),
                 confirmed_shares=str(request.confirmed_shares),
@@ -1499,9 +1531,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         )
 
-    @app.post(
-        "/v1/external-subscription-confirmation-drafts/{draft_id}/revise"
-    )
+    @app.post("/v1/external-subscription-confirmation-drafts/{draft_id}/revise")
     def external_subscription_confirmation_draft_revise(
         draft_id: str,
         request: ExternalSubscriptionConfirmationDraftReviseRequest,
@@ -1511,9 +1541,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 draft_id=draft_id,
                 expected_payload_hash=request.expected_payload_hash,
                 confirmed_at_precision=request.confirmed_at_precision,
-                confirmed_at=(
-                    request.confirmed_at.isoformat() if request.confirmed_at else None
-                ),
+                confirmed_at=(request.confirmed_at.isoformat() if request.confirmed_at else None),
                 confirmation_business_date=(
                     request.confirmation_business_date.isoformat()
                     if request.confirmation_business_date
@@ -1522,28 +1550,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 nav_date=request.nav_date.isoformat() if request.nav_date else None,
                 nav=str(request.nav) if request.nav is not None else None,
                 confirmed_shares=(
-                    str(request.confirmed_shares)
-                    if request.confirmed_shares is not None
-                    else None
+                    str(request.confirmed_shares) if request.confirmed_shares is not None else None
                 ),
                 confirmed_amount=(
-                    str(request.confirmed_amount)
-                    if request.confirmed_amount is not None
-                    else None
+                    str(request.confirmed_amount) if request.confirmed_amount is not None else None
                 ),
                 fee=str(request.fee) if request.fee is not None else None,
                 refunded_amount=(
-                    str(request.refunded_amount)
-                    if request.refunded_amount is not None
-                    else None
+                    str(request.refunded_amount) if request.refunded_amount is not None else None
                 ),
                 actor_ref=request.actor_ref,
             )
         )
 
-    @app.post(
-        "/v1/external-subscriptions/{subscription_id}/confirmation-reversal-drafts"
-    )
+    @app.post("/v1/external-subscriptions/{subscription_id}/confirmation-reversal-drafts")
     def external_subscription_confirmation_reversal_draft_create(
         subscription_id: str,
         request: ExternalSubscriptionConfirmationReversalDraftRequest,
@@ -1595,9 +1615,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def external_subscription_get(subscription_id: str) -> dict[str, Any]:
         return success(subscriptions.get(subscription_id=subscription_id))
 
-    @app.post(
-        "/v1/external-subscription-confirmations/{confirmation_id}/transaction-drafts"
-    )
+    @app.post("/v1/external-subscription-confirmations/{confirmation_id}/transaction-drafts")
     def external_subscription_transaction_draft_create(
         confirmation_id: str,
         request: ExternalSubscriptionTransactionDraftRequest,
@@ -1786,9 +1804,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             actor_ref=request.actor_ref,
         )
         quality = (
-            "PASS"
-            if all(item["data_quality"] == "PASS" for item in result["items"])
-            else "WARNING"
+            "PASS" if all(item["data_quality"] == "PASS" for item in result["items"]) else "WARNING"
         )
         return success(result, data_quality=quality)
 

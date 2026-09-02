@@ -18,6 +18,12 @@ from investor_core.config import Settings
 from investor_core.ledger import JsonDict, LedgerError
 from investor_core.market_data import MONEY_SCALE, MarketDataService
 
+PARTIAL_CLOSE_REASON_CODES = {
+    "PLATFORM_LIMIT_REMAINDER_ABANDONED",
+    "PERIOD_ENDED_REMAINDER_ABANDONED",
+    "USER_DECLINED_REMAINDER",
+}
+
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
@@ -59,19 +65,23 @@ def plan_state_contract(
     normalized = status.strip().upper()
     action_required = normalized in {"DRAFT", "FROZEN", "PARTIALLY_EXECUTED"}
     blocks_future_plans = normalized in {"FROZEN", "PARTIALLY_EXECUTED"}
-    terminal = normalized in {"EXECUTED", "EXPIRED", "SKIPPED"}
+    terminal = normalized in {
+        "PARTIALLY_EXECUTED_CLOSED",
+        "EXECUTED",
+        "EXPIRED",
+        "SKIPPED",
+    }
     credential_state = "NOT_APPLICABLE"
     if confirmation_expires_at and normalized in {"DRAFT", "FROZEN"}:
         reference_now = now or _utc_now()
         credential_state = (
-            "EXPIRED"
-            if _parse_iso(confirmation_expires_at) <= reference_now
-            else "ACTIVE"
+            "EXPIRED" if _parse_iso(confirmation_expires_at) <= reference_now else "ACTIVE"
         )
     reason_codes = {
         "DRAFT": "PLAN_DRAFT_REQUIRES_USER_DECISION",
         "FROZEN": "FROZEN_PLAN_REMAINS_ACTIVE_UNTIL_EXECUTED_OR_SKIPPED",
         "PARTIALLY_EXECUTED": "PLAN_EXECUTION_REMAINS_INCOMPLETE",
+        "PARTIALLY_EXECUTED_CLOSED": "PLAN_PARTIAL_EXECUTION_EXPLICITLY_CLOSED",
         "EXECUTED": "PLAN_EXECUTION_COMPLETED",
         "EXPIRED": "UNCONFIRMED_PLAN_DRAFT_EXPIRED",
         "SKIPPED": "PLAN_EXPLICITLY_SKIPPED",
@@ -98,7 +108,12 @@ def summarize_plan_states(plan_counts: JsonDict) -> JsonDict:
         "future_plan_blocking_count": frozen_count + partial_count,
         "terminal_count": sum(
             int(plan_counts.get(status, 0))
-            for status in ("EXECUTED", "EXPIRED", "SKIPPED")
+            for status in (
+                "PARTIALLY_EXECUTED_CLOSED",
+                "EXECUTED",
+                "EXPIRED",
+                "SKIPPED",
+            )
         ),
         "frozen_plans_remain_active": frozen_count > 0,
         "reason_code": (
@@ -258,6 +273,19 @@ class PlanningService:
         ).fetchall()
         execution_progress = self._execution_progress(connection, row)
         status = str(row["status"])
+        closure = None
+        if status == "PARTIALLY_EXECUTED_CLOSED":
+            closure = {
+                "closed_at": str(row["closed_at"]),
+                "business_date": str(row["closure_business_date"]),
+                "reason_code": str(row["closure_reason_code"]),
+                "note": str(row["closure_note"]),
+                "abandoned_amount": (
+                    f"{Decimal(int(row['abandoned_amount_minor'])) / MONEY_SCALE:.2f}"
+                ),
+                "carry_forward": bool(row["carry_forward"]),
+                "outcome": "PARTIAL_EXECUTION_ENDED_WITH_REMAINDER_ABANDONED",
+            }
         return {
             "id": str(row["id"]),
             "portfolio_id": str(row["portfolio_id"]),
@@ -285,6 +313,7 @@ class PlanningService:
             "frozen_at": row["frozen_at"],
             "executed_at": row["executed_at"],
             "expires_at": row["expires_at"],
+            "closure": closure,
             "revision": {
                 "id": str(revision["id"]),
                 "revision": int(revision["revision"]),
@@ -373,10 +402,9 @@ class PlanningService:
             else:
                 valid_count += 1
                 instrument_id = str(link["instrument_id"])
-                valid_by_instrument[instrument_id] = (
-                    valid_by_instrument.get(instrument_id, 0)
-                    + int(link["linked_amount_minor"])
-                )
+                valid_by_instrument[instrument_id] = valid_by_instrument.get(
+                    instrument_id, 0
+                ) + int(link["linked_amount_minor"])
             links.append(
                 {
                     "transaction_id": str(link["transaction_id"]),
@@ -448,9 +476,7 @@ class PlanningService:
             executed_minor = valid_by_instrument.get(instrument_id, 0)
             remaining_minor = max(planned_minor - executed_minor, 0)
             excess_minor = max(executed_minor - planned_minor, 0)
-            in_flight_minor = min(
-                in_flight_by_instrument.get(instrument_id, 0), remaining_minor
-            )
+            in_flight_minor = min(in_flight_by_instrument.get(instrument_id, 0), remaining_minor)
             unsubmitted_minor = max(remaining_minor - in_flight_minor, 0)
             cancelled_minor = cancelled_by_instrument.get(instrument_id, 0)
             planned_total += planned_minor
@@ -468,9 +494,7 @@ class PlanningService:
                     "executed_amount": f"{Decimal(executed_minor) / MONEY_SCALE:.2f}",
                     "remaining_amount": f"{Decimal(remaining_minor) / MONEY_SCALE:.2f}",
                     "in_flight_amount": f"{Decimal(in_flight_minor) / MONEY_SCALE:.2f}",
-                    "unsubmitted_amount": (
-                        f"{Decimal(unsubmitted_minor) / MONEY_SCALE:.2f}"
-                    ),
+                    "unsubmitted_amount": (f"{Decimal(unsubmitted_minor) / MONEY_SCALE:.2f}"),
                     "cancelled_or_refunded_amount": (
                         f"{Decimal(cancelled_minor) / MONEY_SCALE:.2f}"
                     ),
@@ -479,6 +503,11 @@ class PlanningService:
                 }
             )
         remaining_total = sum(_minor(str(item["remaining_amount"])) for item in items)
+        is_partial_closed = str(row["status"]) == "PARTIALLY_EXECUTED_CLOSED"
+        if is_partial_closed:
+            for item in items:
+                item["abandoned_amount"] = item["remaining_amount"]
+                item["unsubmitted_amount"] = "0.00"
         return {
             "status": str(row["status"]),
             "amount_semantics": "PLANNED_CASH_OUTFLOW",
@@ -486,13 +515,22 @@ class PlanningService:
             "planned_amount": f"{Decimal(planned_total) / MONEY_SCALE:.2f}",
             "executed_amount": f"{Decimal(executed_total) / MONEY_SCALE:.2f}",
             "remaining_amount": f"{Decimal(remaining_total) / MONEY_SCALE:.2f}",
+            "abandoned_amount": (
+                f"{Decimal(remaining_total) / MONEY_SCALE:.2f}" if is_partial_closed else "0.00"
+            ),
+            "carry_forward": False if is_partial_closed else None,
+            "execution_rate_pct": (
+                f"{(Decimal(executed_total) * 100 / Decimal(planned_total)):.2f}"
+                if planned_total
+                else "0.00"
+            ),
             "in_flight_amount": f"{Decimal(in_flight_total) / MONEY_SCALE:.2f}",
             "unsubmitted_amount": (
-                f"{Decimal(max(remaining_total - in_flight_total, 0)) / MONEY_SCALE:.2f}"
+                "0.00"
+                if is_partial_closed
+                else f"{Decimal(max(remaining_total - in_flight_total, 0)) / MONEY_SCALE:.2f}"
             ),
-            "cancelled_or_refunded_amount": (
-                f"{Decimal(cancelled_total) / MONEY_SCALE:.2f}"
-            ),
+            "cancelled_or_refunded_amount": (f"{Decimal(cancelled_total) / MONEY_SCALE:.2f}"),
             "linked_transaction_count": len(linked_rows),
             "valid_transaction_count": valid_count,
             "reversed_transaction_count": reversed_count,
@@ -734,6 +772,7 @@ class PlanningService:
                     "DRAFT",
                     "FROZEN",
                     "PARTIALLY_EXECUTED",
+                    "PARTIALLY_EXECUTED_CLOSED",
                     "EXECUTED",
                     "EXPIRED",
                     "SKIPPED",
@@ -1108,9 +1147,10 @@ class PlanningService:
                         http_status=404,
                     ),
                 )
-            if str(row["status"]) == "PENDING" and _parse_iso(
-                str(row["expires_at"])
-            ) <= self._now():
+            if (
+                str(row["status"]) == "PENDING"
+                and _parse_iso(str(row["expires_at"])) <= self._now()
+            ):
                 connection.execute(
                     "UPDATE weekly_plan_skip_drafts SET status='EXPIRED' WHERE id=?",
                     (draft_id,),
@@ -1162,7 +1202,7 @@ class PlanningService:
                     (draft["plan_id"],),
                 ).fetchone()
                 assert plan is not None
-                result = {
+                result: JsonDict = {
                     "draft": self._skip_draft_data(draft),
                     "plan": self._plan_data(connection, plan),
                     "idempotent_replay": True,
@@ -1266,6 +1306,626 @@ class PlanningService:
                 "draft": self._skip_draft_data(updated_draft),
                 "plan": self._plan_data(connection, updated_plan),
                 "idempotent_replay": False,
+            }
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _partial_close_draft_data(row: sqlite3.Row) -> JsonDict:
+        return {
+            "id": str(row["id"]),
+            "plan_id": str(row["plan_id"]),
+            "action": "CLOSE_PARTIAL_EXECUTION",
+            "closure_business_date": str(row["closure_business_date"]),
+            "closure_reason_code": str(row["closure_reason_code"]),
+            "closure_note": str(row["closure_note"]),
+            "carry_forward": bool(row["carry_forward"]),
+            "planned_amount": f"{Decimal(int(row['planned_amount_minor'])) / MONEY_SCALE:.2f}",
+            "executed_amount": f"{Decimal(int(row['executed_amount_minor'])) / MONEY_SCALE:.2f}",
+            "abandoned_amount": f"{Decimal(int(row['abandoned_amount_minor'])) / MONEY_SCALE:.2f}",
+            "summary": json.loads(str(row["summary_json"])),
+            "status": str(row["status"]),
+            "created_by": str(row["created_by"]),
+            "created_at": str(row["created_at"]),
+            "expires_at": str(row["expires_at"]),
+            "renewed_at": row["renewed_at"],
+            "renewal_count": int(row["renewal_count"]),
+            "committed_at": row["committed_at"],
+            "committed_by": row["committed_by"],
+        }
+
+    def _partial_close_blockers(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        plan_id: str,
+    ) -> JsonDict:
+        now = _iso(self._now())
+        in_flight_subscriptions = connection.execute(
+            """
+            SELECT COUNT(*) AS item_count,
+                   COALESCE(SUM(pending_amount_minor), 0) AS amount_minor
+            FROM external_subscriptions
+            WHERE weekly_plan_id=? AND pending_amount_minor > 0
+              AND status IN ('SUBMITTED','PENDING_CONFIRMATION','PARTIALLY_CONFIRMED')
+            """,
+            (plan_id,),
+        ).fetchone()
+        assert in_flight_subscriptions is not None
+        submit_drafts = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM external_subscription_drafts
+            WHERE action='SUBMIT' AND status='PENDING' AND expires_at>?
+              AND json_extract(payload_json, '$.weekly_plan_id')=?
+            """,
+            (now, plan_id),
+        ).fetchone()
+        linked_subscription_drafts = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM external_subscription_drafts d
+            JOIN external_subscriptions s ON s.id=d.subscription_id
+            WHERE s.weekly_plan_id=? AND d.status='PENDING' AND d.expires_at>?
+            """,
+            (plan_id, now),
+        ).fetchone()
+        transaction_drafts = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM transaction_drafts d
+            JOIN subscription_confirmation_transaction_links l
+              ON l.transaction_draft_id=d.id
+            JOIN external_subscription_confirmations c ON c.id=l.confirmation_id
+            JOIN external_subscriptions s ON s.id=c.subscription_id
+            WHERE s.weekly_plan_id=? AND d.status='PENDING' AND d.expires_at>?
+            """,
+            (plan_id, now),
+        ).fetchone()
+        unposted_confirmations = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM external_subscription_confirmations c
+            JOIN external_subscriptions s ON s.id=c.subscription_id
+            LEFT JOIN subscription_confirmation_transaction_links l
+              ON l.confirmation_id=c.id
+            LEFT JOIN transactions t ON t.id=l.transaction_id
+            WHERE s.weekly_plan_id=? AND c.kind='CONFIRMATION'
+              AND c.reversed_by_confirmation_id IS NULL
+              AND (l.transaction_id IS NULL OR t.reversed_by_transaction_id IS NOT NULL)
+            """,
+            (plan_id,),
+        ).fetchone()
+        active_draft_count = (
+            int(submit_drafts[0]) + int(linked_subscription_drafts[0]) + int(transaction_drafts[0])
+        )
+        return {
+            "in_flight_subscription_count": int(in_flight_subscriptions["item_count"]),
+            "in_flight_amount": (
+                f"{Decimal(int(in_flight_subscriptions['amount_minor'])) / MONEY_SCALE:.2f}"
+            ),
+            "submittable_draft_count": active_draft_count,
+            "confirmed_unposted_count": int(unposted_confirmations[0]),
+            "blocked": int(in_flight_subscriptions["item_count"]) > 0
+            or active_draft_count > 0
+            or int(unposted_confirmations[0]) > 0,
+        }
+
+    def _partial_close_facts_hash(
+        self,
+        connection: sqlite3.Connection,
+        row: sqlite3.Row,
+    ) -> str:
+        return _hash(
+            {
+                "plan_facts_hash": self._plan_facts_hash(connection, row),
+                "execution_progress": self._execution_progress(connection, row),
+                "blockers": self._partial_close_blockers(connection, plan_id=str(row["id"])),
+            }
+        )
+
+    def _validate_partial_close(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        plan: sqlite3.Row,
+        closure_business_date: str,
+        closure_reason_code: str,
+        closure_note: str,
+        carry_forward: bool,
+    ) -> tuple[JsonDict, JsonDict]:
+        if str(plan["status"]) != "PARTIALLY_EXECUTED":
+            raise LedgerError(
+                "PLAN_PARTIAL_CLOSE_NOT_ALLOWED",
+                "只有仍在等待执行的部分执行周计划可以正式收尾。",
+                http_status=409,
+            )
+        try:
+            closure_date = date.fromisoformat(closure_business_date)
+        except ValueError as exc:
+            raise LedgerError("INVALID_DATE", "closure_business_date must be ISO date") from exc
+        if closure_date < date.fromisoformat(str(plan["plan_date"])):
+            raise LedgerError("INVALID_CLOSURE_DATE", "收尾日期不能早于计划开始日期。")
+        if closure_reason_code not in PARTIAL_CLOSE_REASON_CODES:
+            raise LedgerError("INVALID_CLOSURE_REASON", "必须使用正式的部分执行收尾原因。")
+        if not closure_note.strip():
+            raise LedgerError("INVALID_CLOSURE_NOTE", "必须说明未执行金额不再执行的原因。")
+        if carry_forward:
+            raise LedgerError("PLAN_CARRY_FORWARD_NOT_ALLOWED", "部分执行收尾不允许结转余额。")
+        progress = self._execution_progress(connection, plan)
+        planned = _minor(str(progress["planned_amount"]))
+        executed = _minor(str(progress["executed_amount"]))
+        remaining = _minor(str(progress["remaining_amount"]))
+        if (
+            planned <= 0
+            or planned != int(plan["contribution_amount_minor"])
+            or executed <= 0
+            or remaining <= 0
+            or executed + remaining != planned
+        ):
+            raise LedgerError(
+                "PLAN_AMOUNT_CONSERVATION_FAILED",
+                "计划金额、已执行金额和未执行金额不满足部分执行收尾条件。",
+                http_status=409,
+                details={"execution_progress": progress},
+            )
+        if any(_minor(str(item["excess_amount"])) > 0 for item in progress["items"]):
+            raise LedgerError("PLAN_EXECUTION_AMOUNT_EXCEEDED", "存在超额成交, 不能收尾。")
+        blockers = self._partial_close_blockers(connection, plan_id=str(plan["id"]))
+        if progress["in_flight_amount"] != "0.00" or blockers["blocked"]:
+            raise LedgerError(
+                "PLAN_PARTIAL_CLOSE_HAS_ACTIVE_FACTS",
+                "仍有在途、待确认或可提交的申购/交易草稿, 不能收尾。",
+                http_status=409,
+                details={"blockers": blockers, "execution_progress": progress},
+            )
+        return progress, blockers
+
+    def create_partial_close_draft(
+        self,
+        *,
+        plan_id: str,
+        closure_business_date: str,
+        closure_reason_code: str,
+        closure_note: str,
+        carry_forward: bool,
+        idempotency_key: str,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Preview ending a partial plan; create no financial or plan facts."""
+        actor = actor_ref.strip()
+        normalized_key = idempotency_key.strip()
+        if not actor or not normalized_key:
+            raise LedgerError(
+                "MISSING_REQUIRED_FIELD", "actor_ref and idempotency_key are required"
+            )
+        request = {
+            "plan_id": plan_id,
+            "closure_business_date": closure_business_date,
+            "closure_reason_code": closure_reason_code,
+            "closure_note": closure_note.strip(),
+            "carry_forward": carry_forward,
+        }
+        request_hash = _hash(request)
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM weekly_plan_partial_close_drafts WHERE idempotency_key=?",
+                (normalized_key,),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["request_hash"]) != request_hash:
+                    self._rollback_and_raise(
+                        connection,
+                        LedgerError(
+                            "IDEMPOTENCY_CONFLICT", "幂等键已用于不同的收尾内容。", http_status=409
+                        ),
+                    )
+                result: JsonDict = {
+                    "draft": self._partial_close_draft_data(existing),
+                    "confirmation_token": None,
+                    "reused": True,
+                }
+                connection.commit()
+                return result
+            active_close = connection.execute(
+                """
+                SELECT id FROM weekly_plan_partial_close_drafts
+                WHERE plan_id=? AND status='PENDING' AND expires_at>?
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (plan_id, _iso(self._now())),
+            ).fetchone()
+            if active_close is not None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_DRAFT_ALREADY_ACTIVE",
+                        "该计划已有仍有效的收尾草稿, 请读取并确认原草稿。",
+                        http_status=409,
+                        details={"draft_id": str(active_close["id"])},
+                    ),
+                )
+            plan = connection.execute(self._plan_query() + " WHERE p.id=?", (plan_id,)).fetchone()
+            if plan is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError("INVESTMENT_PLAN_NOT_FOUND", "没有找到该周计划。", http_status=404),
+                )
+            progress, blockers = self._validate_partial_close(
+                connection,
+                plan=plan,
+                closure_business_date=closure_business_date,
+                closure_reason_code=closure_reason_code,
+                closure_note=closure_note,
+                carry_forward=carry_forward,
+            )
+            now = self._now()
+            token = secrets.token_urlsafe(24)
+            draft_id = str(uuid4())
+            summary = {
+                "period_start": str(plan["plan_date"]),
+                "period_end": (
+                    date.fromisoformat(str(plan["plan_date"])) + timedelta(days=6)
+                ).isoformat(),
+                "planned_amount": progress["planned_amount"],
+                "executed_amount": progress["executed_amount"],
+                "abandoned_amount": progress["remaining_amount"],
+                "items": progress["items"],
+                "blockers": blockers,
+                "closure_reason_code": closure_reason_code,
+                "closure_note": closure_note.strip(),
+                "carry_forward": False,
+                "blocks_future_plans_after_commit": False,
+                "financial_facts_created": False,
+            }
+            connection.execute(
+                """
+                INSERT INTO weekly_plan_partial_close_drafts (
+                    id, plan_id, closure_business_date, closure_reason_code,
+                    closure_note, carry_forward, planned_amount_minor,
+                    executed_amount_minor, abandoned_amount_minor, plan_facts_hash,
+                    request_hash, summary_json, idempotency_key, confirmation_digest,
+                    status, created_by, created_at, expires_at, renewal_count
+                ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, 0)
+                """,
+                (
+                    draft_id,
+                    plan_id,
+                    closure_business_date,
+                    closure_reason_code,
+                    closure_note.strip(),
+                    _minor(str(progress["planned_amount"])),
+                    _minor(str(progress["executed_amount"])),
+                    _minor(str(progress["remaining_amount"])),
+                    self._partial_close_facts_hash(connection, plan),
+                    request_hash,
+                    _json(summary),
+                    normalized_key,
+                    _token_digest(token),
+                    actor,
+                    _iso(now),
+                    _iso(now + timedelta(minutes=self.settings.confirmation_ttl_minutes)),
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM weekly_plan_partial_close_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            assert row is not None
+            self._audit(
+                connection,
+                actor_type="AGENT",
+                actor_ref=actor,
+                action="INVESTMENT_PLAN_PARTIAL_CLOSE_DRAFT_CREATED",
+                entity_id=plan_id,
+                details={"draft_id": draft_id, "summary": summary},
+            )
+            result = {
+                "draft": self._partial_close_draft_data(row),
+                "plan": self._plan_data(connection, plan),
+                "confirmation_token": token,
+                "reused": False,
+            }
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def get_partial_close_draft(self, *, draft_id: str) -> JsonDict:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM weekly_plan_partial_close_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if row is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_DRAFT_NOT_FOUND",
+                        "没有找到该收尾草稿。",
+                        http_status=404,
+                    ),
+                )
+            if (
+                str(row["status"]) == "PENDING"
+                and _parse_iso(str(row["expires_at"])) <= self._now()
+            ):
+                connection.execute(
+                    "UPDATE weekly_plan_partial_close_drafts "
+                    "SET status='EXPIRED' WHERE id=? AND status='PENDING'",
+                    (draft_id,),
+                )
+                row = connection.execute(
+                    "SELECT * FROM weekly_plan_partial_close_drafts WHERE id=?", (draft_id,)
+                ).fetchone()
+                assert row is not None
+            result = self._partial_close_draft_data(row)
+            connection.commit()
+            return result
+        finally:
+            connection.close()
+
+    def renew_partial_close_draft(self, *, draft_id: str, actor_ref: str = "hermes") -> JsonDict:
+        """Rotate an expired close token without changing the requested outcome."""
+        actor = actor_ref.strip()
+        if not actor:
+            raise LedgerError("INVALID_ACTOR", "actor_ref is required")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM weekly_plan_partial_close_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if draft is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_DRAFT_NOT_FOUND",
+                        "没有找到该收尾草稿。",
+                        http_status=404,
+                    ),
+                )
+            if draft["committed_at"] is not None or str(draft["status"]) == "COMMITTED":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_ALREADY_COMMITTED",
+                        "已提交的收尾草稿不能续签。",
+                        http_status=409,
+                    ),
+                )
+            if _parse_iso(str(draft["expires_at"])) > self._now():
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_NOT_EXPIRED",
+                        "仍有效的收尾草稿不能续签。",
+                        http_status=409,
+                    ),
+                )
+            plan = connection.execute(
+                self._plan_query() + " WHERE p.id=?", (draft["plan_id"],)
+            ).fetchone()
+            assert plan is not None
+            self._validate_partial_close(
+                connection,
+                plan=plan,
+                closure_business_date=str(draft["closure_business_date"]),
+                closure_reason_code=str(draft["closure_reason_code"]),
+                closure_note=str(draft["closure_note"]),
+                carry_forward=False,
+            )
+            if not hmac.compare_digest(
+                str(draft["plan_facts_hash"]), self._partial_close_facts_hash(connection, plan)
+            ):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_DRAFT_STALE",
+                        "计划事实变化后必须重新创建收尾草稿。",
+                        http_status=409,
+                    ),
+                )
+            now = self._now()
+            token = secrets.token_urlsafe(24)
+            updated_count = connection.execute(
+                """
+                UPDATE weekly_plan_partial_close_drafts
+                SET status='PENDING', confirmation_digest=?, expires_at=?, renewed_at=?,
+                    renewal_count=renewal_count+1
+                WHERE id=? AND committed_at IS NULL AND expires_at<=?
+                """,
+                (
+                    _token_digest(token),
+                    _iso(now + timedelta(minutes=self.settings.confirmation_ttl_minutes)),
+                    _iso(now),
+                    draft_id,
+                    _iso(now),
+                ),
+            ).rowcount
+            if updated_count != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_RENEWAL_CONFLICT",
+                        "收尾草稿已被其他请求续签。",
+                        http_status=409,
+                    ),
+                )
+            row = connection.execute(
+                "SELECT * FROM weekly_plan_partial_close_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            assert row is not None
+            result = {
+                "draft": self._partial_close_draft_data(row),
+                "confirmation_token": token,
+                "financial_facts_created": False,
+            }
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def commit_partial_close_draft(
+        self, *, draft_id: str, confirmation_token: str, confirmed_by: str
+    ) -> JsonDict:
+        """Atomically end a partial plan after exact user confirmation."""
+        actor = confirmed_by.strip()
+        if not actor or not confirmation_token:
+            raise LedgerError(
+                "CONFIRMATION_REQUIRED", "confirmation token and confirmed_by are required"
+            )
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM weekly_plan_partial_close_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if draft is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_DRAFT_NOT_FOUND",
+                        "没有找到该收尾草稿。",
+                        http_status=404,
+                    ),
+                )
+            token_matches = hmac.compare_digest(
+                str(draft["confirmation_digest"]), _token_digest(confirmation_token)
+            )
+            if str(draft["status"]) == "COMMITTED":
+                if not token_matches:
+                    self._rollback_and_raise(
+                        connection,
+                        LedgerError("CONFIRMATION_MISMATCH", "确认凭据不匹配。", http_status=409),
+                    )
+                plan = connection.execute(
+                    self._plan_query() + " WHERE p.id=?", (draft["plan_id"],)
+                ).fetchone()
+                assert plan is not None
+                result = {
+                    "draft": self._partial_close_draft_data(draft),
+                    "plan": self._plan_data(connection, plan),
+                    "idempotent_replay": True,
+                    "financial_facts_created": False,
+                }
+                connection.commit()
+                return result
+            if (
+                str(draft["status"]) != "PENDING"
+                or _parse_iso(str(draft["expires_at"])) <= self._now()
+            ):
+                connection.execute(
+                    "UPDATE weekly_plan_partial_close_drafts "
+                    "SET status='EXPIRED' WHERE id=? AND status='PENDING'",
+                    (draft_id,),
+                )
+                connection.commit()
+                raise LedgerError(
+                    "CONFIRMATION_EXPIRED", "收尾确认已过期, 请使用正式续签能力。", http_status=409
+                )
+            if not token_matches:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError("CONFIRMATION_MISMATCH", "确认凭据不匹配。", http_status=409),
+                )
+            plan = connection.execute(
+                self._plan_query() + " WHERE p.id=?", (draft["plan_id"],)
+            ).fetchone()
+            assert plan is not None
+            progress, _ = self._validate_partial_close(
+                connection,
+                plan=plan,
+                closure_business_date=str(draft["closure_business_date"]),
+                closure_reason_code=str(draft["closure_reason_code"]),
+                closure_note=str(draft["closure_note"]),
+                carry_forward=False,
+            )
+            if not hmac.compare_digest(
+                str(draft["plan_facts_hash"]), self._partial_close_facts_hash(connection, plan)
+            ):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_DRAFT_STALE",
+                        "计划事实变化后收尾草稿失效。",
+                        http_status=409,
+                    ),
+                )
+            timestamp = _iso(self._now())
+            updated_count = connection.execute(
+                """
+                UPDATE investment_plans
+                SET status='PARTIALLY_EXECUTED_CLOSED', closed_at=?,
+                    closure_business_date=?, closure_reason_code=?, closure_note=?,
+                    abandoned_amount_minor=?, carry_forward=0, updated_at=?
+                WHERE id=? AND status='PARTIALLY_EXECUTED'
+                """,
+                (
+                    timestamp,
+                    draft["closure_business_date"],
+                    draft["closure_reason_code"],
+                    draft["closure_note"],
+                    _minor(str(progress["remaining_amount"])),
+                    timestamp,
+                    plan["id"],
+                ),
+            ).rowcount
+            if updated_count != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "PLAN_PARTIAL_CLOSE_CONFLICT", "周计划已被其他请求修改。", http_status=409
+                    ),
+                )
+            connection.execute(
+                """
+                UPDATE weekly_plan_partial_close_drafts
+                SET status='COMMITTED', committed_at=?, committed_by=?
+                WHERE id=? AND status='PENDING'
+                """,
+                (timestamp, actor, draft_id),
+            )
+            updated_plan = connection.execute(
+                self._plan_query() + " WHERE p.id=?", (plan["id"],)
+            ).fetchone()
+            updated_draft = connection.execute(
+                "SELECT * FROM weekly_plan_partial_close_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            assert updated_plan is not None and updated_draft is not None
+            self._audit(
+                connection,
+                actor_type="USER",
+                actor_ref=actor,
+                action="INVESTMENT_PLAN_PARTIAL_EXECUTION_CLOSED",
+                entity_id=str(plan["id"]),
+                details={
+                    "draft_id": draft_id,
+                    "planned_amount": progress["planned_amount"],
+                    "executed_amount": progress["executed_amount"],
+                    "abandoned_amount": progress["remaining_amount"],
+                    "carry_forward": False,
+                    "financial_facts_created": False,
+                },
+            )
+            result = {
+                "draft": self._partial_close_draft_data(updated_draft),
+                "plan": self._plan_data(connection, updated_plan),
+                "idempotent_replay": False,
+                "financial_facts_created": False,
             }
             connection.commit()
             return result
@@ -1414,15 +2074,11 @@ class PlanningService:
                     http_status=409,
                     details={
                         "planned_amount": f"{Decimal(planned_minor) / MONEY_SCALE:.2f}",
-                        "accumulated_amount": (
-                            f"{Decimal(accumulated) / MONEY_SCALE:.2f}"
-                        ),
+                        "accumulated_amount": (f"{Decimal(accumulated) / MONEY_SCALE:.2f}"),
                         "transaction_amount": (
                             f"{Decimal(effective_linked_minor) / MONEY_SCALE:.2f}"
                         ),
-                        "remaining_amount": (
-                            f"{Decimal(remaining_minor) / MONEY_SCALE:.2f}"
-                        ),
+                        "remaining_amount": (f"{Decimal(remaining_minor) / MONEY_SCALE:.2f}"),
                     },
                 ),
             )
@@ -1513,9 +2169,7 @@ class PlanningService:
                 row=row,
                 transaction_id=transaction_id,
                 confirmed_by=actor,
-                linked_amount_minor=(
-                    _minor(linked_amount) if linked_amount is not None else None
-                ),
+                linked_amount_minor=(_minor(linked_amount) if linked_amount is not None else None),
             )
             updated, progress = self._refresh_execution_status(connection, row=row)
             self._audit(
