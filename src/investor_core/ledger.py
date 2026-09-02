@@ -91,6 +91,42 @@ def _format_scaled(value: int, scale: int, decimal_places: int) -> str:
     return f"{Decimal(value) / Decimal(scale):.{decimal_places}f}"
 
 
+def transaction_draft_payload(
+    *,
+    portfolio_id: str,
+    account_id: str,
+    instrument_id: str,
+    side: str,
+    trade_date: str,
+    amount_minor: int,
+    nav_micros: int,
+    shares_micros: int,
+    platform: str,
+    note: str | None,
+    sell_proposal_id: str | None,
+) -> JsonDict:
+    """Build the canonical business payload protected by a transaction draft hash."""
+    return {
+        "portfolio_id": portfolio_id,
+        "account_id": account_id,
+        "instrument_id": instrument_id,
+        "action": "TRADE",
+        "side": side,
+        "trade_date": trade_date,
+        "amount_minor": amount_minor,
+        "nav_micros": nav_micros,
+        "shares_micros": shares_micros,
+        "platform": platform,
+        "note": note,
+        "sell_proposal_id": sell_proposal_id,
+    }
+
+
+def transaction_draft_payload_hash(payload: JsonDict) -> str:
+    """Hash one canonical transaction draft payload."""
+    return _canonical_hash(payload)
+
+
 def _round_div(numerator: int, denominator: int) -> int:
     if denominator <= 0:
         return 0
@@ -1104,9 +1140,15 @@ class LedgerService:
             "transaction draft was not found",
         )
 
-    @staticmethod
-    def _draft_data(row: sqlite3.Row) -> JsonDict:
+    def _draft_data(self, row: sqlite3.Row) -> JsonDict:
         row_keys = set(row.keys())
+        status = str(row["status"])
+        if (
+            row["committed_at"] is None
+            and status in {"PENDING", "EXPIRED"}
+            and _parse_iso(str(row["expires_at"])) <= self._now()
+        ):
+            status = "EXPIRED"
         result = {
             "id": row["id"],
             "portfolio_id": row["portfolio_id"],
@@ -1126,12 +1168,22 @@ class LedgerService:
             "sell_proposal_id": (
                 row["sell_proposal_id"] if "sell_proposal_id" in row_keys else None
             ),
-            "status": row["status"],
+            "status": status,
             "idempotency_key": row["idempotency_key"],
+            "request_hash": row["request_hash"],
+            "payload_hash": row["request_hash"],
             "expires_at": row["expires_at"],
             "created_at": row["created_at"],
             "committed_at": row["committed_at"],
             "committed_transaction_id": row["committed_transaction_id"],
+            "origin": row["origin"] if "origin" in row_keys else "GENERIC",
+            "origin_reference_id": (
+                row["origin_reference_id"] if "origin_reference_id" in row_keys else None
+            ),
+            "revised_at": row["revised_at"] if "revised_at" in row_keys else None,
+            "revision_count": (
+                int(row["revision_count"]) if "revision_count" in row_keys else 0
+            ),
         }
         if row["action"] == "OPENING":
             result.update(
@@ -1163,6 +1215,9 @@ class LedgerService:
         idempotency_key: str,
         note: str | None = None,
         sell_proposal_id: str | None = None,
+        nav_consistency_amount: str | None = None,
+        origin: str = "GENERIC",
+        origin_reference_id: str | None = None,
         actor_ref: str = "hermes",
     ) -> JsonDict:
         normalized_side = side.strip().upper()
@@ -1185,9 +1240,26 @@ class LedgerService:
             )
 
         amount_minor = _scaled_decimal(amount, 100, "amount")
+        consistency_amount_minor = (
+            _scaled_decimal(nav_consistency_amount, 100, "nav_consistency_amount")
+            if nav_consistency_amount is not None
+            else amount_minor
+        )
         nav_micros = _scaled_decimal(nav, 1_000_000, "nav")
         shares_micros = _scaled_decimal(shares, 1_000_000, "shares")
-        self._validate_amount_consistency(amount_minor, nav_micros, shares_micros)
+        self._validate_amount_consistency(
+            consistency_amount_minor,
+            nav_micros,
+            shares_micros,
+        )
+        normalized_origin = origin.strip().upper()
+        if normalized_origin not in {"GENERIC", "EXTERNAL_SUBSCRIPTION"}:
+            raise LedgerError("INVALID_TRANSACTION_DRAFT_ORIGIN", "invalid draft origin")
+        if (normalized_origin == "EXTERNAL_SUBSCRIPTION") != bool(origin_reference_id):
+            raise LedgerError(
+                "INVALID_TRANSACTION_DRAFT_ORIGIN",
+                "external-subscription drafts require their confirmation identity",
+            )
 
         connection = self._connect()
         try:
@@ -1231,21 +1303,20 @@ class LedgerService:
                         },
                     ),
                 )
-            payload = {
-                "portfolio_id": portfolio_id,
-                "account_id": account_id,
-                "instrument_id": instrument["id"],
-                "action": "TRADE",
-                "side": normalized_side,
-                "trade_date": normalized_trade_date,
-                "amount_minor": amount_minor,
-                "nav_micros": nav_micros,
-                "shares_micros": shares_micros,
-                "platform": normalized_platform,
-                "note": note,
-                "sell_proposal_id": sell_proposal_id,
-            }
-            request_hash = _canonical_hash(payload)
+            payload = transaction_draft_payload(
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                instrument_id=str(instrument["id"]),
+                side=normalized_side,
+                trade_date=normalized_trade_date,
+                amount_minor=amount_minor,
+                nav_micros=nav_micros,
+                shares_micros=shares_micros,
+                platform=normalized_platform,
+                note=note,
+                sell_proposal_id=sell_proposal_id,
+            )
+            request_hash = transaction_draft_payload_hash(payload)
             existing = connection.execute(
                 "SELECT id, request_hash FROM transaction_drafts WHERE idempotency_key = ?",
                 (normalized_key,),
@@ -1349,11 +1420,13 @@ class LedgerService:
             draft_id = str(uuid4())
             token = secrets.token_urlsafe(24)
             expires_at = now + timedelta(minutes=self.settings.confirmation_ttl_minutes)
-            has_sell_proposal_column = any(
-                str(column["name"]) == "sell_proposal_id"
+            draft_columns = {
+                str(column["name"])
                 for column in connection.execute("PRAGMA table_info(transaction_drafts)")
-            )
-            if has_sell_proposal_column:
+            }
+            has_sell_proposal_column = "sell_proposal_id" in draft_columns
+            has_origin_column = "origin" in draft_columns
+            if has_sell_proposal_column and has_origin_column:
                 connection.execute(
                     """
                 INSERT INTO transaction_drafts (
@@ -1361,12 +1434,49 @@ class LedgerService:
                     amount_minor, nav_micros, shares_micros, platform, note,
                     reversal_of_transaction_id, status, idempotency_key, request_hash,
                     confirmation_digest, expires_at, created_at, actor_ref
-                    , sell_proposal_id
+                    , sell_proposal_id, origin, origin_reference_id
                 ) VALUES (
                     ?, ?, ?, ?, 'TRADE', ?, ?, ?, ?, ?, ?, ?, NULL, 'PENDING',
-                    ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
+                    (
+                        draft_id,
+                        portfolio_id,
+                        account_id,
+                        instrument["id"],
+                        normalized_side,
+                        normalized_trade_date,
+                        amount_minor,
+                        nav_micros,
+                        shares_micros,
+                        normalized_platform,
+                        note,
+                        normalized_key,
+                        request_hash,
+                        _token_digest(token),
+                        _iso(expires_at),
+                        _iso(now),
+                        actor_ref,
+                        sell_proposal_id,
+                        normalized_origin,
+                        origin_reference_id,
+                    ),
+                )
+            elif has_sell_proposal_column:
+                connection.execute(
+                    """
+                    INSERT INTO transaction_drafts (
+                        id, portfolio_id, account_id, instrument_id, action, side,
+                        trade_date, amount_minor, nav_micros, shares_micros, platform,
+                        note, reversal_of_transaction_id, status, idempotency_key,
+                        request_hash, confirmation_digest, expires_at, created_at, actor_ref,
+                        sell_proposal_id
+                    ) VALUES (
+                        ?, ?, ?, ?, 'TRADE', ?, ?, ?, ?, ?, ?, ?, NULL, 'PENDING',
+                        ?, ?, ?, ?, ?, ?, ?
+                    )
+                    """,
                     (
                         draft_id,
                         portfolio_id,
@@ -1433,6 +1543,8 @@ class LedgerService:
                     "instrument_code": instrument["code"],
                     "idempotency_key": normalized_key,
                     "expires_at": _iso(expires_at),
+                    "origin": normalized_origin,
+                    "origin_reference_id": origin_reference_id,
                 },
                 after_hash=request_hash,
             )
@@ -1947,12 +2059,14 @@ class LedgerService:
         draft_id: str,
         confirmation_token: str,
         confirmed_by: str,
+        allow_external_subscription: bool = False,
     ) -> JsonDict:
         return self._commit_draft(
             draft_id=draft_id,
             confirmation_token=confirmation_token,
             confirmed_by=confirmed_by,
             allowed_actions={"TRADE", "REVERSAL"},
+            allow_external_subscription=allow_external_subscription,
         )
 
     def commit_opening_position_draft(
@@ -1967,6 +2081,7 @@ class LedgerService:
             confirmation_token=confirmation_token,
             confirmed_by=confirmed_by,
             allowed_actions={"OPENING"},
+            allow_external_subscription=False,
         )
 
     def _commit_draft(
@@ -1976,6 +2091,7 @@ class LedgerService:
         confirmation_token: str,
         confirmed_by: str,
         allowed_actions: set[str],
+        allow_external_subscription: bool,
     ) -> JsonDict:
         if not confirmation_token or not confirmed_by.strip():
             raise LedgerError(
@@ -1996,6 +2112,19 @@ class LedgerService:
                             "draft_action": draft["action"],
                             "allowed_actions": sorted(allowed_actions),
                         },
+                    ),
+                )
+            draft_keys = set(draft.keys())
+            draft_origin = (
+                str(draft["origin"]) if "origin" in draft_keys else "GENERIC"
+            )
+            if draft_origin == "EXTERNAL_SUBSCRIPTION" and not allow_external_subscription:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "EXTERNAL_SUBSCRIPTION_COMMIT_REQUIRED",
+                        "外部申购交易草稿必须通过对应份额确认的专用提交入口。",
+                        http_status=409,
                     ),
                 )
             if not hmac.compare_digest(

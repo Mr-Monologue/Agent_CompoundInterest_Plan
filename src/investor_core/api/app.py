@@ -24,6 +24,7 @@ from investor_core.api.schemas import (
     ExternalSubscriptionSubmissionDraftRequest,
     ExternalSubscriptionTransactionCommitRequest,
     ExternalSubscriptionTransactionDraftRequest,
+    ExternalSubscriptionTransactionDraftReviseRequest,
     InstrumentCreateRequest,
     InstrumentRoleUpdateRequest,
     InvestmentContextSetRequest,
@@ -1605,6 +1606,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             subscriptions.create_transaction_draft(
                 confirmation_id=confirmation_id,
                 idempotency_key=request.idempotency_key,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post(
+        "/v1/external-subscription-confirmations/{confirmation_id}/"
+        "transaction-drafts/{draft_id}/revise"
+    )
+    def external_subscription_transaction_draft_revise(
+        confirmation_id: str,
+        draft_id: str,
+        request: ExternalSubscriptionTransactionDraftReviseRequest,
+    ) -> dict[str, Any]:
+        return success(
+            subscriptions.revise_transaction_draft(
+                confirmation_id=confirmation_id,
+                draft_id=draft_id,
+                expected_payload_hash=request.expected_payload_hash,
+                expected_gross_amount=str(request.expected_gross_amount),
                 actor_ref=request.actor_ref,
             )
         )
