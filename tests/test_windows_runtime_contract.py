@@ -26,6 +26,7 @@ def test_windows_installer_uses_hidden_managed_core() -> None:
     assert "-RunOnlyIfNetworkAvailable" in installer
     assert "investor db backup" in installer
     assert "hermes mcp remove" not in installer
+    assert '"value-dca-investor", "investor-core-operations"' in installer
     assert "-NoExit" not in installer
 
 
@@ -68,7 +69,7 @@ def test_release_manifest_matches_project_version() -> None:
     assert manifest["channel"] == "stable"
     assert manifest["version"] == project["project"]["version"]
     assert f'__version__ = "{project["project"]["version"]}"' in runtime_version
-    assert manifest["database_revision"] == "0033_external_subscription_gross_transaction"
+    assert manifest["database_revision"] == "0034_partial_plan_closure"
 
 
 def test_windows_installer_copies_console_free_hermes_cron_scripts() -> None:
@@ -137,6 +138,7 @@ def test_windows_updater_is_release_only_backup_first_and_rollback_capable() -> 
     assert updater.index("$Supervisors | Stop-Process -Force") < updater.index(
         '$Processes | Stop-Process -Force'
     )
+    assert '"value-dca-investor", "investor-core-operations"' in updater
 
 
 def test_windows_installer_stops_orphaned_managed_supervisor_before_sync() -> None:

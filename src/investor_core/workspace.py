@@ -67,12 +67,11 @@ class WorkspaceService:
         in_flight_total = 0
         cancelled_total = 0
         plan_ids: set[str] = set()
+        closures: dict[str, JsonDict] = {}
         for row in rows:
             planned = int(row["planned_amount_minor"])
             executed = int(row["executed_amount_minor"])
-            in_flight = min(
-                int(row["in_flight_amount_minor"]), max(planned - executed, 0)
-            )
+            in_flight = min(int(row["in_flight_amount_minor"]), max(planned - executed, 0))
             cancelled = int(row["cancelled_or_refunded_amount_minor"])
             remaining = max(planned - executed, 0)
             planned_total += planned
@@ -80,6 +79,23 @@ class WorkspaceService:
             in_flight_total += in_flight
             cancelled_total += cancelled
             plan_ids.add(str(row["plan_id"]))
+            is_partial_closed = str(row["plan_status"]) == "PARTIALLY_EXECUTED_CLOSED"
+            if is_partial_closed:
+                closures[str(row["plan_id"])] = {
+                    "plan_id": str(row["plan_id"]),
+                    "planned_amount": "0.00",
+                    "executed_amount": "0.00",
+                    "abandoned_amount": "0.00",
+                    "execution_rate_pct": "0.00",
+                    "reason_code": (
+                        str(row["closure_reason_code"])
+                        if "closure_reason_code" in row
+                        else ""
+                    ),
+                    "note": (str(row["closure_note"]) if "closure_note" in row else ""),
+                    "carry_forward": False,
+                    "outcome": "部分执行后结束",
+                }
             items.append(
                 {
                     "plan_id": str(row["plan_id"]),
@@ -92,13 +108,32 @@ class WorkspaceService:
                     "remaining_amount": cls._amount_from_minor(remaining),
                     "in_flight_amount": cls._amount_from_minor(in_flight),
                     "unsubmitted_amount": cls._amount_from_minor(
-                        max(remaining - in_flight, 0)
+                        0 if is_partial_closed else max(remaining - in_flight, 0)
+                    ),
+                    "abandoned_amount": cls._amount_from_minor(
+                        remaining if is_partial_closed else 0
                     ),
                     "cancelled_or_refunded_amount": cls._amount_from_minor(cancelled),
                     "valid_transaction_count": int(row["valid_transaction_count"]),
                     "reversed_transaction_count": int(row["reversed_transaction_count"]),
                     "complete": executed == planned,
                 }
+            )
+        for closure in closures.values():
+            closure_items = [item for item in items if item["plan_id"] == closure["plan_id"]]
+            closure_planned = sum(
+                int(Decimal(str(item["planned_amount"])) * 100) for item in closure_items
+            )
+            closure_executed = sum(
+                int(Decimal(str(item["executed_amount"])) * 100) for item in closure_items
+            )
+            closure["planned_amount"] = cls._amount_from_minor(closure_planned)
+            closure["executed_amount"] = cls._amount_from_minor(closure_executed)
+            closure["abandoned_amount"] = cls._amount_from_minor(closure_planned - closure_executed)
+            closure["execution_rate_pct"] = (
+                f"{Decimal(closure_executed) * 100 / Decimal(closure_planned):.2f}"
+                if closure_planned
+                else "0.00"
             )
         return {
             "plan_count": len(plan_ids),
@@ -107,8 +142,21 @@ class WorkspaceService:
             "remaining_amount": cls._amount_from_minor(max(planned_total - executed_total, 0)),
             "in_flight_amount": cls._amount_from_minor(in_flight_total),
             "unsubmitted_amount": cls._amount_from_minor(
-                max(planned_total - executed_total - in_flight_total, 0)
+                max(
+                    planned_total
+                    - executed_total
+                    - in_flight_total
+                    - sum(
+                        int(Decimal(str(item["abandoned_amount"])) * 100)
+                        for item in closures.values()
+                    ),
+                    0,
+                )
             ),
+            "abandoned_amount": cls._amount_from_minor(
+                sum(int(Decimal(str(item["abandoned_amount"])) * 100) for item in closures.values())
+            ),
+            "closures": list(closures.values()),
             "cancelled_or_refunded_amount": cls._amount_from_minor(cancelled_total),
             "fee_treatment": "CONFIRMED_PRINCIPAL_PLUS_FEE_COUNTS_TOWARD_PLAN",
             "items": items,
@@ -137,8 +185,7 @@ class WorkspaceService:
         )
         portfolios = {str(item["id"]): item for item in self._ledger.list_portfolios()}
         accounts = {
-            str(item["id"]): item
-            for item in self._ledger.list_accounts(portfolio_id=portfolio_id)
+            str(item["id"]): item for item in self._ledger.list_accounts(portfolio_id=portfolio_id)
         }
         portfolio = portfolios.get(portfolio_id)
         account = accounts.get(account_id)
@@ -247,6 +294,7 @@ class WorkspaceService:
                     GROUP BY s.weekly_plan_id, s.instrument_id
                 )
                 SELECT p.id AS plan_id, p.plan_date, p.status AS plan_status,
+                       p.closure_reason_code, p.closure_note,
                        i.code AS instrument_code, i.name AS instrument_name,
                        pi.candidate_amount_minor AS planned_amount_minor,
                        COALESCE(SUM(
@@ -484,6 +532,7 @@ class WorkspaceService:
                     GROUP BY s.weekly_plan_id, s.instrument_id
                 )
                 SELECT p.id AS plan_id, p.plan_date, p.status AS plan_status,
+                       p.closure_reason_code, p.closure_note,
                        i.code AS instrument_code, i.name AS instrument_name,
                        pi.candidate_amount_minor AS planned_amount_minor,
                        COALESCE(SUM(
@@ -512,7 +561,10 @@ class WorkspaceService:
                   ON s.weekly_plan_id=p.id AND s.instrument_id=pi.instrument_id
                 WHERE p.portfolio_id=? AND p.account_id=?
                   AND p.plan_date BETWEEN ? AND ?
-                  AND p.status IN ('FROZEN','PARTIALLY_EXECUTED','EXECUTED')
+                  AND p.status IN (
+                      'FROZEN','PARTIALLY_EXECUTED',
+                      'PARTIALLY_EXECUTED_CLOSED','EXECUTED'
+                  )
                   AND pi.action='CONTRIBUTE' AND pi.candidate_amount_minor > 0
                 GROUP BY p.id, p.plan_date, p.status, i.code, i.name,
                          pi.candidate_amount_minor, s.in_flight_amount_minor,
@@ -646,11 +698,11 @@ class WorkspaceService:
         plan_counts = workflows["plan_counts"]
         plan_state_summary = workflows["plan_state_summary"]
         closed_plan_count = sum(
-            int(plan_counts.get(status, 0)) for status in ("EXECUTED", "SKIPPED")
+            int(plan_counts.get(status, 0))
+            for status in ("PARTIALLY_EXECUTED_CLOSED", "EXECUTED", "SKIPPED")
         )
         open_plan_count = sum(
-            int(plan_counts.get(status, 0))
-            for status in ("DRAFT", "FROZEN", "PARTIALLY_EXECUTED")
+            int(plan_counts.get(status, 0)) for status in ("DRAFT", "FROZEN", "PARTIALLY_EXECUTED")
         )
         subscription_progress = workflows["external_subscription_progress"]
         active_subscription_count = int(subscription_progress["active_count"])
@@ -1160,6 +1212,15 @@ class WorkspaceService:
             "",
             "当前待处理事实:",
         ]
+        for closure in plan_progress["closures"]:
+            lines.append(
+                "- 部分执行后结束: "
+                f"预算 ¥{closure['planned_amount']} / "
+                f"实际 ¥{closure['executed_amount']} / "
+                f"未执行 ¥{closure['abandoned_amount']} / "
+                f"执行率 {closure['execution_rate_pct']}% / 未结转"
+            )
+            lines.append(f"  原因: {closure['reason_code']} | {closure['note']}")
         if not actions:
             lines.append("- 当前没有 Core 识别出的待处理事实。")
         else:

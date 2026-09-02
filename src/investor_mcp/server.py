@@ -357,9 +357,7 @@ async def automation_alert_list(
 async def portfolio_performance_get(
     period_start: str,
     period_end: str,
-    period_type: Literal[
-        "CUSTOM", "MONTHLY", "QUARTERLY", "ANNUAL", "SINCE_INCEPTION"
-    ] = "CUSTOM",
+    period_type: Literal["CUSTOM", "MONTHLY", "QUARTERLY", "ANNUAL", "SINCE_INCEPTION"] = "CUSTOM",
     portfolio_id: str = "",
 ) -> dict[str, Any]:
     """Calculate ledger-backed performance and benchmark attribution without trading."""
@@ -1501,9 +1499,7 @@ async def instrument_create(
 @mcp.tool()
 async def instrument_list(portfolio_id: str = "", account_id: str = "") -> dict[str, Any]:
     """List registration classification and authoritative portfolio strategy role."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         if portfolio_id or account_id:
             return error
@@ -1519,17 +1515,13 @@ async def instrument_list(portfolio_id: str = "", account_id: str = "") -> dict[
 async def strategy_instrument_role_draft_create(
     instrument_code: str,
     strategy_role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"],
-    expected_current_strategy_role: Literal[
-        "CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"
-    ],
+    expected_current_strategy_role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"],
     reason: str,
     portfolio_id: str = "",
     account_id: str = "",
 ) -> dict[str, Any]:
     """Create a governed strategy-role draft; a later explicit commit is required."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     return await core_request(
@@ -1549,9 +1541,7 @@ async def strategy_instrument_role_draft_create(
 async def instrument_role_update(
     code: str,
     role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"],
-    expected_current_role: Literal[
-        "CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"
-    ],
+    expected_current_role: Literal["CORE", "SATELLITE", "CASH", "WATCH", "UNASSIGNED"],
     reason: str,
     portfolio_id: str = "",
     account_id: str = "",
@@ -1622,9 +1612,7 @@ async def strategy_instrument_config_draft_create(
             "clear_fields contains unsupported strategy fields: "
             + ", ".join(sorted(unsupported_clears))
         )
-    conflicting = sorted(
-        field for field in requested_clears if nullable_values[field] is not None
-    )
+    conflicting = sorted(field for field in requested_clears if nullable_values[field] is not None)
     if conflicting:
         raise ValueError(
             "a strategy field cannot be set and cleared in the same draft: "
@@ -1903,9 +1891,7 @@ async def satellite_signal_policy_draft_create(
     account_id: str = "",
 ) -> dict[str, Any]:
     """Draft one exact satellite valuation-signal policy; this never changes strategy."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     return await core_request(
@@ -1954,9 +1940,7 @@ async def satellite_signal_policy_list(
     account_id: str = "",
 ) -> dict[str, Any]:
     """List approved satellite signal policies without evaluating instruments."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     return await core_request(
@@ -1973,9 +1957,7 @@ async def satellite_signal_snapshot_build(
     account_id: str = "",
 ) -> dict[str, Any]:
     """Build immutable PE/PB gate facts; OPEN is not advice, execution or a trade."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     return await core_request(
@@ -1997,9 +1979,7 @@ async def satellite_signal_snapshot_list(
     account_id: str = "",
 ) -> dict[str, Any]:
     """List persisted satellite signal facts without generating new observations."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     params: dict[str, Any] = {
@@ -2061,9 +2041,7 @@ async def risk_rule_hit_list(
     account_id: str = "",
 ) -> dict[str, Any]:
     """List paginated deterministic rule facts; details are opt-in to protect context."""
-    resolved_portfolio_id, _, error = await resolve_investment_context(
-        portfolio_id, account_id
-    )
+    resolved_portfolio_id, _, error = await resolve_investment_context(portfolio_id, account_id)
     if error is not None:
         return error
     params: dict[str, Any] = {
@@ -2437,6 +2415,73 @@ async def weekly_plan_skip_draft_commit(
     return await core_request(
         "POST",
         f"/v1/weekly-plan-skip-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_plan_partial_close_draft_create(
+    plan_id: str,
+    closure_business_date: str,
+    closure_reason_code: Literal[
+        "PLATFORM_LIMIT_REMAINDER_ABANDONED",
+        "PERIOD_ENDED_REMAINDER_ABANDONED",
+        "USER_DECLINED_REMAINDER",
+    ],
+    closure_note: str,
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Preview ending a PARTIALLY_EXECUTED plan with its remainder abandoned.
+
+    The remainder is never carried forward. This creates only a confirmation draft;
+    it never creates trades, subscriptions, cash movements, or holding changes.
+    """
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plans/{plan_id}/partial-close-drafts",
+        payload={
+            "closure_business_date": closure_business_date,
+            "closure_reason_code": closure_reason_code,
+            "closure_note": closure_note,
+            "carry_forward": False,
+            "idempotency_key": idempotency_key,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_plan_partial_close_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read the exact partial-plan closure preview without changing plan facts."""
+    return await core_request(
+        "GET",
+        f"/v1/weekly-plan-partial-close-drafts/{draft_id}",
+    )
+
+
+@mcp.tool()
+async def weekly_plan_partial_close_draft_renew(draft_id: str) -> dict[str, Any]:
+    """Renew only an expired, unchanged partial-plan closure confirmation."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plan-partial-close-drafts/{draft_id}/renew",
+        payload={"actor_ref": "hermes"},
+    )
+
+
+@mcp.tool()
+async def weekly_plan_partial_close_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """End the exact partial plan after user confirmation; create no financial facts."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plan-partial-close-drafts/{draft_id}/commit",
         payload={
             "confirmation_token": confirmation_token,
             "confirmed_by": confirmed_by,

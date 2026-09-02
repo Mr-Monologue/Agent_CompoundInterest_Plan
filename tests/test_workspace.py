@@ -320,6 +320,58 @@ def test_daily_and_weekly_reports_show_partial_plan_progress(tmp_path: Path) -> 
     assert weekly["weekly_summary"]["plan_execution_progress"] == progress
     assert "已成交 ¥40.00 / 计划 ¥100.00 / 剩余 ¥60.00" in weekly["display_text"]
 
+    close = planning.create_partial_close_draft(
+        plan_id=plan_id,
+        closure_business_date="2026-08-09",
+        closure_reason_code="PERIOD_ENDED_REMAINDER_ABANDONED",
+        closure_note="周期结束, 剩余金额不再执行且不结转。",
+        carry_forward=False,
+        idempotency_key="workspace-partial-close",
+    )
+    planning.commit_partial_close_draft(
+        draft_id=str(close["draft"]["id"]),
+        confirmation_token=str(close["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+
+    closed_daily = service.get(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        as_of_date=date(2026, 8, 4),
+        view="DAILY",
+    )
+    assert closed_daily["workflows"]["plan_counts"]["PARTIALLY_EXECUTED_CLOSED"] == 1
+    assert closed_daily["workflows"]["plan_state_summary"][
+        "future_plan_blocking_count"
+    ] == 0
+    assert closed_daily["workflows"]["plan_execution_progress"]["plan_count"] == 0
+    assert all(
+        action["code"] != "WEEKLY_PLANS_AWAIT_USER_STATE"
+        for action in closed_daily["next_actions"]
+    )
+    closed_lifecycle = next(
+        item
+        for item in closed_daily["v1_readiness"]["checks"]
+        if item["code"] == "WEEKLY_PLAN_LIFECYCLE"
+    )
+    assert closed_lifecycle["status"] == "PASS"
+    assert closed_lifecycle["reason_code"] == "CLOSED_PLAN_LIFECYCLE_OBSERVED"
+
+    closed_weekly = service.get(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        as_of_date=date(2026, 8, 4),
+        view="WEEKLY",
+    )
+    closed_progress = closed_weekly["weekly_summary"]["plan_execution_progress"]
+    assert closed_progress["planned_amount"] == "100.00"
+    assert closed_progress["executed_amount"] == "40.00"
+    assert closed_progress["remaining_amount"] == "60.00"
+    assert closed_progress["abandoned_amount"] == "60.00"
+    assert closed_progress["closures"][0]["execution_rate_pct"] == "40.00"
+    assert "部分执行后结束" in closed_weekly["display_text"]
+    assert "未结转" in closed_weekly["display_text"]
+
 
 def test_readiness_reports_strategy_and_v1_operations_literally(tmp_path: Path) -> None:
     database_path = tmp_path / "investor.db"

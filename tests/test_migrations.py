@@ -9,6 +9,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from conftest import PROJECT_ROOT, migrate_database
+from test_planning import commit_buy, configured_services
 from test_subscriptions import confirm, frozen_plan, legacy_net_transaction_draft, submit
 
 from investor_core.config import Environment, Settings
@@ -101,6 +102,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "investment_plans",
         "plan_execution_links",
         "weekly_plan_skip_drafts",
+        "weekly_plan_partial_close_drafts",
         "external_subscriptions",
         "external_subscription_confirmations",
         "external_subscription_drafts",
@@ -111,7 +113,8 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0033_external_subscription_gross_transaction",)
+    assert revision == ("0034_partial_plan_closure",)
+
 
 def test_external_subscription_draft_renewal_migration_preserves_existing_drafts(
     tmp_path: Path,
@@ -143,9 +146,7 @@ def test_external_subscription_draft_renewal_migration_preserves_existing_drafts
     with sqlite3.connect(database_path) as connection:
         columns = {
             str(row[1])
-            for row in connection.execute(
-                "PRAGMA table_info(external_subscription_drafts)"
-            )
+            for row in connection.execute("PRAGMA table_info(external_subscription_drafts)")
         }
         row = connection.execute(
             """
@@ -165,15 +166,13 @@ def test_external_subscription_draft_renewal_migration_preserves_existing_drafts
         None,
         0,
     )
-    assert revision == ("0033_external_subscription_gross_transaction",)
+    assert revision == ("0034_partial_plan_closure",)
 
     downgrade_to(database_path, "0030_instrument_role_contract")
     with sqlite3.connect(database_path) as connection:
         downgraded_columns = {
             str(column[1])
-            for column in connection.execute(
-                "PRAGMA table_info(external_subscription_drafts)"
-            )
+            for column in connection.execute("PRAGMA table_info(external_subscription_drafts)")
         }
         downgraded_row = connection.execute(
             """
@@ -285,7 +284,7 @@ def test_confirmation_time_precision_revision_migration_upgrades_and_downgrades(
         ).fetchone()
     migrated_payload = json.loads(draft_row[2])
     assert confirmation_precision == ("EXACT",)
-    assert revision == ("0033_external_subscription_gross_transaction",)
+    assert revision == ("0034_partial_plan_closure",)
     assert draft_row[0] == pending["draft"]["id"]
     assert draft_row[1] == pending["draft"]["idempotency_key"]
     assert migrated_payload["confirmed_at_precision"] == "EXACT"
@@ -296,9 +295,7 @@ def test_confirmation_time_precision_revision_migration_upgrades_and_downgrades(
     with sqlite3.connect(tmp_path / "draft.db") as connection:
         downgraded_columns = {
             str(column[1])
-            for column in connection.execute(
-                "PRAGMA table_info(external_subscription_drafts)"
-            )
+            for column in connection.execute("PRAGMA table_info(external_subscription_drafts)")
         }
         restored_payload_json, restored_payload_hash = connection.execute(
             "SELECT payload_json, payload_hash FROM external_subscription_drafts WHERE id=?",
@@ -368,8 +365,7 @@ def test_gross_transaction_migration_marks_and_preserves_legacy_net_draft(
     migrate_database(database_path)
     with sqlite3.connect(database_path) as connection:
         draft_columns = {
-            str(column[1])
-            for column in connection.execute("PRAGMA table_info(transaction_drafts)")
+            str(column[1]) for column in connection.execute("PRAGMA table_info(transaction_drafts)")
         }
         link_columns = {
             str(column[1])
@@ -410,13 +406,12 @@ def test_gross_transaction_migration_marks_and_preserves_legacy_net_draft(
         0,
     )
     assert migrated_link == (4000, 3997, 3, None, 0)
-    assert revision == ("0033_external_subscription_gross_transaction",)
+    assert revision == ("0034_partial_plan_closure",)
 
     downgrade_to(database_path, "0032_confirmation_time_precision_revision")
     with sqlite3.connect(database_path) as connection:
         downgraded_draft_columns = {
-            str(column[1])
-            for column in connection.execute("PRAGMA table_info(transaction_drafts)")
+            str(column[1]) for column in connection.execute("PRAGMA table_info(transaction_drafts)")
         }
         downgraded_link_columns = {
             str(column[1])
@@ -465,9 +460,7 @@ def test_instrument_role_contract_migration_renames_and_preserves_registration_r
     migrate_database(database_path)
 
     with sqlite3.connect(database_path) as connection:
-        columns = {
-            str(row[1]) for row in connection.execute("PRAGMA table_info(instruments)")
-        }
+        columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(instruments)")}
         saved_role = connection.execute(
             "SELECT registration_role FROM instruments WHERE code = '040046'"
         ).fetchone()
@@ -579,7 +572,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0033_external_subscription_gross_transaction",
+            "0034_partial_plan_closure",
         )
 
 
@@ -684,7 +677,7 @@ def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
         "2026-07-02T00:01:00Z",
         None,
     )
-    assert revision == ("0033_external_subscription_gross_transaction",)
+    assert revision == ("0034_partial_plan_closure",)
     snapshot = ResearchService(settings).build_watchlist_review_snapshot(
         portfolio_id=str(portfolio["id"]),
         as_of_date=date(2026, 9, 1),
@@ -714,7 +707,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0033_external_subscription_gross_transaction",)
+    assert revision == ("0034_partial_plan_closure",)
 
 
 def test_alert_recovery_migration_resolves_only_recovered_job_runs(tmp_path: Path) -> None:
@@ -831,16 +824,10 @@ def test_satellite_signal_migration_preserves_alert_resolution_schema(
     with sqlite3.connect(database_path) as connection:
         tables = {
             row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-        alert_columns = {
-            row[1] for row in connection.execute("PRAGMA table_info(alerts)")
-        }
-        revision = connection.execute(
-            "SELECT version_num FROM alembic_version"
-        ).fetchone()
+        alert_columns = {row[1] for row in connection.execute("PRAGMA table_info(alerts)")}
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {
         "satellite_signal_policy_drafts",
         "satellite_signal_policies",
@@ -852,7 +839,7 @@ def test_satellite_signal_migration_preserves_alert_resolution_schema(
         "resolution_code",
         "resolution_context_json",
     } <= alert_columns
-    assert revision == ("0033_external_subscription_gross_transaction",)
+    assert revision == ("0034_partial_plan_closure",)
 
 
 def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
@@ -886,14 +873,65 @@ def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
                 "external_subscription_drafts",
                 "subscription_confirmation_transaction_links",
                 "weekly_plan_skip_drafts",
+                "weekly_plan_partial_close_drafts",
             )
         }
-        revision = connection.execute(
-            "SELECT version_num FROM alembic_version"
-        ).fetchone()
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert after == before
     assert set(new_counts.values()) == {0}
-    assert revision == ("0033_external_subscription_gross_transaction",)
+    assert revision == ("0034_partial_plan_closure",)
+
+
+def test_partial_plan_closure_migration_never_auto_closes_historical_partial_plan(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    ledger, planning, portfolio_id, account_id = configured_services(database_path)
+    created = planning.create_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        contribution_amount="100.00",
+        plan_date_value="2026-07-21",
+        idempotency_key="historical-partial-migration",
+        as_of_date_value="2026-07-21",
+    )
+    plan_id = str(created["plan"]["id"])
+    planning.freeze(
+        plan_id=plan_id,
+        confirmation_token=str(created["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    trade = commit_buy(
+        ledger,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        instrument_code="CORE01",
+        trade_date="2026-07-21",
+        amount="40.00",
+        key="historical-partial-buy",
+    )
+    planning.link_transaction(
+        plan_id=plan_id,
+        transaction_id=str(trade["transaction"]["id"]),
+        confirmed_by="test-user",
+    )
+
+    downgrade_to(database_path, "0033_external_subscription_gross_transaction")
+    migrate_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        plan = connection.execute(
+            """
+            SELECT status, closed_at, closure_reason_code, abandoned_amount_minor
+            FROM investment_plans WHERE id=?
+            """,
+            (plan_id,),
+        ).fetchone()
+        close_draft_count = connection.execute(
+            "SELECT COUNT(*) FROM weekly_plan_partial_close_drafts"
+        ).fetchone()[0]
+    assert plan == ("PARTIALLY_EXECUTED", None, None, None)
+    assert close_draft_count == 0
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(

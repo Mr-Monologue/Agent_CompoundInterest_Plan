@@ -138,6 +138,17 @@ drafts do not carry a separate fee; an external-subscription BUY is the governed
 below and records its gross cash cost while preserving net confirmation and fee audit facts. Never
 reuse a transaction across plans or associate a reversed transaction.
 
+When a plan is `PARTIALLY_EXECUTED` and the user explicitly decides that its positive remainder
+will not be executed or carried forward, use the governed partial-close flow. First create
+`weekly_plan_partial_close_draft_create` with the formal reason and a clear note, show the period,
+plan/executed/remaining amounts and every fund's progress, and state that carry-forward is false.
+This draft creates no financial fact. Commit it only after fresh explicit confirmation with
+`weekly_plan_partial_close_draft_commit`. The terminal result is
+`PARTIALLY_EXECUTED_CLOSED`: it preserves actual execution and the abandoned remainder, releases
+future-plan blocking and prior commitments, and is neither `EXECUTED` nor `SKIPPED`. If its token
+expires, use `weekly_plan_partial_close_draft_renew`; never reuse the old token. Do not use this
+flow while subscriptions, confirmations, or still-submittable related drafts remain active.
+
 External-subscription drafts have separate create, renew, and commit semantics. When
 `external_subscription_draft_get` reports an uncommitted draft as `EXPIRED`, use
 `external_subscription_draft_renew` only after the user asks to continue that same business
