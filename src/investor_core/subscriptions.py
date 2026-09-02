@@ -16,12 +16,19 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from investor_core.config import Settings
-from investor_core.ledger import JsonDict, LedgerError, LedgerService
+from investor_core.ledger import (
+    JsonDict,
+    LedgerError,
+    LedgerService,
+    transaction_draft_payload,
+    transaction_draft_payload_hash,
+)
 from investor_core.planning import PlanningService
 
 MONEY_SCALE = 100
 NAV_SCALE = 1_000_000
 SHARE_SCALE = 1_000_000
+GROSS_ROUNDING_TOLERANCE_MINOR = 1
 
 
 def _utc_now() -> datetime:
@@ -107,13 +114,15 @@ class SubscriptionService:
         entity_type: str,
         entity_id: str,
         details: JsonDict,
+        before_hash: str | None = None,
+        after_hash: str | None = None,
     ) -> None:
         connection.execute(
             """
             INSERT INTO audit_events (
                 id, occurred_at, actor_type, actor_ref, action,
                 entity_type, entity_id, details_json, before_hash, after_hash, trace_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(uuid4()),
@@ -124,6 +133,8 @@ class SubscriptionService:
                 entity_type,
                 entity_id,
                 json.dumps(details, ensure_ascii=False, sort_keys=True),
+                before_hash,
+                after_hash,
                 str(uuid4()),
             ),
         )
@@ -160,10 +171,18 @@ class SubscriptionService:
         return connection.execute(
             """
             SELECT c.*, l.transaction_draft_id, l.transaction_id,
-                   l.plan_linked_amount_minor, t.reversed_by_transaction_id
+                   l.plan_linked_amount_minor, l.gross_amount_minor,
+                   l.confirmed_amount_minor AS linked_confirmed_amount_minor,
+                   l.fee_minor AS linked_fee_minor,
+                   d.amount_minor AS transaction_draft_amount_minor,
+                   d.status AS transaction_draft_status,
+                   d.request_hash AS transaction_draft_payload_hash,
+                   t.amount_minor AS transaction_amount_minor,
+                   t.reversed_by_transaction_id
             FROM external_subscription_confirmations c
             LEFT JOIN subscription_confirmation_transaction_links l
               ON l.confirmation_id=c.id
+            LEFT JOIN transaction_drafts d ON d.id=l.transaction_draft_id
             LEFT JOIN transactions t ON t.id=l.transaction_id
             WHERE c.subscription_id=? AND c.kind='CONFIRMATION'
               AND c.reversed_by_confirmation_id IS NULL
@@ -237,10 +256,11 @@ class SubscriptionService:
                 and item["reversed_by_transaction_id"] is None
             )
             cash_use = int(item["confirmed_amount_minor"]) + int(item["fee_minor"])
+            gross_amount = int(item["gross_amount_minor"] or cash_use)
             if active_transaction:
-                booked_plan_amount += int(item["plan_linked_amount_minor"] or cash_use)
+                booked_plan_amount += int(item["plan_linked_amount_minor"] or gross_amount)
             else:
-                confirmed_unbooked += cash_use
+                confirmed_unbooked += gross_amount
             confirmation_items.append(
                 {
                     "id": str(item["id"]),
@@ -260,10 +280,23 @@ class SubscriptionService:
                     ),
                     "confirmed_amount": _money(int(item["confirmed_amount_minor"])),
                     "fee": _money(int(item["fee_minor"])),
+                    "gross_amount": _money(gross_amount),
                     "refunded_amount": _money(int(item["refunded_amount_minor"])),
                     "external_reference": item["external_reference"],
                     "ledger_status": "BOOKED" if active_transaction else "AWAITING_USER_POSTING",
                     "transaction_id": item["transaction_id"],
+                    "transaction_draft_id": item["transaction_draft_id"],
+                    "transaction_draft_status": item["transaction_draft_status"],
+                    "transaction_draft_amount": (
+                        _money(int(item["transaction_draft_amount_minor"]))
+                        if item["transaction_draft_amount_minor"] is not None
+                        else None
+                    ),
+                    "transaction_amount": (
+                        _money(int(item["transaction_amount_minor"]))
+                        if item["transaction_amount_minor"] is not None
+                        else None
+                    ),
                 }
             )
         expected = row["expected_confirmation_date"]
@@ -1702,6 +1735,184 @@ class SubscriptionService:
             "automatic_failure_inference": False,
         }
 
+    def _external_transaction_context(
+        self,
+        connection: sqlite3.Connection,
+        confirmation_id: str,
+    ) -> sqlite3.Row:
+        row = connection.execute(
+            """
+            SELECT c.id AS confirmation_id, c.subscription_id, c.kind,
+                   c.reversed_by_confirmation_id,
+                   c.confirmed_at_precision, c.confirmation_business_date,
+                   c.nav_date, c.nav_micros, c.confirmed_shares_micros,
+                   c.confirmed_amount_minor AS confirmation_net_minor,
+                   c.fee_minor AS confirmation_fee_minor,
+                   s.portfolio_id, s.account_id, s.weekly_plan_id, s.instrument_id,
+                   s.requested_amount_minor, s.pending_amount_minor,
+                   s.confirmed_amount_minor AS subscription_confirmed_minor,
+                   s.fee_minor AS subscription_fee_minor,
+                   s.refunded_amount_minor, s.cancelled_amount_minor,
+                   s.currency AS subscription_currency, s.status AS subscription_status,
+                   s.external_platform, a.currency AS account_currency,
+                   i.code AS instrument_code, i.currency AS instrument_currency,
+                   l.transaction_draft_id, l.transaction_id,
+                   l.plan_linked_amount_minor, l.gross_amount_minor,
+                   l.confirmed_amount_minor AS linked_confirmed_minor,
+                   l.fee_minor AS linked_fee_minor,
+                   l.revision_count AS link_revision_count,
+                   t.reversed_by_transaction_id,
+                   (
+                       SELECT COUNT(*)
+                       FROM external_subscription_confirmations active
+                       WHERE active.subscription_id=c.subscription_id
+                         AND active.kind='CONFIRMATION'
+                         AND active.reversed_by_confirmation_id IS NULL
+                   ) AS active_confirmation_count
+            FROM external_subscription_confirmations c
+            JOIN external_subscriptions s ON s.id=c.subscription_id
+            JOIN accounts a ON a.id=s.account_id
+            JOIN instruments i ON i.id=s.instrument_id
+            LEFT JOIN subscription_confirmation_transaction_links l
+              ON l.confirmation_id=c.id
+            LEFT JOIN transactions t ON t.id=l.transaction_id
+            WHERE c.id=?
+            """,
+            (confirmation_id,),
+        ).fetchone()
+        if (
+            row is None
+            or str(row["kind"]) != "CONFIRMATION"
+            or row["reversed_by_confirmation_id"] is not None
+        ):
+            raise LedgerError(
+                "CONFIRMATION_NOT_POSTABLE",
+                "只有有效且未冲销的份额确认可以生成交易草稿。",
+                http_status=409,
+            )
+        if (
+            row["transaction_id"] is not None
+            and row["reversed_by_transaction_id"] is None
+        ):
+            raise LedgerError(
+                "CONFIRMATION_ALREADY_POSTED",
+                "该份额确认已经生成正式交易; 不能重复记账。",
+                http_status=409,
+            )
+        assert isinstance(row, sqlite3.Row)
+        return row
+
+    def _external_transaction_amounts(self, row: sqlite3.Row) -> JsonDict:
+        currencies = {
+            str(row["subscription_currency"]),
+            str(row["account_currency"]),
+            str(row["instrument_currency"]),
+        }
+        if len(currencies) != 1:
+            raise LedgerError(
+                "EXTERNAL_SUBSCRIPTION_CURRENCY_MISMATCH",
+                "申购、账户和基金币种不一致; 不能自动生成交易记账草稿。",
+                http_status=409,
+                details={
+                    "subscription_currency": str(row["subscription_currency"]),
+                    "account_currency": str(row["account_currency"]),
+                    "instrument_currency": str(row["instrument_currency"]),
+                },
+            )
+        submitted = int(row["requested_amount_minor"])
+        net = int(row["confirmation_net_minor"])
+        fee = int(row["confirmation_fee_minor"])
+        computed_gross = net + fee
+        aggregate = (
+            int(row["subscription_confirmed_minor"])
+            + int(row["subscription_fee_minor"])
+            + int(row["refunded_amount_minor"])
+            + int(row["cancelled_amount_minor"])
+            + int(row["pending_amount_minor"])
+        )
+        aggregate_difference = submitted - aggregate
+        if abs(aggregate_difference) > GROSS_ROUNDING_TOLERANCE_MINOR:
+            raise LedgerError(
+                "EXTERNAL_SUBSCRIPTION_GROSS_AMOUNT_MISMATCH",
+                "申购毛额与确认净额、手续费及剩余金额不一致; 拒绝自动记账。",
+                http_status=409,
+                details={
+                    "submitted_gross_amount": _money(submitted),
+                    "confirmed_amount": _money(net),
+                    "fee": _money(fee),
+                    "aggregate_difference": _money(aggregate_difference),
+                    "allowed_difference": _money(GROSS_ROUNDING_TOLERANCE_MINOR),
+                },
+            )
+        original_amount_is_attributable = (
+            int(row["active_confirmation_count"]) == 1
+            and int(row["pending_amount_minor"]) == 0
+            and int(row["refunded_amount_minor"]) == 0
+            and int(row["cancelled_amount_minor"]) == 0
+        )
+        gross = submitted if original_amount_is_attributable else computed_gross
+        difference = gross - computed_gross
+        if abs(difference) > GROSS_ROUNDING_TOLERANCE_MINOR:
+            raise LedgerError(
+                "EXTERNAL_SUBSCRIPTION_GROSS_AMOUNT_MISMATCH",
+                "申购毛额不等于确认净额加手续费; 拒绝自动记账。",
+                http_status=409,
+                details={
+                    "submitted_gross_amount": _money(submitted),
+                    "confirmed_amount": _money(net),
+                    "fee": _money(fee),
+                    "computed_gross_amount": _money(computed_gross),
+                    "difference": _money(difference),
+                    "allowed_difference": _money(GROSS_ROUNDING_TOLERANCE_MINOR),
+                },
+            )
+        return {
+            "gross_minor": gross,
+            "confirmed_minor": net,
+            "fee_minor": fee,
+            "difference_minor": difference,
+            "currency": str(row["subscription_currency"]),
+        }
+
+    @staticmethod
+    def _transaction_payload_from_row(row: sqlite3.Row) -> JsonDict:
+        row_keys = set(row.keys())
+        return transaction_draft_payload(
+            portfolio_id=str(row["portfolio_id"]),
+            account_id=str(row["account_id"]),
+            instrument_id=str(row["instrument_id"]),
+            side=str(row["side"]),
+            trade_date=str(row["trade_date"]),
+            amount_minor=int(row["amount_minor"]),
+            nav_micros=int(row["nav_micros"]),
+            shares_micros=int(row["shares_micros"]),
+            platform=str(row["platform"]),
+            note=row["note"],
+            sell_proposal_id=(
+                row["sell_proposal_id"] if "sell_proposal_id" in row_keys else None
+            ),
+        )
+
+    @staticmethod
+    def _expected_external_transaction_payload(
+        row: sqlite3.Row,
+        *,
+        gross_minor: int,
+    ) -> JsonDict:
+        return transaction_draft_payload(
+            portfolio_id=str(row["portfolio_id"]),
+            account_id=str(row["account_id"]),
+            instrument_id=str(row["instrument_id"]),
+            side="BUY",
+            trade_date=str(row["nav_date"]),
+            amount_minor=gross_minor,
+            nav_micros=int(row["nav_micros"]),
+            shares_micros=int(row["confirmed_shares_micros"]),
+            platform=str(row["external_platform"]),
+            note=f"External subscription confirmation {row['confirmation_id']}",
+            sell_proposal_id=None,
+        )
+
     def create_transaction_draft(
         self,
         *,
@@ -1710,43 +1921,31 @@ class SubscriptionService:
         actor_ref: str = "hermes",
     ) -> JsonDict:
         with self._connect() as connection:
-            confirmation = connection.execute(
-                """
-                SELECT c.*, s.portfolio_id, s.account_id, s.weekly_plan_id,
-                       s.instrument_id, s.external_platform, i.code AS instrument_code,
-                       l.transaction_id, t.reversed_by_transaction_id
-                FROM external_subscription_confirmations c
-                JOIN external_subscriptions s ON s.id=c.subscription_id
-                JOIN instruments i ON i.id=s.instrument_id
-                LEFT JOIN subscription_confirmation_transaction_links l
-                  ON l.confirmation_id=c.id
-                LEFT JOIN transactions t ON t.id=l.transaction_id
-                WHERE c.id=?
-                """,
-                (confirmation_id,),
-            ).fetchone()
-            if (
-                confirmation is None
-                or str(confirmation["kind"]) != "CONFIRMATION"
-                or confirmation["reversed_by_confirmation_id"] is not None
-            ):
-                raise LedgerError(
-                    "CONFIRMATION_NOT_POSTABLE",
-                    "只有有效且未冲销的份额确认可以生成交易草稿。",
-                    http_status=409,
+            confirmation = self._external_transaction_context(connection, confirmation_id)
+            amounts = self._external_transaction_amounts(confirmation)
+            plan_linked_minor = int(amounts["gross_minor"])
+            if confirmation["transaction_draft_id"] is not None:
+                existing = self._ledger.get_transaction_draft(
+                    str(confirmation["transaction_draft_id"])
                 )
-            if (
-                confirmation["transaction_id"] is not None
-                and confirmation["reversed_by_transaction_id"] is None
-            ):
-                raise LedgerError(
-                    "CONFIRMATION_ALREADY_POSTED",
-                    "该份额确认已经生成正式交易; 不能重复记账。",
-                    http_status=409,
-                )
-            plan_linked_minor = int(confirmation["confirmed_amount_minor"]) + int(
-                confirmation["fee_minor"]
-            )
+                if str(existing["idempotency_key"]) != idempotency_key.strip():
+                    raise LedgerError(
+                        "CONFIRMATION_TRANSACTION_DRAFT_EXISTS",
+                        "该份额确认已经绑定交易草稿; 请读取并按需修订原草稿。",
+                        http_status=409,
+                    )
+                return {
+                    "draft": existing,
+                    "confirmation_token": None,
+                    "reused": True,
+                    "warnings": ["原交易草稿已存在; 不会创建第二份可提交草稿。"],
+                    "confirmation_id": confirmation_id,
+                    "gross_amount": _money(plan_linked_minor),
+                    "confirmed_amount": _money(int(amounts["confirmed_minor"])),
+                    "fee": _money(int(amounts["fee_minor"])),
+                    "plan_linked_amount": _money(plan_linked_minor),
+                    "business_effect": "DRAFT_ONLY_NO_HOLDING_CHANGE",
+                }
             planned, executed, _ = self._plan_capacity(
                 connection,
                 plan_id=str(confirmation["weekly_plan_id"]),
@@ -1768,7 +1967,7 @@ class SubscriptionService:
                 instrument_code=str(confirmation["instrument_code"]),
                 side="BUY",
                 trade_date_value=str(confirmation["nav_date"]),
-                amount=_money(int(confirmation["confirmed_amount_minor"])),
+                amount=_money(plan_linked_minor),
                 nav=_decimal(int(confirmation["nav_micros"]), NAV_SCALE, 6),
                 shares=_decimal(
                     int(confirmation["confirmed_shares_micros"]), SHARE_SCALE, 6
@@ -1776,8 +1975,20 @@ class SubscriptionService:
                 platform=str(confirmation["external_platform"]),
                 idempotency_key=idempotency_key,
                 note=f"External subscription confirmation {confirmation_id}",
+                nav_consistency_amount=_money(int(amounts["confirmed_minor"])),
+                origin="EXTERNAL_SUBSCRIPTION",
+                origin_reference_id=confirmation_id,
                 actor_ref=actor_ref,
             )
+            if (
+                str(draft_result["draft"].get("origin")) != "EXTERNAL_SUBSCRIPTION"
+                or str(draft_result["draft"].get("origin_reference_id")) != confirmation_id
+            ):
+                raise LedgerError(
+                    "TRANSACTION_DRAFT_ORIGIN_MISMATCH",
+                    "幂等键已被其他交易草稿占用; 不能绑定到该份额确认。",
+                    http_status=409,
+                )
         draft_id = str(draft_result["draft"]["id"])
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -1785,16 +1996,24 @@ class SubscriptionService:
                 """
                 INSERT INTO subscription_confirmation_transaction_links (
                     confirmation_id, transaction_draft_id, transaction_id,
-                    plan_linked_amount_minor, created_at, committed_at
-                ) VALUES (?, ?, NULL, ?, ?, NULL)
+                    plan_linked_amount_minor, gross_amount_minor,
+                    confirmed_amount_minor, fee_minor, created_at, committed_at
+                ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, NULL)
                 ON CONFLICT(confirmation_id) DO UPDATE SET
                     transaction_draft_id=excluded.transaction_draft_id,
-                    plan_linked_amount_minor=excluded.plan_linked_amount_minor
+                    transaction_id=NULL,
+                    plan_linked_amount_minor=excluded.plan_linked_amount_minor,
+                    gross_amount_minor=excluded.gross_amount_minor,
+                    confirmed_amount_minor=excluded.confirmed_amount_minor,
+                    fee_minor=excluded.fee_minor
                 """,
                 (
                     confirmation_id,
                     draft_id,
                     plan_linked_minor,
+                    plan_linked_minor,
+                    int(amounts["confirmed_minor"]),
+                    int(amounts["fee_minor"]),
                     _iso(self._now()),
                 ),
             )
@@ -1802,9 +2021,278 @@ class SubscriptionService:
         return {
             **draft_result,
             "confirmation_id": confirmation_id,
+            "gross_amount": _money(plan_linked_minor),
+            "confirmed_amount": _money(int(amounts["confirmed_minor"])),
+            "fee": _money(int(amounts["fee_minor"])),
+            "gross_difference": _money(int(amounts["difference_minor"])),
             "plan_linked_amount": _money(plan_linked_minor),
             "business_effect": "DRAFT_ONLY_NO_HOLDING_CHANGE",
         }
+
+    def revise_transaction_draft(
+        self,
+        *,
+        confirmation_id: str,
+        draft_id: str,
+        expected_payload_hash: str,
+        expected_gross_amount: str,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        """Atomically correct one uncommitted external-subscription BUY draft."""
+        actor = actor_ref.strip()
+        expected_hash = expected_payload_hash.strip()
+        expected_gross_minor = _scaled(
+            expected_gross_amount,
+            MONEY_SCALE,
+            "expected_gross_amount",
+        )
+        if not actor or not expected_hash or expected_gross_minor <= 0:
+            raise LedgerError(
+                "MISSING_REQUIRED_FIELD",
+                "预期载荷摘要、毛额和修订操作人不能为空。",
+            )
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            context = self._external_transaction_context(connection, confirmation_id)
+            if str(context["transaction_draft_id"] or "") != draft_id:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "SUBSCRIPTION_TRANSACTION_DRAFT_MISMATCH",
+                        "交易草稿与该份额确认不匹配。",
+                        http_status=409,
+                    ),
+                )
+            if context["transaction_id"] is not None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "CONFIRMATION_ALREADY_POSTED",
+                        "已经生成正式交易的份额确认不能修订交易草稿。",
+                        http_status=409,
+                    ),
+                )
+            draft = connection.execute(
+                """
+                SELECT * FROM transaction_drafts WHERE id=?
+                """,
+                (draft_id,),
+            ).fetchone()
+            if draft is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_NOT_FOUND",
+                        "没有找到该交易草稿。",
+                        http_status=404,
+                    ),
+                )
+            if draft["committed_at"] is not None or str(draft["status"]) == "COMMITTED":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_ALREADY_COMMITTED",
+                        "已经成功提交的交易草稿不能修订。",
+                        http_status=409,
+                    ),
+                )
+            if str(draft["status"]) not in {"PENDING", "EXPIRED"}:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_NOT_REVISABLE",
+                        f"交易草稿当前状态为 {draft['status']}; 不能修订。",
+                        http_status=409,
+                    ),
+                )
+            if (
+                str(draft["action"]) != "TRADE"
+                or str(draft["side"]) != "BUY"
+                or str(draft["origin"]) != "EXTERNAL_SUBSCRIPTION"
+                or str(draft["origin_reference_id"]) != confirmation_id
+            ):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_NOT_EXTERNAL_SUBSCRIPTION_TRANSACTION",
+                        "只有该份额确认原先绑定的外部申购 BUY 草稿可以修订。",
+                        http_status=409,
+                    ),
+                )
+            current_hash = str(draft["request_hash"])
+            if not hmac.compare_digest(current_hash, expected_hash):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_PAYLOAD_HASH_MISMATCH",
+                        "交易草稿已经变化; 请重新读取后再修订。",
+                        http_status=409,
+                    ),
+                )
+            current_payload = self._transaction_payload_from_row(draft)
+            if transaction_draft_payload_hash(current_payload) != current_hash:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_PAYLOAD_CHANGED",
+                        "交易草稿内容与保存的摘要不一致; 拒绝修订。",
+                        http_status=409,
+                    ),
+                )
+            amounts = self._external_transaction_amounts(context)
+            gross_minor = int(amounts["gross_minor"])
+            if expected_gross_minor != gross_minor:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "EXPECTED_GROSS_AMOUNT_MISMATCH",
+                        "请求修订的毛额与申购及确认事实不一致。",
+                        http_status=409,
+                        details={
+                            "expected_gross_amount": _money(expected_gross_minor),
+                            "derived_gross_amount": _money(gross_minor),
+                            "confirmed_amount": _money(int(amounts["confirmed_minor"])),
+                            "fee": _money(int(amounts["fee_minor"])),
+                        },
+                    ),
+                )
+            desired_payload = self._expected_external_transaction_payload(
+                context,
+                gross_minor=gross_minor,
+            )
+            immutable_fields = set(desired_payload) - {"amount_minor"}
+            mismatches = sorted(
+                field
+                for field in immutable_fields
+                if current_payload.get(field) != desired_payload.get(field)
+            )
+            if mismatches:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "SUBSCRIPTION_TRANSACTION_DRAFT_IDENTITY_MISMATCH",
+                        "原交易草稿除金额外的业务身份已经漂移; 拒绝自动修订。",
+                        http_status=409,
+                        details={"mismatched_fields": mismatches},
+                    ),
+                )
+            new_hash = transaction_draft_payload_hash(desired_payload)
+            if hmac.compare_digest(new_hash, current_hash):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_REVISION_NO_CHANGES",
+                        "交易草稿已经使用正确毛额; 无需修订。",
+                        http_status=409,
+                    ),
+                )
+            token = secrets.token_urlsafe(24)
+            now = self._now()
+            now_iso = _iso(now)
+            expires_at = _iso(
+                now + timedelta(minutes=self.settings.confirmation_ttl_minutes)
+            )
+            updated = connection.execute(
+                """
+                UPDATE transaction_drafts
+                SET amount_minor=?, request_hash=?, confirmation_digest=?,
+                    expires_at=?, status='PENDING', revised_at=?,
+                    revision_count=revision_count + 1
+                WHERE id=? AND action='TRADE' AND side='BUY'
+                  AND origin='EXTERNAL_SUBSCRIPTION' AND origin_reference_id=?
+                  AND committed_at IS NULL AND status IN ('PENDING','EXPIRED')
+                  AND request_hash=? AND idempotency_key=?
+                """,
+                (
+                    gross_minor,
+                    new_hash,
+                    _token_digest(token),
+                    expires_at,
+                    now_iso,
+                    draft_id,
+                    confirmation_id,
+                    expected_hash,
+                    str(draft["idempotency_key"]),
+                ),
+            )
+            if updated.rowcount != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_REVISION_CONFLICT",
+                        "交易草稿已被其他请求提交或修订; 请重新读取状态。",
+                        http_status=409,
+                    ),
+                )
+            link_updated = connection.execute(
+                """
+                UPDATE subscription_confirmation_transaction_links
+                SET plan_linked_amount_minor=?, gross_amount_minor=?,
+                    confirmed_amount_minor=?, fee_minor=?, revised_at=?,
+                    revision_count=revision_count + 1
+                WHERE confirmation_id=? AND transaction_draft_id=?
+                  AND transaction_id IS NULL
+                """,
+                (
+                    gross_minor,
+                    gross_minor,
+                    int(amounts["confirmed_minor"]),
+                    int(amounts["fee_minor"]),
+                    now_iso,
+                    confirmation_id,
+                    draft_id,
+                ),
+            )
+            if link_updated.rowcount != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "DRAFT_REVISION_CONFLICT",
+                        "份额确认与交易草稿的绑定已经变化; 请重新读取状态。",
+                        http_status=409,
+                    ),
+                )
+            revision_count = int(draft["revision_count"]) + 1
+            self._audit(
+                connection,
+                actor_type="AGENT",
+                actor_ref=actor,
+                action="EXTERNAL_SUBSCRIPTION_TRANSACTION_DRAFT_REVISED",
+                entity_type="transaction_draft",
+                entity_id=draft_id,
+                details={
+                    "confirmation_id": confirmation_id,
+                    "subscription_id": str(context["subscription_id"]),
+                    "idempotency_key": str(draft["idempotency_key"]),
+                    "old_amount": _money(int(draft["amount_minor"])),
+                    "gross_amount": _money(gross_minor),
+                    "confirmed_amount": _money(int(amounts["confirmed_minor"])),
+                    "fee": _money(int(amounts["fee_minor"])),
+                    "revision_count": revision_count,
+                    "expires_at": expires_at,
+                },
+                before_hash=current_hash,
+                after_hash=new_hash,
+            )
+            connection.commit()
+            revised = self._ledger.get_transaction_draft(draft_id)
+            return {
+                "draft": revised,
+                "confirmation_token": token,
+                "revised": True,
+                "changed_fields": ["amount"],
+                "confirmation_id": confirmation_id,
+                "subscription_id": str(context["subscription_id"]),
+                "gross_amount": _money(gross_minor),
+                "confirmed_amount": _money(int(amounts["confirmed_minor"])),
+                "fee": _money(int(amounts["fee_minor"])),
+                "plan_linked_amount": _money(gross_minor),
+                "business_facts_created": False,
+                "warnings": [],
+            }
+        finally:
+            connection.close()
 
     def commit_transaction_draft(
         self,
@@ -1815,45 +2303,71 @@ class SubscriptionService:
         confirmed_by: str,
     ) -> JsonDict:
         with self._connect() as connection:
-            link = connection.execute(
-                """
-                SELECT l.*, c.subscription_id, s.weekly_plan_id
-                FROM subscription_confirmation_transaction_links l
-                JOIN external_subscription_confirmations c ON c.id=l.confirmation_id
-                JOIN external_subscriptions s ON s.id=c.subscription_id
-                WHERE l.confirmation_id=?
-                """,
-                (confirmation_id,),
-            ).fetchone()
-            if link is None or str(link["transaction_draft_id"]) != draft_id:
+            context = self._external_transaction_context(connection, confirmation_id)
+            if str(context["transaction_draft_id"] or "") != draft_id:
                 raise LedgerError(
                     "SUBSCRIPTION_TRANSACTION_DRAFT_MISMATCH",
                     "交易草稿与该份额确认不匹配。",
                     http_status=409,
                 )
-            plan_id = str(link["weekly_plan_id"])
-            linked_amount = _money(int(link["plan_linked_amount_minor"]))
-            confirmation = connection.execute(
-                """
-                SELECT c.reversed_by_confirmation_id, s.instrument_id
-                FROM external_subscription_confirmations c
-                JOIN external_subscriptions s ON s.id=c.subscription_id
-                WHERE c.id=? AND c.kind='CONFIRMATION'
-                """,
-                (confirmation_id,),
+            draft = connection.execute(
+                "SELECT * FROM transaction_drafts WHERE id=?",
+                (draft_id,),
             ).fetchone()
-            if confirmation is None or confirmation["reversed_by_confirmation_id"] is not None:
+            if draft is None:
+                raise LedgerError("DRAFT_NOT_FOUND", "没有找到该交易草稿。", http_status=404)
+            amounts = self._external_transaction_amounts(context)
+            gross_minor = int(amounts["gross_minor"])
+            desired_payload = self._expected_external_transaction_payload(
+                context,
+                gross_minor=gross_minor,
+            )
+            current_payload = self._transaction_payload_from_row(draft)
+            desired_hash = transaction_draft_payload_hash(desired_payload)
+            current_hash = transaction_draft_payload_hash(current_payload)
+            link_matches = (
+                context["plan_linked_amount_minor"] is not None
+                and int(context["plan_linked_amount_minor"]) == gross_minor
+                and context["gross_amount_minor"] is not None
+                and int(context["gross_amount_minor"]) == gross_minor
+                and context["linked_confirmed_minor"] is not None
+                and int(context["linked_confirmed_minor"])
+                == int(amounts["confirmed_minor"])
+                and context["linked_fee_minor"] is not None
+                and int(context["linked_fee_minor"]) == int(amounts["fee_minor"])
+            )
+            draft_matches = (
+                current_payload == desired_payload
+                and current_hash == str(draft["request_hash"])
+                and desired_hash == str(draft["request_hash"])
+                and str(draft["origin"]) == "EXTERNAL_SUBSCRIPTION"
+                and str(draft["origin_reference_id"]) == confirmation_id
+            )
+            if not draft_matches or not link_matches:
                 raise LedgerError(
-                    "CONFIRMATION_NOT_POSTABLE",
-                    "The share confirmation is missing or has been reversed.",
+                    "EXTERNAL_SUBSCRIPTION_TRANSACTION_DRAFT_STALE",
+                    "交易草稿尚未按申购毛额修正; 拒绝提交记账。",
                     http_status=409,
+                    details={
+                        "draft_amount": _money(int(draft["amount_minor"])),
+                        "submitted_gross_amount": _money(gross_minor),
+                        "confirmed_amount": _money(int(amounts["confirmed_minor"])),
+                        "fee": _money(int(amounts["fee_minor"])),
+                        "plan_linked_amount": (
+                            _money(int(context["plan_linked_amount_minor"]))
+                            if context["plan_linked_amount_minor"] is not None
+                            else None
+                        ),
+                    },
                 )
+            plan_id = str(context["weekly_plan_id"])
+            linked_amount = _money(gross_minor)
             planned, executed, _ = self._plan_capacity(
                 connection,
                 plan_id=plan_id,
-                instrument_id=str(confirmation["instrument_id"]),
+                instrument_id=str(context["instrument_id"]),
             )
-            if int(link["plan_linked_amount_minor"]) > planned - executed:
+            if gross_minor > planned - executed:
                 raise LedgerError(
                     "SUBSCRIPTION_CONFIRMATION_EXCEEDS_PLAN_REMAINING",
                     "The frozen plan no longer has enough remaining cash capacity.",
@@ -1863,6 +2377,7 @@ class SubscriptionService:
             draft_id=draft_id,
             confirmation_token=confirmation_token,
             confirmed_by=confirmed_by,
+            allow_external_subscription=True,
         )
         transaction_id = str(transaction_result["transaction"]["id"])
         try:
@@ -1885,7 +2400,7 @@ class SubscriptionService:
                 """,
                 (transaction_id, _iso(self._now()), confirmation_id),
             )
-            row = self._subscription_row(connection, str(link["subscription_id"]))
+            row = self._subscription_row(connection, str(context["subscription_id"]))
             subscription = self._subscription_data(connection, row)
             self._audit(
                 connection,
@@ -1894,7 +2409,14 @@ class SubscriptionService:
                 action="EXTERNAL_SUBSCRIPTION_CONFIRMATION_POSTED",
                 entity_type="external_subscription_confirmation",
                 entity_id=confirmation_id,
-                details={"transaction_id": transaction_id, "weekly_plan_id": plan_id},
+                details={
+                    "transaction_id": transaction_id,
+                    "weekly_plan_id": plan_id,
+                    "gross_amount": _money(gross_minor),
+                    "confirmed_amount": _money(int(amounts["confirmed_minor"])),
+                    "fee": _money(int(amounts["fee_minor"])),
+                    "plan_linked_amount": linked_amount,
+                },
             )
             connection.commit()
         return {

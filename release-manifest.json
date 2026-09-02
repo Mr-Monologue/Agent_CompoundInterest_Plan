@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.31.4",
+  "version": "0.31.5",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
-  "database_revision": "0032_confirmation_time_precision_revision",
+  "database_revision": "0033_external_subscription_gross_transaction",
   "minimum_current_version": "0.5.3",
-  "notes": "Represent exact versus date-only external subscription confirmation time without false precision, and add an atomic audited revision workflow for uncommitted confirmation drafts while preserving draft identity and creating no financial fact."
+  "notes": "Post external fund subscriptions at submitted gross cost while preserving confirmed net amount and fee, reject inconsistent amounts, and atomically revise existing uncommitted net-amount transaction drafts without changing their business identity."
 }

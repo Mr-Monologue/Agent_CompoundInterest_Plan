@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.31.5 — 2026-09-02
+
+- Post an external-subscription BUY at the submitted gross cash cost while preserving confirmed net amount and fee as separate audited facts.
+- Use the same gross amount for holding cost, derived cash and frozen-plan execution, without charging the fee a second time; shares, NAV and NAV date remain unchanged.
+- Reject posting when submitted gross, confirmed net and fee differ by more than the existing one-minor-unit currency rounding tolerance.
+- Add an explicit, external-subscription-only transaction-draft revision operation that preserves draft and business identity, rotates the credential, and creates no financial fact.
+- Mark migrated linked drafts with their external-subscription origin so the generic transaction endpoint cannot bypass the governed posting contract.
+
 ## v0.31.4 — 2026-09-01
 
 - Add structured `EXACT` and `DATE_ONLY` precision for external-subscription confirmation drafts and committed confirmation facts.
