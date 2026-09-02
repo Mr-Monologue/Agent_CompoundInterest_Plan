@@ -472,7 +472,8 @@ SATELLITE 信号政策，明确 PE/PB 指标、进入候选的最高分位、回
 幂等身份下，把未提交的旧净额 BUY 草稿原子修订为系统重新核验的毛额；请求必须携带最新载荷摘要
 和预期毛额。成功后旧确认凭据立即失效，新凭据和有效期重新签发，修订本身不创建交易、现金、持仓
 或计划执行事实。外部申购来源的交易草稿不能通过通用交易提交入口绕过此契约。数据库修订为
-`0033_external_subscription_gross_transaction`。
+`0034_partial_plan_closure`。部分执行计划的正式收尾契约见
+[`docs/PARTIAL_WEEKLY_PLAN_CLOSURE.md`](docs/PARTIAL_WEEKLY_PLAN_CLOSURE.md)。
 
 0.31.1 修复策略草稿的可空字段语义：字段未提供时保留当前值，API 中明确提供 `null` 或
 Hermes MCP 中通过 `clear_fields` 指定时才清空。该规则覆盖目标权重、金额上限、估值基准、

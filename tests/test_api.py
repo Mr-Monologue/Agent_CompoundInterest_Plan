@@ -47,6 +47,10 @@ def test_weekly_plan_skip_reconfirmation_api_is_discoverable(tmp_path: Path) -> 
     assert "/v1/weekly-plans/{plan_id}/skip-drafts" in paths
     assert "/v1/weekly-plan-skip-drafts/{draft_id}" in paths
     assert "/v1/weekly-plan-skip-drafts/{draft_id}/commit" in paths
+    assert "/v1/weekly-plans/{plan_id}/partial-close-drafts" in paths
+    assert "/v1/weekly-plan-partial-close-drafts/{draft_id}" in paths
+    assert "/v1/weekly-plan-partial-close-drafts/{draft_id}/renew" in paths
+    assert "/v1/weekly-plan-partial-close-drafts/{draft_id}/commit" in paths
 
 
 def test_notification_test_api_requires_explicit_confirmation(tmp_path: Path) -> None:

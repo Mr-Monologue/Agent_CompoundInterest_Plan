@@ -343,10 +343,16 @@ try {
         & hermes profile use $HermesProfile
         Assert-LastExit "Hermes profile selection"
 
-        $SkillSource = Join-Path $ProjectRoot "skills\value-dca-investor"
-        $SkillTarget = Join-Path $ProfilePath "skills\value-dca-investor"
-        New-Item -ItemType Directory -Force $SkillTarget | Out-Null
-        Copy-Item (Join-Path $SkillSource "*") $SkillTarget -Recurse -Force
+        $SkillNames = @("value-dca-investor", "investor-core-operations")
+        foreach ($SkillName in $SkillNames) {
+            $SkillSource = Join-Path $ProjectRoot "skills\$SkillName"
+            $SkillTarget = Join-Path $ProfilePath "skills\$SkillName"
+            if (-not (Test-Path $SkillSource)) {
+                throw "Version-controlled Hermes Skill is missing: $SkillSource"
+            }
+            New-Item -ItemType Directory -Force $SkillTarget | Out-Null
+            Copy-Item (Join-Path $SkillSource "*") $SkillTarget -Recurse -Force
+        }
 
         $HermesScriptSource = Join-Path $ProjectRoot "runtime\hermes"
         $HermesScriptTarget = Join-Path $ProfilePath "scripts"

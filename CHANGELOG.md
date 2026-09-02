@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.31.6 — 2026-09-02
+
+- Add `PARTIALLY_EXECUTED_CLOSED` as an explicit terminal outcome that preserves planned, executed and abandoned amounts without pretending full execution or a skipped plan.
+- Require a separately created, short-lived and renewable closure draft followed by exact user confirmation; reject active subscriptions, confirmations and still-submittable related drafts.
+- Release the abandoned remainder from future-plan blocking and prior commitments without carrying it into the next weekly budget.
+- Show the terminal outcome, execution rate, reason and no-carry-forward fact in weekly reports while removing it from daily action-required work.
+- Add a version-controlled `investor-core-operations` skill source and install/update it alongside the primary Investor skill.
+
 ## v0.31.5 — 2026-09-02
 
 - Post an external-subscription BUY at the submitted gross cash cost while preserving confirmed net amount and fee as separate audited facts.
