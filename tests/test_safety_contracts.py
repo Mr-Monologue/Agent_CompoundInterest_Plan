@@ -175,6 +175,19 @@ def test_external_subscription_date_only_and_revision_skill_contract() -> None:
     assert "require a fresh explicit confirmation before commit" in skill
 
 
+def test_external_subscription_gross_transaction_skill_contract() -> None:
+    skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "submitted gross\ncash, confirmed net amount" in skill
+    assert "must not be added or deducted again" in skill
+    assert "keep trade date\nequal to NAV date" in skill
+    assert "external_subscription_transaction_draft_revise" in skill
+    assert "Never use the\ngeneric transaction commit tool" in skill
+    assert "create no transaction, holding, cash or plan-execution fact" in skill
+
+
 def test_automation_skill_keeps_cron_read_only_and_silent() -> None:
     skill = (PROJECT_ROOT / "skills/value-dca-investor/SKILL.md").read_text(encoding="utf-8")
     template = (PROJECT_ROOT / "cron/agent-jobs/automation-report-delivery.example.json").read_text(

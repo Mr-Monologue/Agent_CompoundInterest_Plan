@@ -89,14 +89,47 @@ subscription invariant is:
 `requested = confirmed principal + fee + pending + cancelled or refunded`
 
 The external platform facts available for this product treat fees as part of the cash
-submitted. Therefore principal plus fee consumes the frozen plan amount. The existing
-BUY ledger continues to record principal, NAV and shares; the plan link records the cash
-amount of principal plus fee. Pending and confirmed-but-unposted amounts reserve plan
-capacity but never change holdings.
+submitted. `requested_amount` is therefore submitted gross cash,
+`confirmed_amount` is the net amount that acquired units, and `fee` remains a separate
+audited fact. From v0.31.5 an external-subscription BUY records gross cash as the ledger
+transaction amount. The same gross amount increments holding cost, reduces derived cash
+and consumes the frozen plan; the fee is not deducted or added again. Confirmed shares,
+NAV and NAV date are unchanged, and trade date remains NAV date.
+
+Core compares all three values in integer minor units. A fully attributable confirmation
+must satisfy `submitted gross ~= confirmed net + fee`; the existing currency-rounding
+tolerance is one minor unit. A larger difference returns an auditable mismatch containing
+gross, net, fee and the difference, and creates no transaction, holding, cash or plan fact.
+This scoped rule does not change the amount contract of ordinary trades or opening
+positions.
 
 A confirmation is posted to the BUY ledger only after a second, explicit user
 confirmation. That posting reuses the v0.30.0 transaction ledger and partial plan
 execution rules.
+
+## Uncommitted external transaction draft revision
+
+`POST /v1/external-subscription-confirmations/{confirmation_id}/transaction-drafts/{draft_id}/revise`
+and MCP tool `external_subscription_transaction_draft_revise` are the only supported way
+to repair a pre-v0.31.5 uncommitted net-amount BUY draft. The operation accepts the latest
+`expected_payload_hash` and the gross amount the caller expects Core to derive. It is
+limited to the transaction draft already linked to that confirmation and cannot replace
+the confirmation, subscription, account, instrument, order reference, idempotency key or
+trade facts.
+
+Revision is allowed only for an uncommitted `PENDING` or `EXPIRED` draft. Core holds a
+write transaction, verifies the old hash and immutable identity, revalidates gross, net,
+fee, shares, NAV and NAV date, and performs a conditional update. A successful revision
+keeps the draft ID and idempotency key, stores gross as transaction amount, increments the
+revision audit counter, records old and new hashes, rotates the credential and expiry, and
+invalidates the old token immediately. Concurrent callers can produce at most one result.
+Committed drafts, stale hashes, wrong gross amounts and mismatched business identities are
+rejected.
+
+Revision creates no transaction, holding, cash or plan-execution fact. The revised preview
+must be shown to the user and requires a fresh explicit confirmation before the scoped
+external-subscription commit endpoint may post it. The generic transaction commit endpoint
+rejects external-subscription-origin drafts.
 
 ## Cross-week behavior
 
@@ -127,3 +160,11 @@ expiries and commit state. Clients must read the post-upgrade draft before revis
 use its current hash. Downgrade removes structured precision and revision audit columns;
 it cannot preserve a `DATE_ONLY` distinction, so production downgrade requires an
 explicit operator decision.
+
+Migration `0033_external_subscription_gross_transaction` adds transaction-draft origin
+and revision audit fields and records gross, net and fee on the confirmation-to-transaction
+link. Existing linked drafts retain their ID, idempotency key, payload, digest and expiry;
+the migration marks their origin but deliberately does not silently rewrite a net amount.
+After upgrade, callers must re-read an uncommitted legacy draft, use its current payload
+hash and invoke the scoped revision operation. Downgrade removes the new metadata and does
+not reverse a committed gross-cost transaction.

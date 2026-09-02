@@ -3,15 +3,22 @@ from __future__ import annotations
 import json
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from threading import Barrier
 
 import pytest
 from test_planning import configured_services
 
-from investor_core.ledger import JsonDict, LedgerError
+from investor_core.ledger import (
+    JsonDict,
+    LedgerError,
+    transaction_draft_payload,
+    transaction_draft_payload_hash,
+)
 from investor_core.market_data import MarketDataService
+from investor_core.performance import PerformanceService
 from investor_core.strategy import StrategyService
 from investor_core.subscriptions import SubscriptionService
 from investor_core.workspace import WorkspaceService
@@ -118,6 +125,63 @@ def confirm(
     return result["subscription"]
 
 
+def legacy_net_transaction_draft(
+    database_path: Path,
+    service: SubscriptionService,
+    *,
+    confirmation_id: str,
+    idempotency_key: str,
+) -> dict[str, object]:
+    """Create the pre-v0.31.5 net-amount defect on an otherwise current schema."""
+    created = service.create_transaction_draft(
+        confirmation_id=confirmation_id,
+        idempotency_key=idempotency_key,
+    )
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        draft = connection.execute(
+            "SELECT * FROM transaction_drafts WHERE id=?",
+            (created["draft"]["id"],),
+        ).fetchone()
+        confirmation = connection.execute(
+            """
+            SELECT confirmed_amount_minor
+            FROM external_subscription_confirmations WHERE id=?
+            """,
+            (confirmation_id,),
+        ).fetchone()
+        assert draft is not None and confirmation is not None
+        payload = transaction_draft_payload(
+            portfolio_id=str(draft["portfolio_id"]),
+            account_id=str(draft["account_id"]),
+            instrument_id=str(draft["instrument_id"]),
+            side=str(draft["side"]),
+            trade_date=str(draft["trade_date"]),
+            amount_minor=int(confirmation["confirmed_amount_minor"]),
+            nav_micros=int(draft["nav_micros"]),
+            shares_micros=int(draft["shares_micros"]),
+            platform=str(draft["platform"]),
+            note=draft["note"],
+            sell_proposal_id=draft["sell_proposal_id"],
+        )
+        connection.execute(
+            """
+            UPDATE transaction_drafts
+            SET amount_minor=?, request_hash=? WHERE id=?
+            """,
+            (
+                int(confirmation["confirmed_amount_minor"]),
+                transaction_draft_payload_hash(payload),
+                created["draft"]["id"],
+            ),
+        )
+        connection.commit()
+    created["draft"] = service._ledger.get_transaction_draft(
+        str(created["draft"]["id"])
+    )
+    return created
+
+
 def test_external_subscription_is_reserved_until_explicit_ledger_posting(
     tmp_path: Path,
 ) -> None:
@@ -187,6 +251,417 @@ def test_external_subscription_is_reserved_until_explicit_ledger_posting(
     assert posted["weekly_plan"]["status"] == "PARTIALLY_EXECUTED"
     assert posted["weekly_plan"]["execution_progress"]["executed_amount"] == "41.00"
     assert posted["weekly_plan"]["execution_progress"]["in_flight_amount"] == "59.00"
+
+
+def test_external_subscription_transaction_uses_gross_cost_and_preserves_net_fee(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    ledger, _planning, service, portfolio_id, account_id, plan = frozen_plan(
+        database_path,
+        amount="40.00",
+    )
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+        amount="40.00",
+        key="gross-submit",
+    )
+    confirmation_draft = service.create_confirmation_draft(
+        subscription_id=str(subscription["id"]),
+        confirmed_at=None,
+        confirmed_at_precision="DATE_ONLY",
+        confirmation_business_date="2026-07-22",
+        nav_date="2026-07-22",
+        nav="1.000000",
+        confirmed_shares="39.970000",
+        confirmed_amount="39.97",
+        fee="0.03",
+        refunded_amount="0",
+        idempotency_key="gross-confirm",
+    )
+    confirmed = service.commit_draft(
+        draft_id=str(confirmation_draft["draft"]["id"]),
+        confirmation_token=str(confirmation_draft["confirmation_token"]),
+        confirmed_by="test-user",
+    )["subscription"]
+    confirmation = confirmed["confirmations"][0]
+    baseline_holding = ledger.list_holdings(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+    )[0]
+    baseline_cash_events = _business_fact_counts(database_path)["cash_ledger_events"]
+
+    drafted = service.create_transaction_draft(
+        confirmation_id=str(confirmation["id"]),
+        idempotency_key="gross-ledger",
+    )
+    assert drafted["draft"]["amount"] == "40.00"
+    assert drafted["gross_amount"] == "40.00"
+    assert drafted["confirmed_amount"] == "39.97"
+    assert drafted["fee"] == "0.03"
+    assert drafted["plan_linked_amount"] == "40.00"
+    assert drafted["draft"]["shares"] == "39.970000"
+    assert drafted["draft"]["nav"] == "1.000000"
+    assert drafted["draft"]["trade_date"] == "2026-07-22"
+
+    posted = service.commit_transaction_draft(
+        confirmation_id=str(confirmation["id"]),
+        draft_id=str(drafted["draft"]["id"]),
+        confirmation_token=str(drafted["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    assert posted["transaction"]["amount"] == "40.00"
+    assert Decimal(str(posted["holding"]["cost_amount"])) - Decimal(
+        str(baseline_holding["cost_amount"])
+    ) == Decimal("40.00")
+    assert posted["weekly_plan"]["execution_progress"]["executed_amount"] == "40.00"
+    assert posted["weekly_plan"]["status"] == "EXECUTED"
+    assert _business_fact_counts(database_path)["cash_ledger_events"] == baseline_cash_events
+    with sqlite3.connect(database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        transactions = list(
+            connection.execute(
+                "SELECT * FROM transactions WHERE portfolio_id=?",
+                (portfolio_id,),
+            ).fetchall()
+        )
+    assert PerformanceService._cash_balance_at(
+        transactions,
+        [],
+        date(2026, 7, 22),
+    ) == -4000
+    refreshed = service.get(subscription_id=str(subscription["id"]))
+    refreshed_confirmation = refreshed["confirmations"][0]
+    assert refreshed_confirmation["confirmed_amount"] == "39.97"
+    assert refreshed_confirmation["fee"] == "0.03"
+    assert refreshed_confirmation["gross_amount"] == "40.00"
+    assert refreshed_confirmation["confirmed_at_precision"] == "DATE_ONLY"
+    assert refreshed_confirmation["confirmed_at_display"] == "2026-07-22"
+
+
+def test_four_external_subscription_gross_costs_total_170(tmp_path: Path) -> None:
+    scenarios = (
+        ("000032", "40.00", "39.97", "0.03"),
+        ("002340", "30.00", "29.96", "0.04"),
+        ("022463", "90.00", "89.89", "0.11"),
+        ("040046", "10.00", "9.99", "0.01"),
+    )
+    transaction_total = Decimal("0")
+    executed_total = Decimal("0")
+    net_total = Decimal("0")
+    fee_total = Decimal("0")
+    for code, gross, net, fee in scenarios:
+        database_path = tmp_path / f"{code}.db"
+        _, _, service, portfolio_id, account_id, plan = frozen_plan(
+            database_path,
+            amount=gross,
+        )
+        subscription = submit(
+            service,
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            plan_id=str(plan["id"]),
+            amount=gross,
+            key=f"submit-{code}",
+        )
+        confirmed = confirm(
+            service,
+            subscription_id=str(subscription["id"]),
+            amount=net,
+            shares=net,
+            fee=fee,
+            key=f"confirm-{code}",
+        )
+        confirmation_id = str(confirmed["confirmations"][0]["id"])
+        drafted = service.create_transaction_draft(
+            confirmation_id=confirmation_id,
+            idempotency_key=f"ledger-{code}",
+        )
+        posted = service.commit_transaction_draft(
+            confirmation_id=confirmation_id,
+            draft_id=str(drafted["draft"]["id"]),
+            confirmation_token=str(drafted["confirmation_token"]),
+            confirmed_by="test-user",
+        )
+        transaction_total += Decimal(str(posted["transaction"]["amount"]))
+        executed_total += Decimal(
+            str(posted["weekly_plan"]["execution_progress"]["executed_amount"])
+        )
+        net_total += Decimal(str(confirmed["confirmations"][0]["confirmed_amount"]))
+        fee_total += Decimal(str(confirmed["confirmations"][0]["fee"]))
+    assert transaction_total == Decimal("170.00")
+    assert executed_total == Decimal("170.00")
+    assert net_total == Decimal("169.81")
+    assert fee_total == Decimal("0.19")
+
+
+@pytest.mark.parametrize(
+    ("submitted_minor", "expected"),
+    [(4001, "40.01"), (4002, "EXTERNAL_SUBSCRIPTION_GROSS_AMOUNT_MISMATCH")],
+)
+def test_external_subscription_gross_rounding_boundary(
+    tmp_path: Path,
+    submitted_minor: int,
+    expected: str,
+) -> None:
+    database_path = tmp_path / f"rounding-{submitted_minor}.db"
+    _, _, service, portfolio_id, account_id, plan = frozen_plan(database_path)
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+        amount="40.00",
+        key=f"rounding-submit-{submitted_minor}",
+    )
+    confirmed = confirm(
+        service,
+        subscription_id=str(subscription["id"]),
+        amount="39.97",
+        shares="39.97",
+        fee="0.03",
+        key=f"rounding-confirm-{submitted_minor}",
+    )
+    confirmation_id = str(confirmed["confirmations"][0]["id"])
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            "UPDATE external_subscriptions SET requested_amount_minor=? WHERE id=?",
+            (submitted_minor, subscription["id"]),
+        )
+        connection.commit()
+    if expected.startswith("EXTERNAL_"):
+        with pytest.raises(LedgerError) as error:
+            service.create_transaction_draft(
+                confirmation_id=confirmation_id,
+                idempotency_key=f"rounding-ledger-{submitted_minor}",
+            )
+        assert error.value.code == expected
+        assert error.value.details["submitted_gross_amount"] == "40.02"
+        assert error.value.details["confirmed_amount"] == "39.97"
+        assert error.value.details["fee"] == "0.03"
+        assert error.value.details["aggregate_difference"] == "0.02"
+    else:
+        drafted = service.create_transaction_draft(
+            confirmation_id=confirmation_id,
+            idempotency_key=f"rounding-ledger-{submitted_minor}",
+        )
+        assert drafted["draft"]["amount"] == expected
+
+
+def test_legacy_net_transaction_draft_is_revised_in_place_without_side_effects(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    ledger, _, service, portfolio_id, account_id, plan = frozen_plan(
+        database_path,
+        amount="40.00",
+    )
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+        amount="40.00",
+        key="revise-gross-submit",
+    )
+    confirmed = confirm(
+        service,
+        subscription_id=str(subscription["id"]),
+        amount="39.97",
+        shares="39.97",
+        fee="0.03",
+        key="revise-gross-confirm",
+    )
+    confirmation_id = str(confirmed["confirmations"][0]["id"])
+    legacy = legacy_net_transaction_draft(
+        database_path,
+        service,
+        confirmation_id=confirmation_id,
+        idempotency_key="revise-gross-ledger",
+    )
+    original_draft = legacy["draft"]
+    assert isinstance(original_draft, dict)
+    assert original_draft["amount"] == "39.97"
+    baseline = _business_fact_counts(database_path)
+
+    with pytest.raises(LedgerError) as generic_commit:
+        ledger.commit_transaction_draft(
+            draft_id=str(original_draft["id"]),
+            confirmation_token=str(legacy["confirmation_token"]),
+            confirmed_by="test-user",
+        )
+    assert generic_commit.value.code == "EXTERNAL_SUBSCRIPTION_COMMIT_REQUIRED"
+    with pytest.raises(LedgerError) as stale_commit:
+        service.commit_transaction_draft(
+            confirmation_id=confirmation_id,
+            draft_id=str(original_draft["id"]),
+            confirmation_token=str(legacy["confirmation_token"]),
+            confirmed_by="test-user",
+        )
+    assert stale_commit.value.code == "EXTERNAL_SUBSCRIPTION_TRANSACTION_DRAFT_STALE"
+
+    revised = service.revise_transaction_draft(
+        confirmation_id=confirmation_id,
+        draft_id=str(original_draft["id"]),
+        expected_payload_hash=str(original_draft["payload_hash"]),
+        expected_gross_amount="40.00",
+    )
+    assert revised["draft"]["id"] == original_draft["id"]
+    assert revised["draft"]["idempotency_key"] == original_draft["idempotency_key"]
+    assert revised["draft"]["payload_hash"] != original_draft["payload_hash"]
+    assert revised["draft"]["amount"] == "40.00"
+    assert revised["draft"]["revision_count"] == 1
+    assert revised["gross_amount"] == "40.00"
+    assert revised["confirmed_amount"] == "39.97"
+    assert revised["fee"] == "0.03"
+    assert revised["changed_fields"] == ["amount"]
+    assert revised["business_facts_created"] is False
+    assert _business_fact_counts(database_path) == baseline
+
+    restarted = SubscriptionService(service.settings, now=service._now)
+    persisted = restarted._ledger.get_transaction_draft(
+        str(original_draft["id"])
+    )
+    assert persisted["amount"] == "40.00"
+    assert persisted["revision_count"] == 1
+
+    with pytest.raises(LedgerError) as old_token:
+        restarted.commit_transaction_draft(
+            confirmation_id=confirmation_id,
+            draft_id=str(original_draft["id"]),
+            confirmation_token=str(legacy["confirmation_token"]),
+            confirmed_by="test-user",
+        )
+    assert old_token.value.code == "INVALID_CONFIRMATION_TOKEN"
+    posted = restarted.commit_transaction_draft(
+        confirmation_id=confirmation_id,
+        draft_id=str(original_draft["id"]),
+        confirmation_token=str(revised["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    assert posted["transaction"]["amount"] == "40.00"
+    assert posted["weekly_plan"]["execution_progress"]["executed_amount"] == "40.00"
+    with pytest.raises(LedgerError) as committed_revision:
+        restarted.revise_transaction_draft(
+            confirmation_id=confirmation_id,
+            draft_id=str(original_draft["id"]),
+            expected_payload_hash=str(revised["draft"]["payload_hash"]),
+            expected_gross_amount="40.00",
+        )
+    assert committed_revision.value.code == "CONFIRMATION_ALREADY_POSTED"
+
+
+def test_expired_legacy_net_draft_can_be_revised_but_not_duplicated(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    _, _, service, portfolio_id, account_id, plan = frozen_plan(
+        database_path,
+        amount="40.00",
+    )
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+        amount="40.00",
+        key="expired-gross-submit",
+    )
+    confirmed = confirm(
+        service,
+        subscription_id=str(subscription["id"]),
+        amount="39.97",
+        shares="39.97",
+        fee="0.03",
+        key="expired-gross-confirm",
+    )
+    confirmation_id = str(confirmed["confirmations"][0]["id"])
+    legacy = legacy_net_transaction_draft(
+        database_path,
+        service,
+        confirmation_id=confirmation_id,
+        idempotency_key="expired-gross-ledger",
+    )
+    legacy_draft = legacy["draft"]
+    assert isinstance(legacy_draft, dict)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            UPDATE transaction_drafts
+            SET status='EXPIRED', expires_at='2026-08-06T00:00:00Z' WHERE id=?
+            """,
+            (legacy_draft["id"],),
+        )
+        connection.commit()
+    with pytest.raises(LedgerError) as duplicate:
+        service.create_transaction_draft(
+            confirmation_id=confirmation_id,
+            idempotency_key="forbidden-v2-key",
+        )
+    assert duplicate.value.code == "CONFIRMATION_TRANSACTION_DRAFT_EXISTS"
+    revised = service.revise_transaction_draft(
+        confirmation_id=confirmation_id,
+        draft_id=str(legacy_draft["id"]),
+        expected_payload_hash=str(legacy_draft["payload_hash"]),
+        expected_gross_amount="40.00",
+    )
+    assert revised["draft"]["status"] == "PENDING"
+    assert revised["draft"]["id"] == legacy_draft["id"]
+
+
+def test_concurrent_external_transaction_revision_has_one_winner(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    _, _, service, portfolio_id, account_id, plan = frozen_plan(
+        database_path,
+        amount="40.00",
+    )
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+        amount="40.00",
+        key="concurrent-gross-submit",
+    )
+    confirmed = confirm(
+        service,
+        subscription_id=str(subscription["id"]),
+        amount="39.97",
+        shares="39.97",
+        fee="0.03",
+        key="concurrent-gross-confirm",
+    )
+    confirmation_id = str(confirmed["confirmations"][0]["id"])
+    legacy = legacy_net_transaction_draft(
+        database_path,
+        service,
+        confirmation_id=confirmation_id,
+        idempotency_key="concurrent-gross-ledger",
+    )
+    legacy_draft = legacy["draft"]
+    assert isinstance(legacy_draft, dict)
+    barrier = Barrier(2)
+
+    def revise() -> str:
+        local = SubscriptionService(service.settings, now=service._now)
+        barrier.wait()
+        try:
+            local.revise_transaction_draft(
+                confirmation_id=confirmation_id,
+                draft_id=str(legacy_draft["id"]),
+                expected_payload_hash=str(legacy_draft["payload_hash"]),
+                expected_gross_amount="40.00",
+            )
+        except LedgerError as exc:
+            return exc.code
+        return "SUCCESS"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = sorted(executor.map(lambda _: revise(), range(2)))
+    assert outcomes == ["DRAFT_PAYLOAD_HASH_MISMATCH", "SUCCESS"]
+    assert _business_fact_counts(database_path)["external_subscription_confirmations"] == 1
+    assert _business_fact_counts(database_path)["plan_execution_links"] == 0
 
 
 def test_multi_day_confirmations_complete_one_plan_with_fee_semantics(tmp_path: Path) -> None:

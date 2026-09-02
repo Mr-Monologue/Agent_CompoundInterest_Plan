@@ -2709,6 +2709,30 @@ async def external_subscription_transaction_draft_create(
 
 
 @mcp.tool()
+async def external_subscription_transaction_draft_revise(
+    confirmation_id: str,
+    draft_id: str,
+    expected_payload_hash: str,
+    expected_gross_amount: str,
+) -> dict[str, Any]:
+    """Correct one uncommitted external-subscription BUY draft to governed gross cost.
+
+    This preserves the draft and business identity, invalidates the old token, and
+    creates no transaction, holding, cash, or plan-execution fact.
+    """
+    return await core_request(
+        "POST",
+        f"/v1/external-subscription-confirmations/{confirmation_id}/"
+        f"transaction-drafts/{draft_id}/revise",
+        payload={
+            "expected_payload_hash": expected_payload_hash,
+            "expected_gross_amount": expected_gross_amount,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
 async def external_subscription_transaction_draft_commit(
     confirmation_id: str,
     draft_id: str,

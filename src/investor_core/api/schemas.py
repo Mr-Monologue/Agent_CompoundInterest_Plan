@@ -667,6 +667,12 @@ class ExternalSubscriptionTransactionDraftRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
+class ExternalSubscriptionTransactionDraftReviseRequest(RequestModel):
+    expected_payload_hash: str = Field(min_length=64, max_length=64)
+    expected_gross_amount: Decimal = Field(gt=0)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class ExternalSubscriptionTransactionCommitRequest(RequestModel):
     confirmation_token: str = Field(min_length=1, max_length=200)
     confirmed_by: str = Field(min_length=1, max_length=120)
