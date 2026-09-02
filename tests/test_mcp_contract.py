@@ -136,6 +136,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "external_subscription_list",
         "external_subscription_get",
         "external_subscription_transaction_draft_create",
+        "external_subscription_transaction_draft_revise",
         "external_subscription_transaction_draft_commit",
         "holding_list",
         "opening_position_draft_create",
@@ -152,7 +153,7 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         for tool in tools
         if tool.name.startswith("external_subscription_")
     }
-    assert len(subscription_tools) == 12
+    assert len(subscription_tools) == 13
     assert "never place an order" in subscription_tools["external_subscription_draft_create"]
     assert "create no subscription or financial fact" in subscription_tools[
         "external_subscription_draft_renew"
@@ -163,6 +164,9 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
     assert "never trade" in subscription_tools[
         "external_subscription_transaction_draft_create"
     ]
+    assert "creates no transaction, holding, cash, or plan-execution fact" in (
+        subscription_tools["external_subscription_transaction_draft_revise"]
+    )
 
     skip_tools = {
         tool.name: tool.description or ""
@@ -243,6 +247,46 @@ def test_external_subscription_confirmation_revision_calls_exact_core_endpoint(
                 "confirmed_amount": None,
                 "fee": None,
                 "refunded_amount": None,
+                "actor_ref": "hermes",
+            },
+        )
+    ]
+
+
+def test_external_subscription_transaction_revision_calls_exact_core_endpoint(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    calls: list[tuple[str, str, dict[str, Any] | None]] = []
+
+    async def fake_core_request(
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        del params
+        calls.append((method, path, payload))
+        return {"ok": True}
+
+    monkeypatch.setattr(server, "core_request", fake_core_request)
+    result = asyncio.run(
+        server.external_subscription_transaction_draft_revise(
+            confirmation_id="confirmation-1",
+            draft_id="draft-1",
+            expected_payload_hash="a" * 64,
+            expected_gross_amount="40.00",
+        )
+    )
+    assert result["ok"] is True
+    assert calls == [
+        (
+            "POST",
+            "/v1/external-subscription-confirmations/confirmation-1/"
+            "transaction-drafts/draft-1/revise",
+            {
+                "expected_payload_hash": "a" * 64,
+                "expected_gross_amount": "40.00",
                 "actor_ref": "hermes",
             },
         )

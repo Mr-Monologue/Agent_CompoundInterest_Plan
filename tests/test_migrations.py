@@ -9,7 +9,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from conftest import PROJECT_ROOT, migrate_database
-from test_subscriptions import frozen_plan, submit
+from test_subscriptions import confirm, frozen_plan, legacy_net_transaction_draft, submit
 
 from investor_core.config import Environment, Settings
 from investor_core.ledger import LedgerService
@@ -111,7 +111,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0032_confirmation_time_precision_revision",)
+    assert revision == ("0033_external_subscription_gross_transaction",)
 
 def test_external_subscription_draft_renewal_migration_preserves_existing_drafts(
     tmp_path: Path,
@@ -165,7 +165,7 @@ def test_external_subscription_draft_renewal_migration_preserves_existing_drafts
         None,
         0,
     )
-    assert revision == ("0032_confirmation_time_precision_revision",)
+    assert revision == ("0033_external_subscription_gross_transaction",)
 
     downgrade_to(database_path, "0030_instrument_role_contract")
     with sqlite3.connect(database_path) as connection:
@@ -285,7 +285,7 @@ def test_confirmation_time_precision_revision_migration_upgrades_and_downgrades(
         ).fetchone()
     migrated_payload = json.loads(draft_row[2])
     assert confirmation_precision == ("EXACT",)
-    assert revision == ("0032_confirmation_time_precision_revision",)
+    assert revision == ("0033_external_subscription_gross_transaction",)
     assert draft_row[0] == pending["draft"]["id"]
     assert draft_row[1] == pending["draft"]["idempotency_key"]
     assert migrated_payload["confirmed_at_precision"] == "EXACT"
@@ -311,6 +311,137 @@ def test_confirmation_time_precision_revision_migration_upgrades_and_downgrades(
     }.isdisjoint(downgraded_columns)
     assert "confirmed_at_precision" not in restored_payload_json
     assert restored_payload_hash == legacy_payload_hash
+
+
+def test_gross_transaction_migration_marks_and_preserves_legacy_net_draft(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "investor.db"
+    _, _, service, portfolio_id, account_id, plan = frozen_plan(
+        database_path,
+        amount="40.00",
+    )
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+        amount="40.00",
+        key="migration-gross-submit",
+    )
+    confirmed = confirm(
+        service,
+        subscription_id=str(subscription["id"]),
+        amount="39.97",
+        shares="39.97",
+        fee="0.03",
+        key="migration-gross-confirm",
+    )
+    confirmation_id = str(confirmed["confirmations"][0]["id"])
+    legacy = legacy_net_transaction_draft(
+        database_path,
+        service,
+        confirmation_id=confirmation_id,
+        idempotency_key="migration-gross-ledger",
+    )
+    draft_id = str(legacy["draft"]["id"])
+
+    downgrade_to(database_path, "0032_confirmation_time_precision_revision")
+    with sqlite3.connect(database_path) as connection:
+        legacy_draft = connection.execute(
+            """
+            SELECT amount_minor, request_hash, confirmation_digest, idempotency_key
+            FROM transaction_drafts WHERE id=?
+            """,
+            (draft_id,),
+        ).fetchone()
+        legacy_link = connection.execute(
+            """
+            SELECT confirmation_id, transaction_draft_id, plan_linked_amount_minor
+            FROM subscription_confirmation_transaction_links WHERE confirmation_id=?
+            """,
+            (confirmation_id,),
+        ).fetchone()
+    assert legacy_draft[0] == 3997
+    assert legacy_link == (confirmation_id, draft_id, 4000)
+
+    migrate_database(database_path)
+    with sqlite3.connect(database_path) as connection:
+        draft_columns = {
+            str(column[1])
+            for column in connection.execute("PRAGMA table_info(transaction_drafts)")
+        }
+        link_columns = {
+            str(column[1])
+            for column in connection.execute(
+                "PRAGMA table_info(subscription_confirmation_transaction_links)"
+            )
+        }
+        migrated_draft = connection.execute(
+            """
+            SELECT amount_minor, request_hash, confirmation_digest, idempotency_key,
+                   origin, origin_reference_id, revised_at, revision_count
+            FROM transaction_drafts WHERE id=?
+            """,
+            (draft_id,),
+        ).fetchone()
+        migrated_link = connection.execute(
+            """
+            SELECT gross_amount_minor, confirmed_amount_minor, fee_minor,
+                   revised_at, revision_count
+            FROM subscription_confirmation_transaction_links WHERE confirmation_id=?
+            """,
+            (confirmation_id,),
+        ).fetchone()
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+    assert {"origin", "origin_reference_id", "revised_at", "revision_count"} <= draft_columns
+    assert {
+        "gross_amount_minor",
+        "confirmed_amount_minor",
+        "fee_minor",
+        "revised_at",
+        "revision_count",
+    } <= link_columns
+    assert migrated_draft[:4] == legacy_draft
+    assert migrated_draft[4:] == (
+        "EXTERNAL_SUBSCRIPTION",
+        confirmation_id,
+        None,
+        0,
+    )
+    assert migrated_link == (4000, 3997, 3, None, 0)
+    assert revision == ("0033_external_subscription_gross_transaction",)
+
+    downgrade_to(database_path, "0032_confirmation_time_precision_revision")
+    with sqlite3.connect(database_path) as connection:
+        downgraded_draft_columns = {
+            str(column[1])
+            for column in connection.execute("PRAGMA table_info(transaction_drafts)")
+        }
+        downgraded_link_columns = {
+            str(column[1])
+            for column in connection.execute(
+                "PRAGMA table_info(subscription_confirmation_transaction_links)"
+            )
+        }
+        restored_draft = connection.execute(
+            """
+            SELECT amount_minor, request_hash, confirmation_digest, idempotency_key
+            FROM transaction_drafts WHERE id=?
+            """,
+            (draft_id,),
+        ).fetchone()
+    assert {"origin", "origin_reference_id", "revised_at", "revision_count"}.isdisjoint(
+        downgraded_draft_columns
+    )
+    assert {
+        "gross_amount_minor",
+        "confirmed_amount_minor",
+        "fee_minor",
+        "revised_at",
+        "revision_count",
+    }.isdisjoint(downgraded_link_columns)
+    assert restored_draft == legacy_draft
 
 
 def test_instrument_role_contract_migration_renames_and_preserves_registration_role(
@@ -448,7 +579,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0032_confirmation_time_precision_revision",
+            "0033_external_subscription_gross_transaction",
         )
 
 
@@ -553,7 +684,7 @@ def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
         "2026-07-02T00:01:00Z",
         None,
     )
-    assert revision == ("0032_confirmation_time_precision_revision",)
+    assert revision == ("0033_external_subscription_gross_transaction",)
     snapshot = ResearchService(settings).build_watchlist_review_snapshot(
         portfolio_id=str(portfolio["id"]),
         as_of_date=date(2026, 9, 1),
@@ -583,7 +714,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0032_confirmation_time_precision_revision",)
+    assert revision == ("0033_external_subscription_gross_transaction",)
 
 
 def test_alert_recovery_migration_resolves_only_recovered_job_runs(tmp_path: Path) -> None:
@@ -721,7 +852,7 @@ def test_satellite_signal_migration_preserves_alert_resolution_schema(
         "resolution_code",
         "resolution_context_json",
     } <= alert_columns
-    assert revision == ("0032_confirmation_time_precision_revision",)
+    assert revision == ("0033_external_subscription_gross_transaction",)
 
 
 def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
@@ -762,7 +893,7 @@ def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
         ).fetchone()
     assert after == before
     assert set(new_counts.values()) == {0}
-    assert revision == ("0032_confirmation_time_precision_revision",)
+    assert revision == ("0033_external_subscription_gross_transaction",)
 
 
 def test_allocation_policy_migration_seeds_existing_portfolios_with_audit(

@@ -133,8 +133,10 @@ valid incomplete association moves the plan to `PARTIALLY_EXECUTED`; show the pe
 executed, and remaining amounts. Use `weekly_plan_mark_executed` only with separately committed BUY
 transaction IDs returned by Core and only when they complete every planned fund amount. Never
 infer execution from a frozen plan, screenshots, intent, or an external platform action that has
-not been recorded. Ledger transaction `amount` is the plan-progress amount; fees are not separately
-recorded or counted. Never reuse a transaction across plans or associate a reversed transaction.
+not been recorded. Ledger transaction `amount` is the plan-progress amount. Ordinary transaction
+drafts do not carry a separate fee; an external-subscription BUY is the governed exception described
+below and records its gross cash cost while preserving net confirmation and fee audit facts. Never
+reuse a transaction across plans or associate a reversed transaction.
 
 External-subscription drafts have separate create, renew, and commit semantics. When
 `external_subscription_draft_get` reports an uncommitted draft as `EXPIRED`, use
@@ -162,6 +164,22 @@ successful revision creates no confirmation or financial fact; retain its new to
 current interaction, show the revised date, precision, amount, fee, shares, NAV, and NAV date in
 plain language, then require a fresh explicit confirmation before commit. If Core reports a stale
 hash or concurrent revision, read the draft again and do not overwrite it automatically.
+
+For an external-subscription transaction draft, present three separate amounts: submitted gross
+cash, confirmed net amount that acquired shares, and fee. Core must derive the BUY transaction
+amount and plan-linked amount from submitted gross cash; the fee remains a separate audit fact and
+must not be added or deducted again. Keep confirmed shares and NAV unchanged, and keep trade date
+equal to NAV date. If Core reports that gross, net and fee exceed the permitted currency-rounding
+tolerance, stop: do not create or commit a transaction and do not change holdings or the plan.
+
+When a pre-v0.31.5 uncommitted external-subscription BUY draft contains the old net amount, first
+read the current draft and call `external_subscription_transaction_draft_revise` with its latest
+payload hash and the gross amount shown by the source. Revision is separate from create, renew and
+commit: it must keep the original draft, idempotency key, confirmation and order identity, rotate
+the credential, and create no transaction, holding, cash or plan-execution fact. Never use the
+generic transaction commit tool for an external-subscription-origin draft. After revision, show the
+gross, net, fee, shares, NAV, NAV date and financial impact in plain language and require a fresh
+explicit confirmation before the scoped external-subscription commit call.
 
 For `strategy_instrument_config_draft_create`, omitted optional values keep their current setting.
 To clear a nullable value, put its exact field name in `clear_fields`; never send an empty/default

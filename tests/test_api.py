@@ -4,7 +4,7 @@ from pathlib import Path
 
 from conftest import migrate_database
 from fastapi.testclient import TestClient
-from test_subscriptions import frozen_plan, submit
+from test_subscriptions import confirm, frozen_plan, legacy_net_transaction_draft, submit
 
 from investor_core.api.app import create_app
 from investor_core.config import Environment, Settings
@@ -539,4 +539,55 @@ def test_confirmation_date_only_create_and_revision_api_contract(tmp_path: Path)
     assert revised["draft"]["id"] == exact["draft"]["id"]
     assert revised["draft"]["idempotency_key"] == exact["draft"]["idempotency_key"]
     assert revised["changed_fields"] == ["confirmed_at_precision"]
+    assert revised["business_facts_created"] is False
+
+
+def test_external_subscription_transaction_revision_api_contract(tmp_path: Path) -> None:
+    database_path = tmp_path / "investor.db"
+    _, planning, service, portfolio_id, account_id, plan = frozen_plan(
+        database_path,
+        amount="40.00",
+    )
+    subscription = submit(
+        service,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        plan_id=str(plan["id"]),
+        amount="40.00",
+        key="api-gross-submit",
+    )
+    confirmed = confirm(
+        service,
+        subscription_id=str(subscription["id"]),
+        amount="39.97",
+        shares="39.97",
+        fee="0.03",
+        key="api-gross-confirm",
+    )
+    confirmation_id = str(confirmed["confirmations"][0]["id"])
+    legacy = legacy_net_transaction_draft(
+        database_path,
+        service,
+        confirmation_id=confirmation_id,
+        idempotency_key="api-gross-ledger",
+    )
+    legacy_draft = legacy["draft"]
+    assert isinstance(legacy_draft, dict)
+    client = TestClient(create_app(planning.settings))
+
+    response = client.post(
+        f"/v1/external-subscription-confirmations/{confirmation_id}/"
+        f"transaction-drafts/{legacy_draft['id']}/revise",
+        json={
+            "expected_payload_hash": legacy_draft["payload_hash"],
+            "expected_gross_amount": "40.00",
+        },
+    )
+    assert response.status_code == 200
+    revised = response.json()["data"]
+    assert revised["draft"]["id"] == legacy_draft["id"]
+    assert revised["draft"]["idempotency_key"] == legacy_draft["idempotency_key"]
+    assert revised["draft"]["amount"] == "40.00"
+    assert revised["confirmed_amount"] == "39.97"
+    assert revised["fee"] == "0.03"
     assert revised["business_facts_created"] is False
