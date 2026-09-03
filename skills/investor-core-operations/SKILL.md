@@ -40,3 +40,22 @@ amount is positive, and the user explicitly abandons the remainder without carry
 Never use this flow for zero execution (`SKIPPED` governs that case) or full execution (`EXECUTED`
 governs it). Never fabricate execution, delete plan items, carry abandoned money into another week,
 or generate a new weekly plan automatically.
+
+## Governed weekly reports
+
+- A formal weekly report must bind to one exact `weekly_plan_id`. Use the plan's persisted
+  `period_start` and `period_end`; never infer or replace them with a calendar week.
+- `FROZEN` and `PARTIALLY_EXECUTED` plans may only be previewed. A formal report may be committed
+  only for `EXECUTED`, `SKIPPED`, or `PARTIALLY_EXECUTED_CLOSED` plans.
+- Create a weekly-report draft, show the deterministic facts, and commit only that exact draft.
+  Regeneration creates a new immutable version and requires a reason; it never overwrites history.
+- If a draft expires, renew only that unchanged draft. Renewal rotates the token and creates no
+  report or investment fact.
+- Automatic and historical backfill paths use the same idempotent formal store and must not create
+  duplicate current reports.
+- Transaction facts and valuation quality are separate. Missing or insufficient end-date NAV
+  evidence only limits valuation; it never blocks the factual report.
+- Never substitute today's NAV for a historical date and never silently use an adjacent date.
+  `DATE_ONLY` confirmations display the date and precision, never the normalized midnight value.
+- Hermes must not create unmanaged Markdown as a substitute. Creating a report does not send
+  WeChat; delivery remains governed separately.

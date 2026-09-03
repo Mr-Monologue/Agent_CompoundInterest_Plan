@@ -17,6 +17,9 @@ def test_versioned_operations_skill_governs_gross_cost_and_partial_closure() -> 
     assert "weekly_plan_partial_close_draft_commit" in skill
     assert "PARTIALLY_EXECUTED_CLOSED" in skill
     assert "Never fabricate execution" in skill
+    assert "A formal weekly report must bind to one exact `weekly_plan_id`" in skill
+    assert "never silently use an adjacent date" in skill
+    assert "does not send WeChat" in skill
 
 
 def test_skill_has_valid_minimal_frontmatter() -> None:

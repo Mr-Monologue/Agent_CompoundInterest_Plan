@@ -71,6 +71,7 @@ from investor_core.api.schemas import (
     WeeklyPlanSkipDraftCreateRequest,
     WeeklyPlanSkipRequest,
     WeeklyPlanTransactionLinkRequest,
+    WeeklyReportDraftCreateRequest,
 )
 from investor_core.capital import CapitalService
 from investor_core.config import Settings, get_settings
@@ -88,6 +89,7 @@ from investor_core.signals import SignalService
 from investor_core.strategy import StrategyService
 from investor_core.subscriptions import SubscriptionService
 from investor_core.version import __version__
+from investor_core.weekly_reports import WeeklyReportService
 from investor_core.workspace import WorkspaceService
 
 
@@ -120,6 +122,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     research = ResearchService(runtime_settings)
     workspace = WorkspaceService(runtime_settings)
     subscriptions = SubscriptionService(runtime_settings)
+    weekly_reports = WeeklyReportService(runtime_settings)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -1420,6 +1423,84 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 actor_ref=request.actor_ref,
             )
         )
+
+    @app.get("/v1/weekly-plans/{plan_id}/report-preview")
+    def weekly_report_preview(plan_id: str) -> dict[str, Any]:
+        result = weekly_reports.preview(plan_id=plan_id)
+        return success(
+            result,
+            warnings=(
+                ["估值数据不完整; 正式周报仍可保留完整交易事实。"]
+                if result["valuation"]["status"] == "LIMITED"
+                else []
+            ),
+            data_quality=str(result["data_quality"]),
+        )
+
+    @app.post("/v1/weekly-plans/{plan_id}/report-drafts")
+    def weekly_report_draft_create(
+        plan_id: str,
+        request: WeeklyReportDraftCreateRequest,
+    ) -> dict[str, Any]:
+        return success(
+            weekly_reports.create_draft(
+                plan_id=plan_id,
+                idempotency_key=request.idempotency_key,
+                regeneration_reason=request.regeneration_reason,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.get("/v1/weekly-report-drafts/{draft_id}")
+    def weekly_report_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(weekly_reports.get_draft(draft_id=draft_id))
+
+    @app.post("/v1/weekly-report-drafts/{draft_id}/commit")
+    def weekly_report_draft_commit(
+        draft_id: str,
+        request: WeeklyPlanConfirmRequest,
+    ) -> dict[str, Any]:
+        return success(
+            weekly_reports.commit_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
+        )
+
+    @app.post("/v1/weekly-report-drafts/{draft_id}/renew")
+    def weekly_report_draft_renew(
+        draft_id: str,
+        request: WeeklyPlanPartialCloseDraftRenewRequest,
+    ) -> dict[str, Any]:
+        return success(
+            weekly_reports.renew_draft(
+                draft_id=draft_id,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.get("/v1/weekly-reports")
+    def weekly_report_list(
+        plan_id: str | None = None,
+        portfolio_id: str | None = None,
+        current_only: bool = False,
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        return success(
+            {
+                "items": weekly_reports.list_reports(
+                    plan_id=plan_id,
+                    portfolio_id=portfolio_id,
+                    current_only=current_only,
+                    limit=limit,
+                )
+            }
+        )
+
+    @app.get("/v1/weekly-reports/{report_id}")
+    def weekly_report_get(report_id: str) -> dict[str, Any]:
+        return success(weekly_reports.get_report(report_id=report_id))
 
     @app.get("/v1/weekly-plan-partial-close-drafts/{draft_id}")
     def weekly_plan_partial_close_draft_get(draft_id: str) -> dict[str, Any]:

@@ -475,6 +475,14 @@ SATELLITE 信号政策，明确 PE/PB 指标、进入候选的最高分位、回
 `0034_partial_plan_closure`。部分执行计划的正式收尾契约见
 [`docs/PARTIAL_WEEKLY_PLAN_CLOSURE.md`](docs/PARTIAL_WEEKLY_PLAN_CLOSURE.md)。
 
+0.31.7 增加绑定具体周计划的正式周报。计划持久保存自己的起止日期；未结束计划只能预览，
+`EXECUTED`、`SKIPPED` 和 `PARTIALLY_EXECUTED_CLOSED` 才能生成正式版本。正式周报通过草稿、
+明确确认和提交进入统一 `report_bundles` 存储；重新生成保留旧版本并要求原因，人工补报与自动任务
+保持幂等。计划结束日净值缺失或质量不足时，不使用今天或相邻日期净值替代，只将估值部分标记为
+不可用，计划、申购、确认和交易事实仍可形成正式周报。完整契约见
+[`docs/WEEKLY_PLAN_REPORTS.md`](docs/WEEKLY_PLAN_REPORTS.md)。数据库修订为
+`0035_weekly_plan_reports`。
+
 0.31.1 修复策略草稿的可空字段语义：字段未提供时保留当前值，API 中明确提供 `null` 或
 Hermes MCP 中通过 `clear_fields` 指定时才清空。该规则覆盖目标权重、金额上限、估值基准、
 止损和仓位上限、生命周期规则、赎回政策、暴露画像与资金去向。冻结周计划的原确认凭据丢失或
