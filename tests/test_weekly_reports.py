@@ -228,7 +228,7 @@ def test_exact_verified_end_nav_allows_valuation_state(tmp_path: Path) -> None:
             currency="CNY",
             source_type="PLATFORM",
             source_name="已验证平台",
-            source_ref=f"test://verified/{code}",
+            source_ref=f"test://verified/end/{code}",
             source_lineage="ALIPAY",
             verification_status="VERIFIED",
             observed_at_value="2026-07-27T18:00:00+08:00",
@@ -239,6 +239,49 @@ def test_exact_verified_end_nav_allows_valuation_state(tmp_path: Path) -> None:
     assert preview["data_quality"] in {"PASS", "WARNING"}
     assert preview["valuation"]["end_market_value"] is not None
     assert preview["valuation"]["period_return"] is not None
+    assert preview["valuation"]["period_return"]["twr_bps"] is None
+
+
+def test_exact_end_nav_does_not_substitute_an_adjacent_start_nav(tmp_path: Path) -> None:
+    settings, _portfolio_id, _account_id, plan_id = terminal_plan(tmp_path / "start.db")
+    market = MarketDataService(settings)
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute("DELETE FROM market_nav_snapshots WHERE nav_date='2026-07-21'")
+        connection.commit()
+    for code, nav in (("CORE01", "1.000000"), ("SAT01", "1.000000")):
+        market.record_nav_snapshot(
+            instrument_code=code,
+            nav_date_value="2026-07-20",
+            nav=nav,
+            currency="CNY",
+            source_type="PLATFORM",
+            source_name="相邻日期数据",
+            source_ref=f"test://verified/adjacent/{code}",
+            source_lineage="ALIPAY",
+            verification_status="VERIFIED",
+            observed_at_value="2026-07-20T18:00:00+08:00",
+            actor_ref="test-user",
+        )
+    for code, nav in (("CORE01", "1.100000"), ("SAT01", "1.000000")):
+        market.record_nav_snapshot(
+            instrument_code=code,
+            nav_date_value="2026-07-27",
+            nav=nav,
+            currency="CNY",
+            source_type="PLATFORM",
+            source_name="已验证平台",
+            source_ref=f"test://verified/end/{code}",
+            source_lineage="ALIPAY",
+            verification_status="VERIFIED",
+            observed_at_value="2026-07-27T18:00:00+08:00",
+            actor_ref="test-user",
+        )
+    valuation = WeeklyReportService(settings).preview(plan_id=plan_id)["valuation"]
+    assert valuation["status"] == "AVAILABLE"
+    assert valuation["end_market_value"] is not None
+    assert valuation["period_return"] is None
+    assert valuation["substitution_used"] is False
+    assert {item["required_nav_date"] for item in valuation["limited"]} == {"2026-07-21"}
 
 
 def test_commit_is_concurrent_safe_and_does_not_touch_business_facts(tmp_path: Path) -> None:

@@ -57,5 +57,5 @@ or generate a new weekly plan automatically.
   evidence only limits valuation; it never blocks the factual report.
 - Never substitute today's NAV for a historical date and never silently use an adjacent date.
   `DATE_ONLY` confirmations display the date and precision, never the normalized midnight value.
-- Hermes must not create unmanaged Markdown as a substitute. Creating a report does not send
-  WeChat; delivery remains governed separately.
+- Hermes must not create unmanaged Markdown as a substitute. Creating a report does not send WeChat;
+  delivery remains governed separately.

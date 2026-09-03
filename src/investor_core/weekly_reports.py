@@ -241,9 +241,53 @@ class WeeklyReportService:
                 "snapshots": snapshots,
                 "substitution_used": False,
             }
+        start = str(plan["period_start"])
+        return_limitations: list[JsonDict] = []
+        for item in holdings:
+            rows = connection.execute(
+                """
+                SELECT * FROM market_nav_snapshots
+                WHERE instrument_id=? AND nav_date=?
+                ORDER BY observed_at DESC, rowid DESC
+                """,
+                (item["instrument_id"], start),
+            ).fetchall()
+            values = {int(row["nav_micros"]) for row in rows}
+            selected = None if not rows else rows[0]
+            if (
+                selected is None
+                or len(values) != 1
+                or str(selected["verification_status"]) != "VERIFIED"
+                or str(selected["source_type"]) not in {"OFFICIAL", "PLATFORM"}
+            ):
+                return_limitations.append(
+                    {
+                        "instrument_code": str(item["instrument_code"]),
+                        "required_nav_date": start,
+                        "source": None if selected is None else str(selected["source_name"]),
+                        "verification_status": (
+                            "MISSING"
+                            if selected is None
+                            else str(selected["verification_status"])
+                        ),
+                        "reason_code": "PERIOD_RETURN_BOUNDARY_NAV_UNAVAILABLE",
+                    }
+                )
+        if return_limitations:
+            return {
+                "status": "AVAILABLE",
+                "business_state": "交易事实与期末估值可用。期间收益不可用",
+                "end_market_value": _money(end_market_minor),
+                "period_return": None,
+                "missing": [],
+                "limited": return_limitations,
+                "snapshots": snapshots,
+                "substitution_used": False,
+                "data_quality": "WARNING",
+            }
         performance = self._performance.calculate(
             portfolio_id=str(plan["portfolio_id"]),
-            period_start=datetime.fromisoformat(str(plan["period_start"])).date(),
+            period_start=datetime.fromisoformat(start).date(),
             period_end=datetime.fromisoformat(end).date(),
             period_type="CUSTOM",
             persist=False,
@@ -275,7 +319,9 @@ class WeeklyReportService:
             "period_return": {
                 "modified_dietz_bps": performance["modified_dietz_bps"],
                 "xirr_bps": performance["xirr_bps"],
-                "twr_bps": performance["twr_bps"],
+                # Daily TWR is intentionally omitted here because the shared
+                # performance engine permits prior-date NAV carry-forward.
+                "twr_bps": None,
             },
             "missing": [],
             "limited": [],
