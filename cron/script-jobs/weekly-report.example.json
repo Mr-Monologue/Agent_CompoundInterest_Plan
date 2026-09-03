@@ -1,0 +1,9 @@
+{
+  "name": "value-dca-weekly-report",
+  "schedule": "0 9 * * 2",
+  "timezone": "Asia/Shanghai",
+  "enabled": false,
+  "no_agent": true,
+  "script": "value_dca_weekly_report.py",
+  "delivery_target": "origin"
+}

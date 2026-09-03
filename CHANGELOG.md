@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.31.7 — 2026-09-03
+
+- Add governed weekly-report previews, confirmation drafts, immutable formal versions and exact weekly-plan binding.
+- Persist every plan's own start and end dates and preserve `EXECUTED`, `SKIPPED`, and `PARTIALLY_EXECUTED_CLOSED` outcome semantics.
+- Store formal weekly reports in `report_bundles`, keep regeneration history and reasons, and make manual backfill and automation idempotent.
+- Keep deterministic transaction facts available when exact end-date valuation evidence is missing or insufficient; never substitute current or adjacent-date NAV.
+- Surface missing, failed, generated and valuation-limited weekly-report states in the investment workspace without sending notifications automatically.
+
 ## v0.31.6 — 2026-09-02
 
 - Add `PARTIALLY_EXECUTED_CLOSED` as an explicit terminal outcome that preserves planned, executed and abandoned amounts without pretending full execution or a skipped plan.

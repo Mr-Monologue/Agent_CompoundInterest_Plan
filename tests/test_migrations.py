@@ -103,6 +103,8 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "plan_execution_links",
         "weekly_plan_skip_drafts",
         "weekly_plan_partial_close_drafts",
+        "weekly_report_drafts",
+        "weekly_reports",
         "external_subscriptions",
         "external_subscription_confirmations",
         "external_subscription_drafts",
@@ -113,7 +115,7 @@ def test_phase1_migration_is_idempotent(tmp_path: Path) -> None:
         "transactions",
     }
     assert phase == ("3",)
-    assert revision == ("0034_partial_plan_closure",)
+    assert revision == ("0035_weekly_plan_reports",)
 
 
 def test_external_subscription_draft_renewal_migration_preserves_existing_drafts(
@@ -166,7 +168,7 @@ def test_external_subscription_draft_renewal_migration_preserves_existing_drafts
         None,
         0,
     )
-    assert revision == ("0034_partial_plan_closure",)
+    assert revision == ("0035_weekly_plan_reports",)
 
     downgrade_to(database_path, "0030_instrument_role_contract")
     with sqlite3.connect(database_path) as connection:
@@ -193,6 +195,41 @@ def test_external_subscription_draft_renewal_migration_preserves_existing_drafts
         "PENDING",
     )
     assert downgraded_revision == ("0030_instrument_role_contract",)
+
+
+def test_weekly_report_migration_preserves_plans_and_downgrades(tmp_path: Path) -> None:
+    database_path = tmp_path / "weekly-report-migration.db"
+    migrate_to(database_path, "0034_partial_plan_closure")
+    with sqlite3.connect(database_path) as connection:
+        before_tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+    migrate_database(database_path)
+    with sqlite3.connect(database_path) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(investment_plans)")
+        }
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        assert {"period_start", "period_end"} <= columns
+        assert {"weekly_report_drafts", "weekly_reports"} <= tables
+    downgrade_to(database_path, "0034_partial_plan_closure")
+    with sqlite3.connect(database_path) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(investment_plans)")
+        }
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        }
+        revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
+    assert "period_start" not in columns and "period_end" not in columns
+    assert "weekly_report_drafts" not in tables and "weekly_reports" not in tables
+    assert before_tables <= tables
+    assert revision == ("0034_partial_plan_closure",)
 
 
 def test_confirmation_time_precision_revision_migration_upgrades_and_downgrades(
@@ -284,7 +321,7 @@ def test_confirmation_time_precision_revision_migration_upgrades_and_downgrades(
         ).fetchone()
     migrated_payload = json.loads(draft_row[2])
     assert confirmation_precision == ("EXACT",)
-    assert revision == ("0034_partial_plan_closure",)
+    assert revision == ("0035_weekly_plan_reports",)
     assert draft_row[0] == pending["draft"]["id"]
     assert draft_row[1] == pending["draft"]["idempotency_key"]
     assert migrated_payload["confirmed_at_precision"] == "EXACT"
@@ -406,7 +443,7 @@ def test_gross_transaction_migration_marks_and_preserves_legacy_net_draft(
         0,
     )
     assert migrated_link == (4000, 3997, 3, None, 0)
-    assert revision == ("0034_partial_plan_closure",)
+    assert revision == ("0035_weekly_plan_reports",)
 
     downgrade_to(database_path, "0032_confirmation_time_precision_revision")
     with sqlite3.connect(database_path) as connection:
@@ -572,7 +609,7 @@ def test_market_nav_migration_preserves_committed_opening_position(tmp_path: Pat
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM market_nav_snapshots").fetchone() == (0,)
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0034_partial_plan_closure",
+            "0035_weekly_plan_reports",
         )
 
 
@@ -677,7 +714,7 @@ def test_watchlist_review_cycle_migration_preserves_and_backfills_entries(
         "2026-07-02T00:01:00Z",
         None,
     )
-    assert revision == ("0034_partial_plan_closure",)
+    assert revision == ("0035_weekly_plan_reports",)
     snapshot = ResearchService(settings).build_watchlist_review_snapshot(
         portfolio_id=str(portfolio["id"]),
         as_of_date=date(2026, 9, 1),
@@ -707,7 +744,7 @@ def test_delivery_receipt_migration_upgrades_existing_operations_schema(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert {"dispatched_at", "delivered_at", "provider_message_id"} <= outbox_columns
     assert attempt_table == ("notification_delivery_attempts",)
-    assert revision == ("0034_partial_plan_closure",)
+    assert revision == ("0035_weekly_plan_reports",)
 
 
 def test_alert_recovery_migration_resolves_only_recovered_job_runs(tmp_path: Path) -> None:
@@ -839,7 +876,7 @@ def test_satellite_signal_migration_preserves_alert_resolution_schema(
         "resolution_code",
         "resolution_context_json",
     } <= alert_columns
-    assert revision == ("0034_partial_plan_closure",)
+    assert revision == ("0035_weekly_plan_reports",)
 
 
 def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
@@ -879,7 +916,7 @@ def test_external_subscription_migration_preserves_v030_facts_and_starts_empty(
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
     assert after == before
     assert set(new_counts.values()) == {0}
-    assert revision == ("0034_partial_plan_closure",)
+    assert revision == ("0035_weekly_plan_reports",)
 
 
 def test_partial_plan_closure_migration_never_auto_closes_historical_partial_plan(
