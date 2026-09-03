@@ -376,6 +376,25 @@ class WorkspaceService:
                     (portfolio_id,),
                 ).fetchone()[0]
             )
+            weekly_report_rows = connection.execute(
+                """
+                SELECT p.id AS plan_id, p.status AS plan_status,
+                       p.period_start, p.period_end,
+                       r.id AS report_id, r.valuation_status, r.data_quality
+                FROM investment_plans p
+                LEFT JOIN weekly_reports r ON r.plan_id=p.id AND r.is_current=1
+                WHERE p.portfolio_id=? AND p.account_id=?
+                  AND p.status IN ('EXECUTED','SKIPPED','PARTIALLY_EXECUTED_CLOSED')
+                ORDER BY p.period_end DESC, p.id
+                """,
+                (portfolio_id, account_id),
+            ).fetchall()
+            weekly_report_failed_run_count = int(
+                connection.execute(
+                    """SELECT COUNT(*) FROM job_runs
+                       WHERE job_name='WEEKLY_REPORT' AND status='FAILED'"""
+                ).fetchone()[0]
+            )
             latest_notification = connection.execute(
                 """
                 SELECT o.status, o.delivered_at, n.created_at
@@ -430,6 +449,27 @@ class WorkspaceService:
             "research_task_counts": research_task_counts,
             "active_automation_policy_count": active_policy_count,
             "periodic_review_count": periodic_review_count,
+            "weekly_reports": [
+                {
+                    "weekly_plan_id": str(row["plan_id"]),
+                    "plan_status": str(row["plan_status"]),
+                    "period_start": str(row["period_start"]),
+                    "period_end": str(row["period_end"]),
+                    "report_status": (
+                        "MISSING"
+                        if row["report_id"] is None
+                        else (
+                            "FACTS_COMPLETE_VALUATION_LIMITED"
+                            if row["valuation_status"] == "LIMITED"
+                            else "GENERATED"
+                        )
+                    ),
+                    "report_id": row["report_id"],
+                    "data_quality": row["data_quality"],
+                }
+                for row in weekly_report_rows
+            ],
+            "weekly_report_failed_run_count": weekly_report_failed_run_count,
             "latest_notification_test": (
                 {
                     "status": str(latest_notification["status"]),
@@ -1091,6 +1131,49 @@ class WorkspaceService:
                     "PERIODIC_REVIEW_ACTIONS_REQUIRE_DECISION",
                     "periodic_review_list",
                     {"count": open_actions},
+                )
+            )
+        missing_weekly_reports = [
+            item
+            for item in workflows["weekly_reports"]
+            if item["report_status"] == "MISSING"
+        ]
+        if missing_weekly_reports:
+            actions.append(
+                self._action(
+                    65,
+                    "WEEKLY_REPORTS_MISSING",
+                    "USER_REVIEW",
+                    "TERMINAL_WEEKLY_PLAN_HAS_NO_FORMAL_REPORT",
+                    "weekly_report_list",
+                    {"items": missing_weekly_reports},
+                )
+            )
+        limited_weekly_reports = [
+            item
+            for item in workflows["weekly_reports"]
+            if item["report_status"] == "FACTS_COMPLETE_VALUATION_LIMITED"
+        ]
+        if limited_weekly_reports:
+            actions.append(
+                self._action(
+                    66,
+                    "WEEKLY_REPORTS_VALUATION_LIMITED",
+                    "DATA_QUALITY",
+                    "WEEKLY_REPORT_FACTS_COMPLETE_VALUATION_LIMITED",
+                    "weekly_report_list",
+                    {"items": limited_weekly_reports},
+                )
+            )
+        if int(workflows["weekly_report_failed_run_count"]):
+            actions.append(
+                self._action(
+                    67,
+                    "WEEKLY_REPORT_GENERATION_FAILED",
+                    "OPERATIONS",
+                    "WEEKLY_REPORT_AUTOMATION_RETRY_REQUIRED",
+                    "automation_run_list",
+                    {"failed_run_count": workflows["weekly_report_failed_run_count"]},
                 )
             )
         exhausted = int(workflows["research_task_counts"].get("EXHAUSTED", 0))

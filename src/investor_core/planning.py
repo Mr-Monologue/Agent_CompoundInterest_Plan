@@ -296,6 +296,8 @@ class PlanningService:
                 "version": str(row["strategy_version"]),
             },
             "plan_date": str(row["plan_date"]),
+            "period_start": str(row["period_start"]),
+            "period_end": str(row["period_end"]),
             "contribution_amount": (
                 f"{Decimal(int(row['contribution_amount_minor'])) / MONEY_SCALE:.2f}"
             ),
@@ -621,12 +623,13 @@ class PlanningService:
                 """
                 INSERT INTO investment_plans (
                     id, portfolio_id, account_id, strategy_assignment_id,
-                    plan_date, contribution_amount_minor, idempotency_key,
+                    plan_date, period_start, period_end,
+                    contribution_amount_minor, idempotency_key,
                     request_hash, status, current_revision, created_by,
                     confirmation_digest, confirmation_expires_at, created_at,
                     updated_at, frozen_at, executed_at, expires_at
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 1, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', 1, ?, ?, ?, ?, ?,
                     NULL, NULL, ?
                 )
                 """,
@@ -636,6 +639,8 @@ class PlanningService:
                     account_id,
                     assignment_id,
                     plan_date.isoformat(),
+                    plan_date.isoformat(),
+                    (plan_date + timedelta(days=6)).isoformat(),
                     contribution_minor,
                     normalized_key,
                     request_hash,
