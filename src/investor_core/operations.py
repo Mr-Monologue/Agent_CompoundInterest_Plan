@@ -25,6 +25,7 @@ from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.research import ResearchService
 from investor_core.risk import RiskService
+from investor_core.weekly_reports import WeeklyReportService
 
 SUPPORTED_JOBS = {
     "DAILY_MARKET_SYNC",
@@ -39,6 +40,7 @@ SUPPORTED_JOBS = {
     "WATCHLIST_REVIEW_DUE",
     "REVIEW_QUALITY_SNAPSHOT",
     "RESEARCH_COVERAGE_AUDIT",
+    "WEEKLY_REPORT",
 }
 PORTFOLIO_JOBS = SUPPORTED_JOBS - {"SYSTEM_DOCTOR"}
 MANAGED_JOB_PREFIX = "value-dca-"
@@ -82,6 +84,7 @@ class OperationsService:
         planning: PlanningService | None = None,
         performance: PerformanceService | None = None,
         research: ResearchService | None = None,
+        weekly_reports: WeeklyReportService | None = None,
     ) -> None:
         self.settings = settings
         self._now = now
@@ -91,6 +94,7 @@ class OperationsService:
         self._planning = planning or PlanningService(settings, now=now)
         self._performance = performance or PerformanceService(settings, now=now)
         self._research = research or ResearchService(settings, now=now)
+        self._weekly_reports = weekly_reports or WeeklyReportService(settings, now=now)
 
     def _connect(self) -> sqlite3.Connection:
         path = (
@@ -172,6 +176,7 @@ class OperationsService:
                 "required_evidence_types",
                 "max_age_days",
             },
+            "WEEKLY_REPORT": set(),
         }
         unknown = set(config) - allowed_common - allowed_by_job[job_name]
         if unknown:
@@ -1203,6 +1208,21 @@ class OperationsService:
                 ("WARNING" if result["warnings"] else "PASS"),
                 True,
                 "WEEKLY_PLAN_DRAFT_READY",
+            )
+        if job_name == "WEEKLY_REPORT":
+            result = self._weekly_reports.generate_eligible(
+                portfolio_id=portfolio_id,
+                actor_ref="cron",
+            )
+            return (
+                result,
+                "PASS",
+                False,
+                (
+                    "WEEKLY_REPORTS_GENERATED"
+                    if int(result["generated_count"]) > 0
+                    else "NO_WEEKLY_REPORT_DUE"
+                ),
             )
         if job_name == "SELL_FOLLOWUP_DUE":
             followups = self._risk.list_followups(portfolio_id=portfolio_id, status=None, limit=500)
@@ -2555,7 +2575,8 @@ class OperationsService:
                 WHERE job_name IN (
                     'DAILY_MARKET_SYNC','DAILY_RISK_SCAN','WEEKLY_PLAN_PREPARE',
                     'SELL_FOLLOWUP_DUE','SYSTEM_DOCTOR','MONTHLY_REVIEW',
-                    'QUARTERLY_REVIEW','ANNUAL_REVIEW','WEEKLY_MARKET_DISCOVERY',
+                    'QUARTERLY_REVIEW','ANNUAL_REVIEW','WEEKLY_REPORT',
+                    'WEEKLY_MARKET_DISCOVERY',
                     'WATCHLIST_REVIEW_DUE','REVIEW_QUALITY_SNAPSHOT',
                     'RESEARCH_COVERAGE_AUDIT'
                 )

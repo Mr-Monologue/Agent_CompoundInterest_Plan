@@ -118,6 +118,13 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "weekly_plan_draft_create",
         "weekly_plan_list",
         "weekly_plan_get",
+        "weekly_report_preview",
+        "weekly_report_draft_create",
+        "weekly_report_draft_get",
+        "weekly_report_draft_renew",
+        "weekly_report_draft_commit",
+        "weekly_report_list",
+        "weekly_report_get",
         "weekly_plan_freeze",
         "weekly_plan_skip",
         "weekly_plan_skip_draft_create",
@@ -191,6 +198,17 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
     ]
     assert "create no financial facts" in partial_close_tools[
         "weekly_plan_partial_close_draft_commit"
+    ]
+    weekly_report_tools = {
+        tool.name: tool.description or ""
+        for tool in tools
+        if tool.name.startswith("weekly_report_")
+    }
+    assert len(weekly_report_tools) == 7
+    assert "open plans remain non-final" in weekly_report_tools["weekly_report_preview"]
+    assert "never sends or trades" in weekly_report_tools["weekly_report_draft_create"]
+    assert "creates no report or financial fact" in weekly_report_tools[
+        "weekly_report_draft_renew"
     ]
 
 

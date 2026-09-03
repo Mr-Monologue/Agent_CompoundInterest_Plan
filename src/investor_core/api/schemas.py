@@ -254,6 +254,7 @@ class AutomationPolicyDraftCreateRequest(RequestModel):
         "MONTHLY_REVIEW",
         "QUARTERLY_REVIEW",
         "ANNUAL_REVIEW",
+        "WEEKLY_REPORT",
         "WEEKLY_MARKET_DISCOVERY",
         "WATCHLIST_REVIEW_DUE",
         "REVIEW_QUALITY_SNAPSHOT",
@@ -278,6 +279,7 @@ class AutomationJobRunRequest(RequestModel):
         "MONTHLY_REVIEW",
         "QUARTERLY_REVIEW",
         "ANNUAL_REVIEW",
+        "WEEKLY_REPORT",
         "WEEKLY_MARKET_DISCOVERY",
         "WATCHLIST_REVIEW_DUE",
         "REVIEW_QUALITY_SNAPSHOT",
@@ -584,6 +586,12 @@ class WeeklyPlanExecutedRequest(RequestModel):
 class WeeklyPlanTransactionLinkRequest(RequestModel):
     transaction_id: str = Field(min_length=1, max_length=80)
     confirmed_by: str = Field(min_length=1, max_length=120)
+
+
+class WeeklyReportDraftCreateRequest(RequestModel):
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    regeneration_reason: str | None = Field(default=None, min_length=1, max_length=1000)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
 class ExternalSubscriptionSubmissionDraftRequest(RequestModel):

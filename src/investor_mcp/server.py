@@ -170,6 +170,7 @@ async def automation_policy_draft_create(
         "MONTHLY_REVIEW",
         "QUARTERLY_REVIEW",
         "ANNUAL_REVIEW",
+        "WEEKLY_REPORT",
         "WEEKLY_MARKET_DISCOVERY",
         "WATCHLIST_REVIEW_DUE",
         "REVIEW_QUALITY_SNAPSHOT",
@@ -2341,6 +2342,91 @@ async def weekly_plan_list(
 async def weekly_plan_get(plan_id: str) -> dict[str, Any]:
     """Read one audited weekly plan without exposing its confirmation token."""
     return await core_request("GET", f"/v1/weekly-plans/{plan_id}")
+
+
+@mcp.tool()
+async def weekly_report_preview(weekly_plan_id: str) -> dict[str, Any]:
+    """Preview a report bound to one exact weekly plan; open plans remain non-final."""
+    return await core_request(
+        "GET", f"/v1/weekly-plans/{weekly_plan_id}/report-preview"
+    )
+
+
+@mcp.tool()
+async def weekly_report_draft_create(
+    weekly_plan_id: str,
+    idempotency_key: str,
+    regeneration_reason: str = "",
+) -> dict[str, Any]:
+    """Create a governed weekly-report draft for a terminal plan; never sends or trades."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-plans/{weekly_plan_id}/report-drafts",
+        payload={
+            "idempotency_key": idempotency_key,
+            "regeneration_reason": regeneration_reason or None,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_report_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read one weekly-report draft without exposing its confirmation token."""
+    return await core_request("GET", f"/v1/weekly-report-drafts/{draft_id}")
+
+
+@mcp.tool()
+async def weekly_report_draft_renew(draft_id: str) -> dict[str, Any]:
+    """Renew only an expired unchanged weekly-report draft; creates no report or financial fact."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-report-drafts/{draft_id}/renew",
+        payload={"actor_ref": "hermes"},
+    )
+
+
+@mcp.tool()
+async def weekly_report_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Finalize one exact weekly report after explicit confirmation; never sends it."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-report-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_report_list(
+    weekly_plan_id: str = "",
+    portfolio_id: str = "",
+    current_only: bool = False,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List formal versioned weekly reports without changing any investment fact."""
+    return await core_request(
+        "GET",
+        "/v1/weekly-reports",
+        params={
+            "plan_id": weekly_plan_id or None,
+            "portfolio_id": portfolio_id or None,
+            "current_only": current_only,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_report_get(report_id: str) -> dict[str, Any]:
+    """Read one immutable formal weekly-report version and its source facts."""
+    return await core_request("GET", f"/v1/weekly-reports/{report_id}")
 
 
 @mcp.tool()
