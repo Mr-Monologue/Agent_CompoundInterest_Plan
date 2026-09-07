@@ -20,6 +20,9 @@ def test_versioned_operations_skill_governs_gross_cost_and_partial_closure() -> 
     assert "A formal weekly report must bind to one exact `weekly_plan_id`" in skill
     assert "never silently use an adjacent date" in skill
     assert "does not send WeChat" in skill
+    assert "## Recording an explicit no-investment week" in skill
+    assert "decision_kind=NO_INVESTMENT" in skill
+    assert "Do not create an allocation plan merely" in skill
 
 
 def test_skill_has_valid_minimal_frontmatter() -> None:

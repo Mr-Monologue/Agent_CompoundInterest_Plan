@@ -121,6 +121,16 @@ Use `weekly_plan_draft_create` only when the user asks to save the exact current
 created plan remains `DRAFT`; it is not approved and creates no transaction. Show the returned
 revision, items, expiry, and confirmation boundary. Use `weekly_plan_freeze` only after the user
 explicitly confirms that exact draft and provides or clearly approves use of its one-time token.
+When the user explicitly decides that an entire seven-day period has no investment and no budget
+carry-forward, use `weekly_no_investment_preview` and the governed
+`weekly_no_investment_draft_create` flow instead of inventing an allocation plan. Show the exact
+period, weekly budget, zero execution, fully abandoned amount, reason, conflict checks, and absence
+of financial effects. Commit only after fresh explicit confirmation with
+`weekly_no_investment_draft_commit`; renew an expired unchanged draft with
+`weekly_no_investment_draft_renew`. The committed result must be one terminal `SKIPPED` plan with
+`decision_kind=NO_INVESTMENT`, no plan items, no carry-forward, and eligibility for the normal
+formal weekly report. Stop if Core finds an overlapping non-expired plan, a posted BUY, or an active
+external subscription. Never pre-skip a future week or create a replacement draft identity.
 Use `weekly_plan_skip` only after explicit user direction and a reason. Treat `FROZEN` as an
 approved plan, not a brokerage execution. A `FROZEN` plan remains active, action-required and
 future-plan-blocking even when its original confirmation credential has expired. If that credential

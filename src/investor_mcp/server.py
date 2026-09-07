@@ -2339,6 +2339,108 @@ async def weekly_plan_list(
 
 
 @mcp.tool()
+async def weekly_no_investment_preview(
+    period_start: str,
+    weekly_budget: str,
+    reason_code: Literal[
+        "USER_CHOSE_NO_INVESTMENT",
+        "BUDGET_PAUSED_FOR_WEEK",
+        "OTHER_EXPLICIT_SKIP",
+    ],
+    note: str,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Preview one explicit zero-investment week; never creates a plan or financial fact."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "GET",
+        "/v1/weekly-no-investment-preview",
+        params={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+            "period_start": period_start,
+            "weekly_budget": weekly_budget,
+            "reason_code": reason_code,
+            "note": note,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_no_investment_draft_create(
+    period_start: str,
+    weekly_budget: str,
+    reason_code: Literal[
+        "USER_CHOSE_NO_INVESTMENT",
+        "BUDGET_PAUSED_FOR_WEEK",
+        "OTHER_EXPLICIT_SKIP",
+    ],
+    note: str,
+    idempotency_key: str,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Create a governed zero-investment-week draft; never creates a plan or financial fact."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/weekly-no-investment-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+            "period_start": period_start,
+            "weekly_budget": weekly_budget,
+            "reason_code": reason_code,
+            "note": note,
+            "idempotency_key": idempotency_key,
+            "actor_ref": "hermes",
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_no_investment_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read one zero-investment-week draft without exposing its confirmation token."""
+    return await core_request("GET", f"/v1/weekly-no-investment-drafts/{draft_id}")
+
+
+@mcp.tool()
+async def weekly_no_investment_draft_renew(draft_id: str) -> dict[str, Any]:
+    """Renew an expired unchanged zero-investment-week draft without creating facts."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-no-investment-drafts/{draft_id}/renew",
+        payload={"actor_ref": "hermes"},
+    )
+
+
+@mcp.tool()
+async def weekly_no_investment_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Commit one confirmed zero-investment week as a terminal SKIPPED plan record."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-no-investment-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
+
+
+@mcp.tool()
 async def weekly_plan_get(plan_id: str) -> dict[str, Any]:
     """Read one audited weekly plan without exposing its confirmation token."""
     return await core_request("GET", f"/v1/weekly-plans/{plan_id}")

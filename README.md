@@ -483,6 +483,15 @@ SATELLITE 信号政策，明确 PE/PB 指标、进入候选的最高分位、回
 [`docs/WEEKLY_PLAN_REPORTS.md`](docs/WEEKLY_PLAN_REPORTS.md)。数据库修订为
 `0035_weekly_plan_reports`。
 
+0.31.8 增加整周不投入的正式记录。用户明确某个七日周期不投入时，系统先预览并创建短期
+确认草稿；确认提交后直接形成 `decision_kind=NO_INVESTMENT`、状态为 `SKIPPED` 的终态记录，
+不先生成或冻结一份资产分配计划。记录保留周预算、实际投入 0、全额放弃、`carry_forward=false`
+和用户原因，没有计划项目，也不创建交易、申购、现金、持仓或策略事实。创建、续签和提交都会
+复核同周期内不存在其他有效计划、真实 BUY 或在途申购；过期未确认的计划草稿不视为计划事实。
+该记录可直接进入现有正式周报流程。完整契约见
+[`docs/NO_INVESTMENT_WEEK.md`](docs/NO_INVESTMENT_WEEK.md)。数据库修订为
+`0036_no_investment_week`。
+
 0.31.1 修复策略草稿的可空字段语义：字段未提供时保留当前值，API 中明确提供 `null` 或
 Hermes MCP 中通过 `clear_fields` 指定时才清空。该规则覆盖目标权重、金额上限、估值基准、
 止损和仓位上限、生命周期规则、赎回政策、暴露画像与资金去向。冻结周计划的原确认凭据丢失或

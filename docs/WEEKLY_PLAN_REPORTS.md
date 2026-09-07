@@ -21,6 +21,11 @@ Regeneration requires a reason, creates a new version, preserves the old version
 current pointer atomically. Report creation is read-only with respect to investments and defaults
 to silent delivery.
 
+A `SKIPPED` plan with `decision_kind=NO_INVESTMENT` is an explicit zero-contribution weekly
+decision, not a fabricated allocation. It has no plan items and reports the weekly budget as fully
+abandoned with no carry-forward. See
+[`NO_INVESTMENT_WEEK.md`](NO_INVESTMENT_WEEK.md).
+
 ## Facts and valuation
 
 The report period is copied from the plan's persisted start and end dates. The report includes

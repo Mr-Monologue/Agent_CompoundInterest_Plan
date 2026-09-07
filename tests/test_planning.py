@@ -14,6 +14,7 @@ from investor_core.ledger import JsonDict, LedgerError, LedgerService
 from investor_core.market_data import MarketDataService
 from investor_core.planning import PlanningService
 from investor_core.strategy import StrategyService
+from investor_core.weekly_reports import WeeklyReportService
 
 
 def configured_services(
@@ -319,6 +320,135 @@ def test_weekly_plan_skip_reconfirmation_expires_without_closing_plan(
     assert expired.value.code == "CONFIRMATION_EXPIRED"
     assert service.get_skip_draft(draft_id=str(close["draft"]["id"]))["status"] == "EXPIRED"
     assert service.get(plan_id=plan_id)["status"] == "FROZEN"
+
+
+def test_no_investment_week_records_truth_without_allocated_plan(
+    tmp_path: Path,
+) -> None:
+    ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
+    clock = datetime(2026, 9, 4, 2, 0, tzinfo=UTC)
+    service = PlanningService(planning.settings, now=lambda: clock)
+    expired_overlap = service.create_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        contribution_amount="200.00",
+        plan_date_value="2026-09-04",
+        idempotency_key="unconfirmed-2026-09-04",
+        as_of_date_value="2026-07-21",
+    )
+    clock = datetime(2026, 9, 7, 2, 0, tzinfo=UTC)
+
+    preview = service.preview_no_investment_week(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        period_start_value="2026-08-31",
+        weekly_budget="200.00",
+        reason_code="USER_CHOSE_NO_INVESTMENT",
+        note="本周主动暂停投入，预算不结转。",
+    )
+    assert preview["eligible"] is True
+    assert preview["executed_amount"] == "0.00"
+    assert preview["abandoned_amount"] == "200.00"
+    assert service.get(plan_id=str(expired_overlap["plan"]["id"]))["status"] == "EXPIRED"
+
+    draft = service.create_no_investment_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        period_start_value="2026-08-31",
+        weekly_budget="200.00",
+        reason_code="USER_CHOSE_NO_INVESTMENT",
+        note="本周主动暂停投入，预算不结转。",
+        idempotency_key="no-investment:2026-08-31",
+    )
+    assert draft["draft"]["status"] == "PENDING"
+    assert draft["draft"]["financial_facts_created"] is False
+    committed = service.commit_no_investment_draft(
+        draft_id=str(draft["draft"]["id"]),
+        confirmation_token=str(draft["confirmation_token"]),
+        confirmed_by="test-user",
+    )
+    plan = committed["plan"]
+    assert plan["status"] == "SKIPPED"
+    assert plan["decision_kind"] == "NO_INVESTMENT"
+    assert plan["period_start"] == "2026-08-31"
+    assert plan["period_end"] == "2026-09-06"
+    assert plan["items"] == []
+    assert plan["execution_progress"]["planned_amount"] == "200.00"
+    assert plan["execution_progress"]["executed_amount"] == "0.00"
+    assert plan["execution_progress"]["abandoned_amount"] == "200.00"
+    assert plan["execution_progress"]["unsubmitted_amount"] == "0.00"
+    assert plan["execution_progress"]["carry_forward"] is False
+    assert committed["financial_facts_created"] is False
+    assert all(
+        item["kind"] == "OPENING"
+        for item in ledger.list_transactions(portfolio_id=portfolio_id, account_id=account_id)
+    )
+
+    report = WeeklyReportService(planning.settings, now=lambda: clock).preview(
+        plan_id=str(plan["id"])
+    )
+    assert report["final_eligible"] is True
+    assert report["decision_kind"] == "NO_INVESTMENT"
+    assert report["planned_amount"] == "200.00"
+    assert report["executed_amount"] == "0.00"
+    assert report["abandoned_amount"] == "200.00"
+    assert report["items"] == []
+    assert report["no_investment_decision"] == {
+        "weekly_budget": "200.00",
+        "executed_amount": "0.00",
+        "abandoned_amount": "200.00",
+        "carry_forward": False,
+        "reason_code": "USER_CHOSE_NO_INVESTMENT",
+        "note": "本周主动暂停投入，预算不结转。",
+    }
+
+
+def test_no_investment_week_rejects_actual_buy_and_renews_expired_draft(
+    tmp_path: Path,
+) -> None:
+    ledger, planning, portfolio_id, account_id = configured_services(tmp_path / "investor.db")
+    clock = datetime(2026, 9, 7, 2, 0, tzinfo=UTC)
+    service = PlanningService(planning.settings, now=lambda: clock)
+    draft = service.create_no_investment_draft(
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        period_start_value="2026-08-31",
+        weekly_budget="200.00",
+        reason_code="USER_CHOSE_NO_INVESTMENT",
+        note="本周不投入。",
+        idempotency_key="no-investment-renew",
+    )
+    old_token = str(draft["confirmation_token"])
+    clock += timedelta(hours=1)
+    renewed = service.renew_no_investment_draft(
+        draft_id=str(draft["draft"]["id"]), actor_ref="test"
+    )
+    assert renewed["draft"]["status"] == "PENDING"
+    assert renewed["draft"]["renewal_count"] == 1
+    with pytest.raises(LedgerError) as old_credential:
+        service.commit_no_investment_draft(
+            draft_id=str(draft["draft"]["id"]),
+            confirmation_token=old_token,
+            confirmed_by="test-user",
+        )
+    assert old_credential.value.code == "CONFIRMATION_TOKEN_INVALID"
+
+    commit_buy(
+        ledger,
+        portfolio_id=portfolio_id,
+        account_id=account_id,
+        instrument_code="CORE01",
+        trade_date="2026-09-02",
+        amount="10.00",
+        key="actual-buy-in-no-investment-week",
+    )
+    with pytest.raises(LedgerError) as changed:
+        service.commit_no_investment_draft(
+            draft_id=str(draft["draft"]["id"]),
+            confirmation_token=str(renewed["confirmation_token"]),
+            confirmed_by="test-user",
+        )
+    assert changed.value.code == "NO_INVESTMENT_WEEK_FACTS_CHANGED"
 
 
 def test_plan_accumulates_multiple_buy_records_across_trade_dates(tmp_path: Path) -> None:

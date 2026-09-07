@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.31.8 — 2026-09-07
+
+- Add a governed no-investment-week preview, draft, renewal and commit lifecycle without fabricating an allocation plan.
+- Commit one explicit seven-day zero-contribution decision as `SKIPPED` with `decision_kind=NO_INVESTMENT`, zero execution, the full weekly budget abandoned and no carry-forward.
+- Reject overlapping non-expired plans, posted BUY transactions and active external subscriptions at preview, renewal and commit; expired unconfirmed plan drafts do not become plan facts.
+- Keep no-investment records eligible for the existing immutable formal weekly-report workflow while creating no transaction, subscription, holding, cash or strategy facts.
+- Teach Hermes to use this path when the user skips a whole week and to preserve the same draft identity across expiry.
+
 ## v0.31.7 — 2026-09-03
 
 - Add governed weekly-report previews, confirmation drafts, immutable formal versions and exact weekly-plan binding.
