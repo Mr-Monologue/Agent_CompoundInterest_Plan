@@ -63,6 +63,8 @@ from investor_core.api.schemas import (
     TransactionDraftCreateRequest,
     TransactionReversalDraftCreateRequest,
     ValuationObservationCreateRequest,
+    WeeklyNoInvestmentDraftCreateRequest,
+    WeeklyNoInvestmentDraftRenewRequest,
     WeeklyPlanConfirmRequest,
     WeeklyPlanDraftCreateRequest,
     WeeklyPlanExecutedRequest,
@@ -1318,6 +1320,72 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     limit=limit,
                 )
             }
+        )
+
+    @app.get("/v1/weekly-no-investment-preview")
+    def weekly_no_investment_preview(
+        portfolio_id: str,
+        account_id: str,
+        period_start: date,
+        weekly_budget: str,
+        reason_code: str,
+        note: str,
+    ) -> dict[str, Any]:
+        return success(
+            planning.preview_no_investment_week(
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                period_start_value=period_start.isoformat(),
+                weekly_budget=weekly_budget,
+                reason_code=reason_code,
+                note=note,
+            )
+        )
+
+    @app.post("/v1/weekly-no-investment-drafts")
+    def weekly_no_investment_draft_create(
+        request: WeeklyNoInvestmentDraftCreateRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.create_no_investment_draft(
+                portfolio_id=request.portfolio_id,
+                account_id=request.account_id,
+                period_start_value=request.period_start.isoformat(),
+                weekly_budget=str(request.weekly_budget),
+                reason_code=request.reason_code,
+                note=request.note,
+                idempotency_key=request.idempotency_key,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.get("/v1/weekly-no-investment-drafts/{draft_id}")
+    def weekly_no_investment_draft_get(draft_id: str) -> dict[str, Any]:
+        return success(planning.get_no_investment_draft(draft_id=draft_id))
+
+    @app.post("/v1/weekly-no-investment-drafts/{draft_id}/renew")
+    def weekly_no_investment_draft_renew(
+        draft_id: str,
+        request: WeeklyNoInvestmentDraftRenewRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.renew_no_investment_draft(
+                draft_id=draft_id,
+                actor_ref=request.actor_ref,
+            )
+        )
+
+    @app.post("/v1/weekly-no-investment-drafts/{draft_id}/commit")
+    def weekly_no_investment_draft_commit(
+        draft_id: str,
+        request: WeeklyPlanConfirmRequest,
+    ) -> dict[str, Any]:
+        return success(
+            planning.commit_no_investment_draft(
+                draft_id=draft_id,
+                confirmation_token=request.confirmation_token,
+                confirmed_by=request.confirmed_by,
+            )
         )
 
     @app.get("/v1/weekly-plans/{plan_id}")

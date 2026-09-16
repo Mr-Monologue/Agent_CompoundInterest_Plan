@@ -5,6 +5,7 @@ param(
     [string]$CoreTaskName = "ValueDCAInvestorCore",
     [string]$UpdateTaskName = "ValueDCAAgentUpdate",
     [string]$HermesProfile = "investor",
+    [switch]$SkipHermes,
     [switch]$CheckOnly,
     [switch]$Force,
     [switch]$AllowManualUpdate
@@ -255,6 +256,8 @@ try {
         (Quote-NativeArgument $InstallDir),
         "-Repository",
         (Quote-NativeArgument $Repository),
+        "-CoreTaskName",
+        (Quote-NativeArgument $CoreTaskName),
         "-HermesProfile",
         (Quote-NativeArgument $HermesProfile),
         "-UpdateTaskName",
@@ -262,6 +265,9 @@ try {
         "-NonInteractive",
         "-SkipMcpTest"
     )
+    if ($SkipHermes) {
+        $InstallerArguments += "-SkipHermes"
+    }
     $InstallerProcess = Start-Process `
         -FilePath $PowerShellExecutable `
         -ArgumentList $InstallerArguments `
@@ -303,6 +309,9 @@ try {
         "-HermesProfile",
         (Quote-NativeArgument $HermesProfile)
     )
+    if ($SkipHermes) {
+        $FinalizerArguments += "-SkipHermes"
+    }
     Start-Process -FilePath $WScriptExecutable -ArgumentList $FinalizerArguments `
         -WindowStyle Hidden | Out-Null
 
@@ -356,7 +365,8 @@ catch {
                 foreach ($SkillName in $SkillNames) {
                     $SkillSource = Join-Path $InstallDir "skills\$SkillName"
                     $SkillTarget = Join-Path $ProfilePath "skills\$SkillName"
-                    if ((Test-Path $ProfilePath) -and (Test-Path $SkillSource)) {
+                    if (-not $SkipHermes -and (Test-Path $ProfilePath) -and
+                        (Test-Path $SkillSource)) {
                         New-Item -ItemType Directory -Force $SkillTarget | Out-Null
                         Copy-Item (Join-Path $SkillSource "*") $SkillTarget -Recurse -Force
                     }

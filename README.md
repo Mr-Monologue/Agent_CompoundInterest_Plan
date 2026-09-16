@@ -40,6 +40,10 @@ Windows 不再要求用户下载和解压版本包。首次安装或从旧版切
 $p="$env:TEMP\value-dca-bootstrap.ps1"; irm https://raw.githubusercontent.com/Mr-Monologue/Agent_CompoundInterest_Plan/main/bootstrap-windows.ps1 -OutFile $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p
 ```
 
+Windows 本机 Codex 可直接作为投资助手入口，无需 Hermes 中转。v0.31.8 的接入脚本、
+只读 MCP 预检和独立运行说明见 [Codex Windows 接入](docs/CODEX_WINDOWS.md)。
+先完成目标版本的授权升级，再连接已有 Core；不要在开发检出中初始化新的生产账本。
+
 安装器会升级 `C:\investor\value-dca-agent`，保留已有数据库，并完成 uv/Python、依赖、迁移、
 doctor、Hermes Profile、Skill、MCP 注册和健康检查。无人值守升级只会终止本项目自己的
 `investor-core`/`investor-mcp` 进程，不关闭 Hermes；下一次工具调用会自动重连。
@@ -482,6 +486,15 @@ SATELLITE 信号政策，明确 PE/PB 指标、进入候选的最高分位、回
 不可用，计划、申购、确认和交易事实仍可形成正式周报。完整契约见
 [`docs/WEEKLY_PLAN_REPORTS.md`](docs/WEEKLY_PLAN_REPORTS.md)。数据库修订为
 `0035_weekly_plan_reports`。
+
+0.31.8 增加整周不投入的正式记录。用户明确某个七日周期不投入时，系统先预览并创建短期
+确认草稿；确认提交后直接形成 `decision_kind=NO_INVESTMENT`、状态为 `SKIPPED` 的终态记录，
+不先生成或冻结一份资产分配计划。记录保留周预算、实际投入 0、全额放弃、`carry_forward=false`
+和用户原因，没有计划项目，也不创建交易、申购、现金、持仓或策略事实。创建、续签和提交都会
+复核同周期内不存在其他有效计划、真实 BUY 或在途申购；过期未确认的计划草稿不视为计划事实。
+该记录可直接进入现有正式周报流程。完整契约见
+[`docs/NO_INVESTMENT_WEEK.md`](docs/NO_INVESTMENT_WEEK.md)。数据库修订为
+`0036_no_investment_week`。
 
 0.31.1 修复策略草稿的可空字段语义：字段未提供时保留当前值，API 中明确提供 `null` 或
 Hermes MCP 中通过 `clear_fields` 指定时才清空。该规则覆盖目标权重、金额上限、估值基准、
