@@ -561,6 +561,25 @@ class WeeklyPlanSkipDraftCreateRequest(RequestModel):
     actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
 
 
+class WeeklyNoInvestmentDraftCreateRequest(RequestModel):
+    portfolio_id: str = Field(min_length=1, max_length=80)
+    account_id: str = Field(min_length=1, max_length=80)
+    period_start: date
+    weekly_budget: Decimal = Field(gt=0)
+    reason_code: Literal[
+        "USER_CHOSE_NO_INVESTMENT",
+        "BUDGET_PAUSED_FOR_WEEK",
+        "OTHER_EXPLICIT_SKIP",
+    ]
+    note: str = Field(min_length=1, max_length=1000)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
+class WeeklyNoInvestmentDraftRenewRequest(RequestModel):
+    actor_ref: str = Field(default="hermes", min_length=1, max_length=120)
+
+
 class WeeklyPlanPartialCloseDraftCreateRequest(RequestModel):
     closure_business_date: date
     closure_reason_code: Literal[

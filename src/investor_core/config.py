@@ -5,6 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +36,8 @@ class Settings(BaseSettings):
     timezone: str = "Asia/Shanghai"
     expected_python_minor: str = "3.11"
     core_base_url: str = "http://127.0.0.1:8710"
+    # Audit attribution only; never a permission or confirmation credential.
+    mcp_actor_ref: Literal["hermes", "codex"] = "hermes"
     core_autostart: bool = False
     core_windows_task_name: str = ""
     project_root: Path = Path(".")

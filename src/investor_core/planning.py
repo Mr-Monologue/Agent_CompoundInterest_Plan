@@ -13,6 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, NoReturn
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from investor_core.config import Settings
 from investor_core.ledger import JsonDict, LedgerError
@@ -22,6 +23,11 @@ PARTIAL_CLOSE_REASON_CODES = {
     "PLATFORM_LIMIT_REMAINDER_ABANDONED",
     "PERIOD_ENDED_REMAINDER_ABANDONED",
     "USER_DECLINED_REMAINDER",
+}
+NO_INVESTMENT_REASON_CODES = {
+    "USER_CHOSE_NO_INVESTMENT",
+    "BUDGET_PAUSED_FOR_WEEK",
+    "OTHER_EXPLICIT_SKIP",
 }
 
 
@@ -301,6 +307,7 @@ class PlanningService:
             "contribution_amount": (
                 f"{Decimal(int(row['contribution_amount_minor'])) / MONEY_SCALE:.2f}"
             ),
+            "decision_kind": str(row["decision_kind"]),
             "status": status,
             "state_contract": plan_state_contract(
                 status,
@@ -505,22 +512,32 @@ class PlanningService:
                 }
             )
         remaining_total = sum(_minor(str(item["remaining_amount"])) for item in items)
-        is_partial_closed = str(row["status"]) == "PARTIALLY_EXECUTED_CLOSED"
-        if is_partial_closed:
+        status = str(row["status"])
+        is_closed_without_full_execution = status in {
+            "PARTIALLY_EXECUTED_CLOSED",
+            "SKIPPED",
+        }
+        if str(row["decision_kind"]) == "NO_INVESTMENT":
+            planned_total = int(row["contribution_amount_minor"])
+            remaining_total = planned_total
+            complete = False
+        if is_closed_without_full_execution:
             for item in items:
                 item["abandoned_amount"] = item["remaining_amount"]
                 item["unsubmitted_amount"] = "0.00"
         return {
-            "status": str(row["status"]),
+            "status": status,
             "amount_semantics": "PLANNED_CASH_OUTFLOW",
             "fee_treatment": "CONFIRMED_PRINCIPAL_PLUS_FEE_COUNTS_TOWARD_PLAN",
             "planned_amount": f"{Decimal(planned_total) / MONEY_SCALE:.2f}",
             "executed_amount": f"{Decimal(executed_total) / MONEY_SCALE:.2f}",
             "remaining_amount": f"{Decimal(remaining_total) / MONEY_SCALE:.2f}",
             "abandoned_amount": (
-                f"{Decimal(remaining_total) / MONEY_SCALE:.2f}" if is_partial_closed else "0.00"
+                f"{Decimal(remaining_total) / MONEY_SCALE:.2f}"
+                if is_closed_without_full_execution
+                else "0.00"
             ),
-            "carry_forward": False if is_partial_closed else None,
+            "carry_forward": False if is_closed_without_full_execution else None,
             "execution_rate_pct": (
                 f"{(Decimal(executed_total) * 100 / Decimal(planned_total)):.2f}"
                 if planned_total
@@ -529,7 +546,7 @@ class PlanningService:
             "in_flight_amount": f"{Decimal(in_flight_total) / MONEY_SCALE:.2f}",
             "unsubmitted_amount": (
                 "0.00"
-                if is_partial_closed
+                if is_closed_without_full_execution
                 else f"{Decimal(max(remaining_total - in_flight_total, 0)) / MONEY_SCALE:.2f}"
             ),
             "cancelled_or_refunded_amount": (f"{Decimal(cancelled_total) / MONEY_SCALE:.2f}"),
@@ -800,6 +817,716 @@ class PlanningService:
                 result.append(self._plan_data(connection, row))
             connection.commit()
             return result
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _no_investment_draft_data(row: sqlite3.Row, *, now: datetime) -> JsonDict:
+        status = str(row["status"])
+        if status == "PENDING" and _parse_iso(str(row["expires_at"])) <= now:
+            status = "EXPIRED"
+        return {
+            "id": str(row["id"]),
+            "action": "RECORD_NO_INVESTMENT_WEEK",
+            "portfolio_id": str(row["portfolio_id"]),
+            "account_id": str(row["account_id"]),
+            "period_start": str(row["period_start"]),
+            "period_end": str(row["period_end"]),
+            "weekly_budget": f"{Decimal(int(row['weekly_budget_minor'])) / MONEY_SCALE:.2f}",
+            "executed_amount": "0.00",
+            "abandoned_amount": (
+                f"{Decimal(int(row['weekly_budget_minor'])) / MONEY_SCALE:.2f}"
+            ),
+            "carry_forward": False,
+            "reason_code": str(row["reason_code"]),
+            "note": str(row["note"]),
+            "request_hash": str(row["request_hash"]),
+            "facts_hash": str(row["facts_hash"]),
+            "status": status,
+            "created_by": str(row["created_by"]),
+            "created_at": str(row["created_at"]),
+            "expires_at": str(row["expires_at"]),
+            "renewed_at": row["renewed_at"],
+            "renewal_count": int(row["renewal_count"]),
+            "committed_at": row["committed_at"],
+            "committed_by": row["committed_by"],
+            "committed_plan_id": row["committed_plan_id"],
+            "report_eligible_after_commit": True,
+            "financial_facts_created": False,
+        }
+
+    def _no_investment_facts(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        portfolio_id: str,
+        account_id: str,
+        period_start: date,
+        period_end: date,
+    ) -> JsonDict:
+        account = connection.execute(
+            """SELECT id FROM accounts
+               WHERE id=? AND portfolio_id=? AND status='ACTIVE'""",
+            (account_id, portfolio_id),
+        ).fetchone()
+        if account is None:
+            raise LedgerError(
+                "INVESTMENT_ACCOUNT_NOT_FOUND",
+                "没有找到该组合下的有效投资账户。",
+                http_status=404,
+            )
+        assignment = connection.execute(
+            """SELECT id FROM strategy_assignments
+               WHERE portfolio_id=? AND status='ACTIVE'
+               ORDER BY approved_at DESC, id DESC LIMIT 1""",
+            (portfolio_id,),
+        ).fetchone()
+        if assignment is None:
+            raise LedgerError(
+                "ACTIVE_STRATEGY_ASSIGNMENT_REQUIRED",
+                "记录零投入周前必须存在有效策略。",
+                http_status=409,
+            )
+
+        plan_rows = connection.execute(
+            self._plan_query()
+            + """ WHERE p.portfolio_id=? AND p.account_id=?
+                  AND p.period_start<=? AND p.period_end>=?
+                  ORDER BY p.period_start, p.id""",
+            (portfolio_id, account_id, period_end.isoformat(), period_start.isoformat()),
+        ).fetchall()
+        overlapping_plans: list[JsonDict] = []
+        for plan in plan_rows:
+            plan = self._expire_if_needed(connection, plan)
+            if str(plan["status"]) != "EXPIRED":
+                overlapping_plans.append(
+                    {
+                        "plan_id": str(plan["id"]),
+                        "status": str(plan["status"]),
+                        "period_start": str(plan["period_start"]),
+                        "period_end": str(plan["period_end"]),
+                    }
+                )
+
+        buy_count = int(
+            connection.execute(
+                """SELECT COUNT(*) FROM transactions
+                   WHERE portfolio_id=? AND account_id=? AND kind='TRADE' AND side='BUY'
+                     AND reversed_by_transaction_id IS NULL
+                     AND trade_date BETWEEN ? AND ?""",
+                (
+                    portfolio_id,
+                    account_id,
+                    period_start.isoformat(),
+                    period_end.isoformat(),
+                ),
+            ).fetchone()[0]
+        )
+        active_subscription_count = int(
+            connection.execute(
+                """SELECT COUNT(*) FROM external_subscriptions
+                   WHERE portfolio_id=? AND account_id=?
+                     AND submitted_business_date BETWEEN ? AND ?
+                     AND status NOT IN ('CANCELLED','REJECTED')""",
+                (
+                    portfolio_id,
+                    account_id,
+                    period_start.isoformat(),
+                    period_end.isoformat(),
+                ),
+            ).fetchone()[0]
+        )
+        return {
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "strategy_assignment_id": str(assignment["id"]),
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "overlapping_plans": overlapping_plans,
+            "buy_transaction_count": buy_count,
+            "active_subscription_count": active_subscription_count,
+            "eligible": not overlapping_plans and buy_count == 0 and active_subscription_count == 0,
+        }
+
+    def preview_no_investment_week(
+        self,
+        *,
+        portfolio_id: str,
+        account_id: str,
+        period_start_value: str,
+        weekly_budget: str,
+        reason_code: str,
+        note: str,
+    ) -> JsonDict:
+        try:
+            period_start = date.fromisoformat(period_start_value)
+        except ValueError as exc:
+            raise LedgerError("INVALID_DATE", "period_start must be an ISO date") from exc
+        period_end = period_start + timedelta(days=6)
+        budget_minor = _minor(weekly_budget)
+        normalized_reason = reason_code.strip().upper()
+        normalized_note = note.strip()
+        if budget_minor <= 0:
+            raise LedgerError("INVALID_AMOUNT", "weekly_budget must be positive")
+        if normalized_reason not in NO_INVESTMENT_REASON_CODES:
+            raise LedgerError("INVALID_REASON_CODE", "unsupported no-investment reason code")
+        if not normalized_note:
+            raise LedgerError("INVALID_NOTE", "a no-investment decision note is required")
+        business_today = self._now().astimezone(ZoneInfo(self.settings.timezone)).date()
+        if period_start > business_today:
+            raise LedgerError(
+                "FUTURE_NO_INVESTMENT_WEEK_NOT_ALLOWED",
+                "不能提前把未来一周记为不投入。",
+                http_status=409,
+            )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            facts = self._no_investment_facts(
+                connection,
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
+            connection.commit()
+        return {
+            "action": "RECORD_NO_INVESTMENT_WEEK",
+            "period_start": period_start.isoformat(),
+            "period_end": period_end.isoformat(),
+            "weekly_budget": f"{Decimal(budget_minor) / MONEY_SCALE:.2f}",
+            "executed_amount": "0.00",
+            "abandoned_amount": f"{Decimal(budget_minor) / MONEY_SCALE:.2f}",
+            "carry_forward": False,
+            "reason_code": normalized_reason,
+            "note": normalized_note,
+            "eligibility": facts,
+            "eligible": bool(facts["eligible"]),
+            "resulting_plan_status": "SKIPPED",
+            "formal_weekly_report_supported": True,
+            "financial_facts_created": False,
+        }
+
+    def create_no_investment_draft(
+        self,
+        *,
+        portfolio_id: str,
+        account_id: str,
+        period_start_value: str,
+        weekly_budget: str,
+        reason_code: str,
+        note: str,
+        idempotency_key: str,
+        actor_ref: str = "hermes",
+    ) -> JsonDict:
+        preview = self.preview_no_investment_week(
+            portfolio_id=portfolio_id,
+            account_id=account_id,
+            period_start_value=period_start_value,
+            weekly_budget=weekly_budget,
+            reason_code=reason_code,
+            note=note,
+        )
+        key = idempotency_key.strip()
+        actor = actor_ref.strip()
+        if not key or not actor:
+            raise LedgerError("MISSING_REQUIRED_FIELD", "幂等键和操作人不能为空。")
+        request = {
+            "portfolio_id": portfolio_id,
+            "account_id": account_id,
+            "period_start": preview["period_start"],
+            "period_end": preview["period_end"],
+            "weekly_budget": preview["weekly_budget"],
+            "reason_code": preview["reason_code"],
+            "note": preview["note"],
+            "carry_forward": False,
+        }
+        request_hash = _hash(request)
+        facts_hash = _hash(preview["eligibility"])
+        if not bool(preview["eligible"]):
+            with self._connect() as idempotency_connection:
+                existing = idempotency_connection.execute(
+                    "SELECT * FROM weekly_no_investment_drafts WHERE idempotency_key=?",
+                    (key,),
+                ).fetchone()
+            if existing is not None:
+                if str(existing["request_hash"]) != request_hash:
+                    raise LedgerError(
+                        "IDEMPOTENCY_CONFLICT",
+                        "幂等键已用于不同的零投入周记录。",
+                        http_status=409,
+                    )
+                return {
+                    "draft": self._no_investment_draft_data(existing, now=self._now()),
+                    "confirmation_token": None,
+                    "reused": True,
+                    "preview": preview,
+                }
+            raise LedgerError(
+                "NO_INVESTMENT_WEEK_HAS_CONFLICTING_FACTS",
+                "该周期已有计划、买入或在途申购，不能记录为零投入周。",  # noqa: RUF001
+                http_status=409,
+                details={"eligibility": preview["eligibility"]},
+            )
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM weekly_no_investment_drafts WHERE idempotency_key=?",
+                (key,),
+            ).fetchone()
+            if existing is not None:
+                if str(existing["request_hash"]) != request_hash:
+                    self._rollback_and_raise(
+                        connection,
+                        LedgerError(
+                            "IDEMPOTENCY_CONFLICT",
+                            "幂等键已用于不同的零投入周记录。",
+                            http_status=409,
+                        ),
+                    )
+                connection.commit()
+                return {
+                    "draft": self._no_investment_draft_data(existing, now=self._now()),
+                    "confirmation_token": None,
+                    "reused": True,
+                    "preview": preview,
+                }
+            period_draft = connection.execute(
+                """SELECT id, status, expires_at
+                   FROM weekly_no_investment_drafts
+                   WHERE portfolio_id=? AND account_id=?
+                     AND period_start=? AND period_end=?
+                   ORDER BY created_at DESC, id DESC LIMIT 1""",
+                (
+                    portfolio_id,
+                    account_id,
+                    preview["period_start"],
+                    preview["period_end"],
+                ),
+            ).fetchone()
+            if period_draft is not None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_DRAFT_ALREADY_EXISTS",
+                        "该周期已有零投入周草稿，请读取或续签原草稿。",  # noqa: RUF001
+                        http_status=409,
+                        details={
+                            "draft_id": str(period_draft["id"]),
+                            "status": (
+                                "EXPIRED"
+                                if _parse_iso(str(period_draft["expires_at"])) <= self._now()
+                                else str(period_draft["status"])
+                            ),
+                        },
+                    ),
+                )
+            current_facts = self._no_investment_facts(
+                connection,
+                portfolio_id=portfolio_id,
+                account_id=account_id,
+                period_start=date.fromisoformat(str(preview["period_start"])),
+                period_end=date.fromisoformat(str(preview["period_end"])),
+            )
+            if not bool(current_facts["eligible"]):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_WEEK_HAS_CONFLICTING_FACTS",
+                        "该周期事实在草稿创建前发生变化。",
+                        http_status=409,
+                        details={"eligibility": current_facts},
+                    ),
+                )
+            facts_hash = _hash(current_facts)
+            now = self._now()
+            token = secrets.token_urlsafe(24)
+            draft_id = str(uuid4())
+            connection.execute(
+                """INSERT INTO weekly_no_investment_drafts (
+                       id, portfolio_id, account_id, strategy_assignment_id,
+                       period_start, period_end, weekly_budget_minor, reason_code,
+                       note, idempotency_key, request_hash, facts_hash,
+                       confirmation_digest, status, created_by, created_at, expires_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)""",
+                (
+                    draft_id,
+                    portfolio_id,
+                    account_id,
+                    preview["eligibility"]["strategy_assignment_id"],
+                    preview["period_start"],
+                    preview["period_end"],
+                    _minor(str(preview["weekly_budget"])),
+                    preview["reason_code"],
+                    preview["note"],
+                    key,
+                    request_hash,
+                    facts_hash,
+                    _token_digest(token),
+                    actor,
+                    _iso(now),
+                    _iso(now + timedelta(minutes=self.settings.confirmation_ttl_minutes)),
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM weekly_no_investment_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            assert row is not None
+            self._audit(
+                connection,
+                actor_type="AGENT",
+                actor_ref=actor,
+                action="WEEKLY_NO_INVESTMENT_DRAFT_CREATED",
+                entity_id=draft_id,
+                details={"request_hash": request_hash, "financial_facts_created": False},
+            )
+            connection.commit()
+            return {
+                "draft": self._no_investment_draft_data(row, now=now),
+                "confirmation_token": token,
+                "reused": False,
+                "preview": preview,
+            }
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def get_no_investment_draft(self, *, draft_id: str) -> JsonDict:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM weekly_no_investment_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if row is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_DRAFT_NOT_FOUND",
+                        "没有找到零投入周草稿。",
+                        http_status=404,
+                    ),
+                )
+            if (
+                str(row["status"]) == "PENDING"
+                and _parse_iso(str(row["expires_at"])) <= self._now()
+            ):
+                connection.execute(
+                    "UPDATE weekly_no_investment_drafts SET status='EXPIRED' WHERE id=?",
+                    (draft_id,),
+                )
+                row = connection.execute(
+                    "SELECT * FROM weekly_no_investment_drafts WHERE id=?", (draft_id,)
+                ).fetchone()
+                assert row is not None
+            connection.commit()
+            return self._no_investment_draft_data(row, now=self._now())
+        finally:
+            connection.close()
+
+    def renew_no_investment_draft(
+        self, *, draft_id: str, actor_ref: str = "hermes"
+    ) -> JsonDict:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM weekly_no_investment_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if row is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_DRAFT_NOT_FOUND",
+                        "没有找到零投入周草稿。",
+                        http_status=404,
+                    ),
+                )
+            if str(row["status"]) == "COMMITTED":
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_DRAFT_ALREADY_COMMITTED",
+                        "已提交的零投入周草稿不能续签。",
+                        http_status=409,
+                    ),
+                )
+            if _parse_iso(str(row["expires_at"])) > self._now():
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_DRAFT_NOT_EXPIRED",
+                        "仍有效的零投入周草稿不需要续签。",
+                        http_status=409,
+                    ),
+                )
+            period_start = date.fromisoformat(str(row["period_start"]))
+            facts = self._no_investment_facts(
+                connection,
+                portfolio_id=str(row["portfolio_id"]),
+                account_id=str(row["account_id"]),
+                period_start=period_start,
+                period_end=date.fromisoformat(str(row["period_end"])),
+            )
+            if not bool(facts["eligible"]) or _hash(facts) != str(row["facts_hash"]):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_WEEK_FACTS_CHANGED",
+                        "该周期事实已变化，不能续签原草稿。",  # noqa: RUF001
+                        http_status=409,
+                        details={"eligibility": facts},
+                    ),
+                )
+            token = secrets.token_urlsafe(24)
+            now = self._now()
+            updated = connection.execute(
+                """UPDATE weekly_no_investment_drafts
+                   SET confirmation_digest=?, expires_at=?, renewed_at=?,
+                       renewal_count=renewal_count+1, status='PENDING'
+                   WHERE id=? AND committed_at IS NULL AND expires_at<=?
+                     AND status IN ('PENDING','EXPIRED') AND facts_hash=?""",
+                (
+                    _token_digest(token),
+                    _iso(now + timedelta(minutes=self.settings.confirmation_ttl_minutes)),
+                    _iso(now),
+                    draft_id,
+                    _iso(now),
+                    row["facts_hash"],
+                ),
+            )
+            if updated.rowcount != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_DRAFT_RENEWAL_CONFLICT",
+                        "零投入周草稿已被并发续签。",
+                        http_status=409,
+                    ),
+                )
+            renewed = connection.execute(
+                "SELECT * FROM weekly_no_investment_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            assert renewed is not None
+            connection.commit()
+            return {
+                "draft": self._no_investment_draft_data(renewed, now=now),
+                "confirmation_token": token,
+                "business_effect": "TOKEN_ROTATED_NO_PLAN_OR_FINANCIAL_FACT",
+            }
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def commit_no_investment_draft(
+        self,
+        *,
+        draft_id: str,
+        confirmation_token: str,
+        confirmed_by: str,
+    ) -> JsonDict:
+        actor = confirmed_by.strip()
+        if not confirmation_token or not actor:
+            raise LedgerError("CONFIRMATION_REQUIRED", "确认凭据和确认人不能为空。")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            draft = connection.execute(
+                "SELECT * FROM weekly_no_investment_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            if draft is None:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_DRAFT_NOT_FOUND",
+                        "没有找到零投入周草稿。",
+                        http_status=404,
+                    ),
+                )
+            if str(draft["status"]) == "COMMITTED":
+                plan = connection.execute(
+                    self._plan_query() + " WHERE p.id=?", (draft["committed_plan_id"],)
+                ).fetchone()
+                assert plan is not None
+                connection.commit()
+                return {
+                    "draft": self._no_investment_draft_data(draft, now=self._now()),
+                    "plan": self._plan_data(connection, plan),
+                    "idempotent_replay": True,
+                }
+            if _parse_iso(str(draft["expires_at"])) <= self._now():
+                connection.execute(
+                    "UPDATE weekly_no_investment_drafts SET status='EXPIRED' WHERE id=?",
+                    (draft_id,),
+                )
+                connection.commit()
+                raise LedgerError(
+                    "CONFIRMATION_TOKEN_EXPIRED",
+                    "零投入周确认已过期，请续签原草稿。",  # noqa: RUF001
+                    http_status=409,
+                )
+            if not hmac.compare_digest(
+                str(draft["confirmation_digest"]), _token_digest(confirmation_token)
+            ):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "CONFIRMATION_TOKEN_INVALID",
+                        "零投入周确认凭据无效。",
+                        http_status=403,
+                    ),
+                )
+            period_start = date.fromisoformat(str(draft["period_start"]))
+            period_end = date.fromisoformat(str(draft["period_end"]))
+            facts = self._no_investment_facts(
+                connection,
+                portfolio_id=str(draft["portfolio_id"]),
+                account_id=str(draft["account_id"]),
+                period_start=period_start,
+                period_end=period_end,
+            )
+            if not bool(facts["eligible"]) or _hash(facts) != str(draft["facts_hash"]):
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_WEEK_FACTS_CHANGED",
+                        "该周期事实已变化，不能提交零投入周记录。",  # noqa: RUF001
+                        http_status=409,
+                        details={"eligibility": facts},
+                    ),
+                )
+            timestamp = _iso(self._now())
+            plan_id = str(uuid4())
+            revision_id = str(uuid4())
+            summary = {
+                "available": True,
+                "data_quality": "PASS",
+                "reason_code": "WEEKLY_NO_INVESTMENT_DECISION",
+                "plan": {
+                    "contribution_amount": (
+                        f"{Decimal(int(draft['weekly_budget_minor'])) / MONEY_SCALE:.2f}"
+                    ),
+                    "instrument_items": [],
+                    "decision_kind": "NO_INVESTMENT",
+                    "executed_amount": "0.00",
+                    "carry_forward": False,
+                },
+                "warnings": [],
+            }
+            connection.execute(
+                """INSERT INTO investment_plans (
+                       id, portfolio_id, account_id, strategy_assignment_id,
+                       plan_date, period_start, period_end, contribution_amount_minor,
+                       idempotency_key, request_hash, status, current_revision,
+                       created_by, confirmation_digest, confirmation_expires_at,
+                       created_at, updated_at, frozen_at, executed_at, expires_at,
+                       decision_kind
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SKIPPED', 1, ?, ?, ?,
+                             ?, ?, NULL, NULL, NULL, 'NO_INVESTMENT')""",
+                (
+                    plan_id,
+                    draft["portfolio_id"],
+                    draft["account_id"],
+                    draft["strategy_assignment_id"],
+                    draft["period_start"],
+                    draft["period_start"],
+                    draft["period_end"],
+                    draft["weekly_budget_minor"],
+                    draft["idempotency_key"],
+                    draft["request_hash"],
+                    actor,
+                    draft["confirmation_digest"],
+                    draft["expires_at"],
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            connection.execute(
+                """INSERT INTO plan_revisions (
+                       id, plan_id, revision, input_json, input_hash, summary_json,
+                       data_quality, reason_code, created_at
+                   ) VALUES (?, ?, 1, ?, ?, ?, 'PASS',
+                             'WEEKLY_NO_INVESTMENT_DECISION', ?)""",
+                (
+                    revision_id,
+                    plan_id,
+                    _json(
+                        {
+                            "period_start": draft["period_start"],
+                            "period_end": draft["period_end"],
+                            "weekly_budget": (
+                                f"{Decimal(int(draft['weekly_budget_minor'])) / MONEY_SCALE:.2f}"
+                            ),
+                            "reason_code": draft["reason_code"],
+                            "note": draft["note"],
+                            "carry_forward": False,
+                        }
+                    ),
+                    draft["request_hash"],
+                    _json(summary),
+                    timestamp,
+                ),
+            )
+            updated = connection.execute(
+                """UPDATE weekly_no_investment_drafts
+                   SET status='COMMITTED', committed_at=?, committed_by=?,
+                       committed_plan_id=?
+                   WHERE id=? AND status='PENDING'""",
+                (timestamp, actor, plan_id, draft_id),
+            )
+            if updated.rowcount != 1:
+                self._rollback_and_raise(
+                    connection,
+                    LedgerError(
+                        "NO_INVESTMENT_DRAFT_CONCURRENT_COMMIT",
+                        "零投入周草稿已被并发处理。",
+                        http_status=409,
+                    ),
+                )
+            self._audit(
+                connection,
+                actor_type="USER",
+                actor_ref=actor,
+                action="INVESTMENT_PLAN_SKIPPED",
+                entity_id=plan_id,
+                details={
+                    "reason": str(draft["note"]),
+                    "reason_code": str(draft["reason_code"]),
+                    "decision_kind": "NO_INVESTMENT",
+                    "weekly_budget": (
+                        f"{Decimal(int(draft['weekly_budget_minor'])) / MONEY_SCALE:.2f}"
+                    ),
+                    "executed_amount": "0.00",
+                    "abandoned_amount": (
+                        f"{Decimal(int(draft['weekly_budget_minor'])) / MONEY_SCALE:.2f}"
+                    ),
+                    "carry_forward": False,
+                    "financial_facts_created": False,
+                },
+                after_hash=draft["request_hash"],
+            )
+            plan = connection.execute(
+                self._plan_query() + " WHERE p.id=?", (plan_id,)
+            ).fetchone()
+            final_draft = connection.execute(
+                "SELECT * FROM weekly_no_investment_drafts WHERE id=?", (draft_id,)
+            ).fetchone()
+            assert plan is not None and final_draft is not None
+            result = {
+                "draft": self._no_investment_draft_data(final_draft, now=self._now()),
+                "plan": self._plan_data(connection, plan),
+                "idempotent_replay": False,
+                "financial_facts_created": False,
+            }
+            connection.commit()
+            return result
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
 

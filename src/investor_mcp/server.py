@@ -14,12 +14,14 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 from investor_core.config import get_settings
+from investor_core.version import __version__
+from investor_mcp.instructions import INVESTOR_INSTRUCTIONS
 from investor_mcp.runtime import ensure_core_ready
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("value-dca-investor")
+mcp = FastMCP("value-dca-investor", instructions=INVESTOR_INSTRUCTIONS)
 
 
 def dependency_error() -> dict[str, Any]:
@@ -124,7 +126,13 @@ async def fetch_core_status(detail_level: Literal["summary", "full"]) -> dict[st
             async with httpx.AsyncClient(base_url=settings.core_base_url, timeout=5.0) as client:
                 health_response = await client.get("/health")
                 health_response.raise_for_status()
-                result: dict[str, Any] = {"health": health_response.json()}
+                result: dict[str, Any] = {
+                    "health": health_response.json(),
+                    "adapter": {
+                        "version": __version__,
+                        "actor_ref": settings.mcp_actor_ref,
+                    },
+                }
                 if detail_level == "full":
                     ready_response = await client.get("/ready")
                     result["ready"] = (
@@ -199,7 +207,7 @@ async def automation_policy_draft_create(
             "timezone": timezone,
             "config": config or {},
             "reason": reason,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -275,7 +283,7 @@ async def automation_scheduler_snapshot_record(
             "profile": profile,
             "gateway_status": gateway_status,
             "jobs": jobs,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -516,7 +524,7 @@ async def market_research_evidence_record(
             "source_ref": source_ref,
             "source_lineage": source_lineage,
             "facts": facts,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -565,7 +573,7 @@ async def research_source_config_draft_create(
             "source_lineages": source_lineages,
             "credential_ref": credential_ref or None,
             "reason": reason,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -645,7 +653,7 @@ async def research_collection_run_record(
             "started_at": started_at,
             "finished_at": finished_at,
             "items": items,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1019,7 +1027,7 @@ async def research_watchlist_transition_draft_create(
             "new_state": new_state,
             "reason": reason,
             "review_due_date": review_due_date or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1124,7 +1132,7 @@ async def review_action_decision_draft_create(
         payload={
             "decision": decision,
             "reason": reason,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1163,7 +1171,7 @@ async def review_action_outcome_draft_create(
             "evidence_quality": evidence_quality,
             "evidence_ref": evidence_ref or None,
             "note": note,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1232,7 +1240,7 @@ async def cash_event_draft_create(
             "source": source,
             "idempotency_key": idempotency_key,
             "note": note or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1293,7 +1301,7 @@ async def official_nav_backfill_record(
             "source_ref": source_ref,
             "source_lineage": source_lineage,
             "observations": observations,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1375,7 +1383,7 @@ async def notification_test_send(
         payload={
             "idempotency_key": idempotency_key,
             "confirmation": confirmation,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1398,7 +1406,7 @@ async def portfolio_create(name: str, base_currency: str = "CNY") -> dict[str, A
         payload={
             "name": name,
             "base_currency": base_currency,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1425,7 +1433,7 @@ async def account_create(
             "name": name,
             "platform": platform,
             "currency": currency,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1452,7 +1460,7 @@ async def investment_context_set(portfolio_id: str, account_id: str) -> dict[str
         payload={
             "portfolio_id": portfolio_id,
             "account_id": account_id,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1492,7 +1500,7 @@ async def instrument_create(
             "name": name,
             "asset_type": asset_type,
             "currency": currency,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1533,7 +1541,7 @@ async def strategy_instrument_role_draft_create(
             "strategy_role": strategy_role,
             "expected_current_strategy_role": expected_current_strategy_role,
             "reason": reason,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1559,7 +1567,7 @@ async def instrument_role_update(
             "role": role,
             "expected_current_role": expected_current_role,
             "reason": reason,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1624,7 +1632,7 @@ async def strategy_instrument_config_draft_create(
         "instrument_code": instrument_code,
         "contribution_eligible": contribution_eligible,
         "reason": reason,
-        "actor_ref": "hermes",
+        "actor_ref": get_settings().mcp_actor_ref,
     }
     optional_values: dict[str, Any] = {
         "role": role,
@@ -1697,7 +1705,7 @@ async def market_nav_snapshot_record(
             "source_lineage": source_lineage,
             "verification_status": verification_status,
             "observed_at": observed_at,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1776,7 +1784,7 @@ async def market_data_sync(
             "provider_id": provider_id,
             "instrument_codes": instrument_codes,
             "as_of_date": as_of_date or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
         timeout_seconds=120.0,
     )
@@ -1808,7 +1816,7 @@ async def market_nav_verification_record(
             "source_ref": source_ref,
             "source_lineage": source_lineage,
             "observed_at": observed_at,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1850,7 +1858,7 @@ async def valuation_observation_record(
             "source_ref": source_ref or None,
             "verification_status": verification_status,
             "observed_at": observed_at,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1907,7 +1915,7 @@ async def satellite_signal_policy_draft_create(
             "maximum_observation_age_days": maximum_observation_age_days,
             "allow_warning_data": allow_warning_data,
             "reason": reason,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -1967,7 +1975,7 @@ async def satellite_signal_snapshot_build(
         payload={
             "portfolio_id": resolved_portfolio_id,
             "as_of_date": as_of_date or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2093,7 +2101,7 @@ async def lifecycle_observation_record(
             "source_ref": source_ref or None,
             "verification_status": verification_status,
             "observed_at": observed_at,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2152,7 +2160,7 @@ async def sell_decision_draft_create(
         payload={
             "decision": decision,
             "user_reason": user_reason or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2200,7 +2208,7 @@ async def sell_followup_evaluate(
     return await core_request(
         "POST",
         f"/v1/sell-followups/{followup_id}/evaluate",
-        payload={"as_of_date": as_of_date or None, "actor_ref": "hermes"},
+        payload={"as_of_date": as_of_date or None, "actor_ref": get_settings().mcp_actor_ref},
     )
 
 
@@ -2313,7 +2321,7 @@ async def weekly_plan_draft_create(
             "plan_date": plan_date,
             "as_of_date": as_of_date or None,
             "idempotency_key": idempotency_key,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2336,6 +2344,108 @@ async def weekly_plan_list(
     if status:
         params["status"] = status
     return await core_request("GET", "/v1/weekly-plans", params=params)
+
+
+@mcp.tool()
+async def weekly_no_investment_preview(
+    period_start: str,
+    weekly_budget: str,
+    reason_code: Literal[
+        "USER_CHOSE_NO_INVESTMENT",
+        "BUDGET_PAUSED_FOR_WEEK",
+        "OTHER_EXPLICIT_SKIP",
+    ],
+    note: str,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Preview one explicit zero-investment week; never creates a plan or financial fact."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "GET",
+        "/v1/weekly-no-investment-preview",
+        params={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+            "period_start": period_start,
+            "weekly_budget": weekly_budget,
+            "reason_code": reason_code,
+            "note": note,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_no_investment_draft_create(
+    period_start: str,
+    weekly_budget: str,
+    reason_code: Literal[
+        "USER_CHOSE_NO_INVESTMENT",
+        "BUDGET_PAUSED_FOR_WEEK",
+        "OTHER_EXPLICIT_SKIP",
+    ],
+    note: str,
+    idempotency_key: str,
+    portfolio_id: str = "",
+    account_id: str = "",
+) -> dict[str, Any]:
+    """Create a governed zero-investment-week draft; never creates a plan or financial fact."""
+    resolved_portfolio_id, resolved_account_id, error = await resolve_investment_context(
+        portfolio_id, account_id
+    )
+    if error is not None:
+        return error
+    return await core_request(
+        "POST",
+        "/v1/weekly-no-investment-drafts",
+        payload={
+            "portfolio_id": resolved_portfolio_id,
+            "account_id": resolved_account_id,
+            "period_start": period_start,
+            "weekly_budget": weekly_budget,
+            "reason_code": reason_code,
+            "note": note,
+            "idempotency_key": idempotency_key,
+            "actor_ref": get_settings().mcp_actor_ref,
+        },
+    )
+
+
+@mcp.tool()
+async def weekly_no_investment_draft_get(draft_id: str) -> dict[str, Any]:
+    """Read one zero-investment-week draft without exposing its confirmation token."""
+    return await core_request("GET", f"/v1/weekly-no-investment-drafts/{draft_id}")
+
+
+@mcp.tool()
+async def weekly_no_investment_draft_renew(draft_id: str) -> dict[str, Any]:
+    """Renew an expired unchanged zero-investment-week draft without creating facts."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-no-investment-drafts/{draft_id}/renew",
+        payload={"actor_ref": get_settings().mcp_actor_ref},
+    )
+
+
+@mcp.tool()
+async def weekly_no_investment_draft_commit(
+    draft_id: str,
+    confirmation_token: str,
+    confirmed_by: str,
+) -> dict[str, Any]:
+    """Commit one confirmed zero-investment week as a terminal SKIPPED plan record."""
+    return await core_request(
+        "POST",
+        f"/v1/weekly-no-investment-drafts/{draft_id}/commit",
+        payload={
+            "confirmation_token": confirmation_token,
+            "confirmed_by": confirmed_by,
+        },
+    )
 
 
 @mcp.tool()
@@ -2365,7 +2475,7 @@ async def weekly_report_draft_create(
         payload={
             "idempotency_key": idempotency_key,
             "regeneration_reason": regeneration_reason or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2382,7 +2492,7 @@ async def weekly_report_draft_renew(draft_id: str) -> dict[str, Any]:
     return await core_request(
         "POST",
         f"/v1/weekly-report-drafts/{draft_id}/renew",
-        payload={"actor_ref": "hermes"},
+        payload={"actor_ref": get_settings().mcp_actor_ref},
     )
 
 
@@ -2478,7 +2588,7 @@ async def weekly_plan_skip_draft_create(
     return await core_request(
         "POST",
         f"/v1/weekly-plans/{plan_id}/skip-drafts",
-        payload={"reason": reason, "actor_ref": "hermes"},
+        payload={"reason": reason, "actor_ref": get_settings().mcp_actor_ref},
     )
 
 
@@ -2534,7 +2644,7 @@ async def weekly_plan_partial_close_draft_create(
             "closure_note": closure_note,
             "carry_forward": False,
             "idempotency_key": idempotency_key,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2554,7 +2664,7 @@ async def weekly_plan_partial_close_draft_renew(draft_id: str) -> dict[str, Any]
     return await core_request(
         "POST",
         f"/v1/weekly-plan-partial-close-drafts/{draft_id}/renew",
-        payload={"actor_ref": "hermes"},
+        payload={"actor_ref": get_settings().mcp_actor_ref},
     )
 
 
@@ -2646,7 +2756,7 @@ async def external_subscription_draft_create(
             "expected_confirmation_date": expected_confirmation_date or None,
             "source": source,
             "idempotency_key": idempotency_key,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2666,7 +2776,7 @@ async def external_subscription_status_draft_create(
             "target_status": target_status,
             "reason": reason,
             "idempotency_key": idempotency_key,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2702,7 +2812,7 @@ async def external_subscription_confirmation_draft_create(
             "refunded_amount": refunded_amount,
             "external_reference": external_reference or None,
             "idempotency_key": idempotency_key,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2719,7 +2829,7 @@ async def external_subscription_draft_renew(draft_id: str) -> dict[str, Any]:
     return await core_request(
         "POST",
         f"/v1/external-subscription-drafts/{draft_id}/renew",
-        payload={"actor_ref": "hermes"},
+        payload={"actor_ref": get_settings().mcp_actor_ref},
     )
 
 
@@ -2752,7 +2862,7 @@ async def external_subscription_confirmation_draft_revise(
             "confirmed_amount": confirmed_amount or None,
             "fee": fee or None,
             "refunded_amount": refunded_amount or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2772,7 +2882,7 @@ async def external_subscription_confirmation_reversal_draft_create(
             "confirmation_id": confirmation_id,
             "reason": reason,
             "idempotency_key": idempotency_key,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2835,7 +2945,7 @@ async def external_subscription_transaction_draft_create(
     return await core_request(
         "POST",
         f"/v1/external-subscription-confirmations/{confirmation_id}/transaction-drafts",
-        payload={"idempotency_key": idempotency_key, "actor_ref": "hermes"},
+        payload={"idempotency_key": idempotency_key, "actor_ref": get_settings().mcp_actor_ref},
     )
 
 
@@ -2858,7 +2968,7 @@ async def external_subscription_transaction_draft_revise(
         payload={
             "expected_payload_hash": expected_payload_hash,
             "expected_gross_amount": expected_gross_amount,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2933,7 +3043,7 @@ async def opening_position_draft_create(
             "platform": platform,
             "idempotency_key": idempotency_key,
             "note": note or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -2999,7 +3109,7 @@ async def transaction_draft_create(
             "idempotency_key": idempotency_key,
             "note": note or None,
             "sell_proposal_id": sell_proposal_id or None,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
@@ -3015,7 +3125,7 @@ async def transaction_reversal_draft_create(
         payload={
             "transaction_id": transaction_id,
             "idempotency_key": idempotency_key,
-            "actor_ref": "hermes",
+            "actor_ref": get_settings().mcp_actor_ref,
         },
     )
 
