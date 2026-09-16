@@ -1063,7 +1063,7 @@ class PlanningService:
                 }
             raise LedgerError(
                 "NO_INVESTMENT_WEEK_HAS_CONFLICTING_FACTS",
-                "该周期已有计划、买入或在途申购，不能记录为零投入周。",
+                "该周期已有计划、买入或在途申购，不能记录为零投入周。",  # noqa: RUF001
                 http_status=409,
                 details={"eligibility": preview["eligibility"]},
             )
@@ -1109,7 +1109,7 @@ class PlanningService:
                     connection,
                     LedgerError(
                         "NO_INVESTMENT_DRAFT_ALREADY_EXISTS",
-                        "该周期已有零投入周草稿，请读取或续签原草稿。",
+                        "该周期已有零投入周草稿，请读取或续签原草稿。",  # noqa: RUF001
                         http_status=409,
                         details={
                             "draft_id": str(period_draft["id"]),
@@ -1275,7 +1275,7 @@ class PlanningService:
                     connection,
                     LedgerError(
                         "NO_INVESTMENT_WEEK_FACTS_CHANGED",
-                        "该周期事实已变化，不能续签原草稿。",
+                        "该周期事实已变化，不能续签原草稿。",  # noqa: RUF001
                         http_status=409,
                         details={"eligibility": facts},
                     ),
@@ -1366,7 +1366,7 @@ class PlanningService:
                 connection.commit()
                 raise LedgerError(
                     "CONFIRMATION_TOKEN_EXPIRED",
-                    "零投入周确认已过期，请续签原草稿。",
+                    "零投入周确认已过期，请续签原草稿。",  # noqa: RUF001
                     http_status=409,
                 )
             if not hmac.compare_digest(
@@ -1394,7 +1394,7 @@ class PlanningService:
                     connection,
                     LedgerError(
                         "NO_INVESTMENT_WEEK_FACTS_CHANGED",
-                        "该周期事实已变化，不能提交零投入周记录。",
+                        "该周期事实已变化，不能提交零投入周记录。",  # noqa: RUF001
                         http_status=409,
                         details={"eligibility": facts},
                     ),

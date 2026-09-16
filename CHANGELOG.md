@@ -2,6 +2,15 @@
 
 ## v0.31.8 — 2026-09-07
 
+### Unreleased addition — 2026-09-16
+
+- Connect Windows-local Codex directly to the existing MCP/Core with a read-only handshake and readiness preflight; no second ledger or Hermes relay.
+- Deliver client-independent operating instructions during MCP initialization and attribute Codex requests accurately while retaining Hermes defaults and confirmation contracts.
+- Preserve `-SkipHermes` across installer, updater, finalizer and rollback so Codex-only installations do not regain a Hermes dependency.
+- Keep background scheduler/notification migration explicitly separate from connecting the interactive client.
+
+### No-investment weeks
+
 - Add a governed no-investment-week preview, draft, renewal and commit lifecycle without fabricating an allocation plan.
 - Commit one explicit seven-day zero-contribution decision as `SKIPPED` with `decision_kind=NO_INVESTMENT`, zero execution, the full weekly budget abandoned and no carry-forward.
 - Reject overlapping non-expired plans, posted BUY transactions and active external subscriptions at preview, renewal and commit; expired unconfirmed plan drafts do not become plan facts.

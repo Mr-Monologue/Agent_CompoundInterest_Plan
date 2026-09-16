@@ -5,7 +5,8 @@ param(
     [string]$Repository = "Mr-Monologue/Agent_CompoundInterest_Plan",
     [string]$CoreTaskName = "ValueDCAInvestorCore",
     [string]$UpdateTaskName = "ValueDCAAgentUpdate",
-    [string]$HermesProfile = "investor"
+    [string]$HermesProfile = "investor",
+    [switch]$SkipHermes
 )
 
 $ErrorActionPreference = "Stop"
@@ -87,6 +88,9 @@ try {
         "-UpdateTaskName `"$UpdateTaskName`" " +
         "-HermesProfile `"$HermesProfile`""
     )
+    if ($SkipHermes) {
+        $UpdateArguments += " -SkipHermes"
+    }
     $UpdateAction = New-ScheduledTaskAction `
         -Execute $WScriptExecutable `
         -Argument $UpdateArguments `
@@ -116,7 +120,9 @@ try {
     Register-ScheduledTask -TaskName $UpdateTaskName `
         -InputObject $UpdateDefinition -Force | Out-Null
     Write-FinalizerLog "Installed console-free updater task definition."
-    Refresh-HermesGateway -Profile $HermesProfile
+    if (-not $SkipHermes) {
+        Refresh-HermesGateway -Profile $HermesProfile
+    }
 }
 catch {
     Write-FinalizerLog "FAILED: $($_.Exception.Message)"

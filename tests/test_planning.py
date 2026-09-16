@@ -344,7 +344,7 @@ def test_no_investment_week_records_truth_without_allocated_plan(
         period_start_value="2026-08-31",
         weekly_budget="200.00",
         reason_code="USER_CHOSE_NO_INVESTMENT",
-        note="本周主动暂停投入，预算不结转。",
+        note="本周主动暂停投入，预算不结转。",  # noqa: RUF001
     )
     assert preview["eligible"] is True
     assert preview["executed_amount"] == "0.00"
@@ -357,7 +357,7 @@ def test_no_investment_week_records_truth_without_allocated_plan(
         period_start_value="2026-08-31",
         weekly_budget="200.00",
         reason_code="USER_CHOSE_NO_INVESTMENT",
-        note="本周主动暂停投入，预算不结转。",
+        note="本周主动暂停投入，预算不结转。",  # noqa: RUF001
         idempotency_key="no-investment:2026-08-31",
     )
     assert draft["draft"]["status"] == "PENDING"
@@ -399,7 +399,7 @@ def test_no_investment_week_records_truth_without_allocated_plan(
         "abandoned_amount": "200.00",
         "carry_forward": False,
         "reason_code": "USER_CHOSE_NO_INVESTMENT",
-        "note": "本周主动暂停投入，预算不结转。",
+        "note": "本周主动暂停投入，预算不结转。",  # noqa: RUF001
     }
 
 

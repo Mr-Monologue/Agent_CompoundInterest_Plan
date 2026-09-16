@@ -22,7 +22,7 @@ def test_versioned_operations_skill_governs_gross_cost_and_partial_closure() -> 
     assert "does not send WeChat" in skill
     assert "## Recording an explicit no-investment week" in skill
     assert "decision_kind=NO_INVESTMENT" in skill
-    assert "Do not create an allocation plan merely" in skill
+    assert "Do not create an allocation plan merely" in " ".join(skill.split())
 
 
 def test_skill_has_valid_minimal_frontmatter() -> None:

@@ -6,5 +6,5 @@
   "requires_manual_approval": true,
   "database_revision": "0036_no_investment_week",
   "minimum_current_version": "0.5.3",
-  "notes": "Add governed no-investment weekly decisions that create a truthful SKIPPED record without an allocation plan, preserve zero execution and no carry-forward, and remain eligible for formal weekly reports."
+  "notes": "Add governed no-investment weekly decisions with zero execution and no carry-forward, eligible for formal weekly reports. Add optional Windows-local Codex MCP integration with read-only preflight and client audit attribution; preserve SkipHermes across upgrades. Background job scheduling is not migrated."
 }

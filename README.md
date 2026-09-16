@@ -40,6 +40,10 @@ Windows 不再要求用户下载和解压版本包。首次安装或从旧版切
 $p="$env:TEMP\value-dca-bootstrap.ps1"; irm https://raw.githubusercontent.com/Mr-Monologue/Agent_CompoundInterest_Plan/main/bootstrap-windows.ps1 -OutFile $p; powershell.exe -NoProfile -ExecutionPolicy Bypass -File $p
 ```
 
+Windows 本机 Codex 可直接作为投资助手入口，无需 Hermes 中转。v0.31.8 的接入脚本、
+只读 MCP 预检和独立运行说明见 [Codex Windows 接入](docs/CODEX_WINDOWS.md)。
+先完成目标版本的授权升级，再连接已有 Core；不要在开发检出中初始化新的生产账本。
+
 安装器会升级 `C:\investor\value-dca-agent`，保留已有数据库，并完成 uv/Python、依赖、迁移、
 doctor、Hermes Profile、Skill、MCP 注册和健康检查。无人值守升级只会终止本项目自己的
 `investor-core`/`investor-mcp` 进程，不关闭 Hermes；下一次工具调用会自动重连。
