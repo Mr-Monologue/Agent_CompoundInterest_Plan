@@ -287,6 +287,9 @@ try {
             "-UpdateTaskName `"$UpdateTaskName`" " +
             "-HermesProfile `"$HermesProfile`""
         )
+        if ($SkipHermes) {
+            $UpdateArguments += " -SkipHermes"
+        }
         $UpdateAction = New-ScheduledTaskAction `
             -Execute $WScriptExecutable `
             -Argument $UpdateArguments `
@@ -418,16 +421,25 @@ try {
 
     Write-Host "`nInstallation / upgrade completed successfully." -ForegroundColor Green
     Write-Host "Installed at: $ProjectRoot"
-    Write-Host "Hermes profile: $HermesProfile"
+    if (-not $SkipHermes) {
+        Write-Host "Hermes profile: $HermesProfile"
+    } else {
+        Write-Host "Hermes integration skipped (also preserved for future updates)."
+        Write-Host "For Codex, run connect-codex-windows.ps1 against this installation."
+    }
     Write-Host "Windows task: $CoreTaskName (hidden, starts at logon, self-restarts)"
     if (-not $DisableAutoUpdate) {
         Write-Host "Updater task: $UpdateTaskName (stable GitHub releases, daily at 04:00)"
     }
     Write-Host "Core readiness: $CoreUrl/ready"
-    Write-Host (
-        "Hermes Cron bridge scripts installed. Approved policies still require " +
-        "scheduler reconciliation through the investor Agent."
-    )
+    if (-not $SkipHermes) {
+        Write-Host (
+            "Hermes Cron bridge scripts installed. Approved policies still require " +
+            "scheduler reconciliation through the investor Agent."
+        )
+    } else {
+        Write-Host "Investment job scheduling is not migrated by this installer."
+    }
     Write-Host "Broker connections and automatic trading remain disabled."
 }
 catch {

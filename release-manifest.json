@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.31.7",
+  "version": "0.31.8",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
-  "database_revision": "0035_weekly_plan_reports",
+  "database_revision": "0036_no_investment_week",
   "minimum_current_version": "0.5.3",
-  "notes": "Add governed weekly reports bound to exact terminal weekly plans, with immutable versions, deterministic valuation degradation, idempotent automation, and no automatic delivery or investment changes."
+  "notes": "Add governed no-investment weekly decisions with zero execution and no carry-forward, eligible for formal weekly reports. Add optional Windows-local Codex MCP integration with read-only preflight and client audit attribution; preserve SkipHermes across upgrades. Background job scheduling is not migrated."
 }

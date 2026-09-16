@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$InstallDir = "C:\investor\value-dca-agent",
-    [string]$Repository = "Mr-Monologue/Agent_CompoundInterest_Plan"
+    [string]$Repository = "Mr-Monologue/Agent_CompoundInterest_Plan",
+    [switch]$SkipHermes
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,11 +54,15 @@ try {
 
     $Installer = Join-Path $ManifestFile.Directory.FullName "install-windows.ps1"
     Write-Host "Installing $Tag from GitHub..." -ForegroundColor Cyan
+    $ClientArguments = @()
+    if ($SkipHermes) {
+        $ClientArguments += "-SkipHermes"
+    }
     & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $Installer `
         -InstallDir $InstallDir `
         -Repository $Repository `
         -NonInteractive `
-        -SkipMcpTest
+        -SkipMcpTest @ClientArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Installation failed with exit code $LASTEXITCODE"
     }

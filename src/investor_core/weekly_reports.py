@@ -456,6 +456,7 @@ class WeeklyReportService:
         )
         status = str(plan["status"])
         skip_reason = None
+        skip_reason_code = None
         if status == "SKIPPED":
             skip_audit = connection.execute(
                 """
@@ -467,7 +468,9 @@ class WeeklyReportService:
                 (plan_id,),
             ).fetchone()
             if skip_audit is not None:
-                skip_reason = json.loads(str(skip_audit["details_json"])).get("reason")
+                skip_details = json.loads(str(skip_audit["details_json"]))
+                skip_reason = skip_details.get("reason")
+                skip_reason_code = skip_details.get("reason_code")
         valuation = self._valuation(connection, plan=plan)
         result = {
             "weekly_plan_id": plan_id,
@@ -475,6 +478,7 @@ class WeeklyReportService:
             "account_id": str(plan["account_id"]),
             "period_start": str(plan["period_start"]),
             "period_end": str(plan["period_end"]),
+            "decision_kind": str(plan["decision_kind"]),
             "plan_status": status,
             "plan_outcome": {
                 "EXECUTED": "全部执行",
@@ -501,6 +505,19 @@ class WeeklyReportService:
                 else None
             ),
             "skip_reason": skip_reason,
+            "skip_reason_code": skip_reason_code,
+            "no_investment_decision": (
+                {
+                    "weekly_budget": _money(planned_total),
+                    "executed_amount": "0.00",
+                    "abandoned_amount": _money(planned_total),
+                    "carry_forward": False,
+                    "reason_code": skip_reason_code,
+                    "note": skip_reason,
+                }
+                if str(plan["decision_kind"]) == "NO_INVESTMENT"
+                else None
+            ),
             "items": items,
             "workflow_checks": {
                 "duplicate_transaction_links": len(

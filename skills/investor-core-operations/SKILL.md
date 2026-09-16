@@ -41,6 +41,26 @@ Never use this flow for zero execution (`SKIPPED` governs that case) or full exe
 governs it). Never fabricate execution, delete plan items, carry abandoned money into another week,
 or generate a new weekly plan automatically.
 
+## Recording an explicit no-investment week
+
+Use the no-investment-week workflow when the user explicitly says a seven-day period had or will
+have no contribution and the weekly budget must not carry forward. Do not create an allocation
+plan merely so it can be frozen and skipped.
+
+1. Preview the exact period, positive weekly budget, reason code, and note. Core must confirm there
+   is no overlapping live or terminal plan, posted BUY, or active external subscription. An expired
+   unconfirmed plan draft does not count as a plan fact.
+2. Create one governed no-investment draft and show that execution is zero, the full weekly budget
+   is abandoned, carry-forward is false, and no financial fact has been created.
+3. Commit only after fresh explicit confirmation. The commit creates one terminal `SKIPPED` plan
+   record with `decision_kind=NO_INVESTMENT`, no allocation items, no trade, and no holding or cash
+   change. It becomes eligible for the normal formal weekly-report lifecycle.
+4. If the draft expires, renew the same unchanged draft. Never create a second identity for the
+   same period or bypass newly discovered transactions, subscriptions, or plans.
+
+This workflow may record a completed past week when the user's decision is known and Core verifies
+the absence of conflicting facts. It must not mark a future week skipped before that week starts.
+
 ## Governed weekly reports
 
 - A formal weekly report must bind to one exact `weekly_plan_id`. Use the plan's persisted

@@ -117,6 +117,11 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
         "weekly_plan_preview",
         "weekly_plan_draft_create",
         "weekly_plan_list",
+        "weekly_no_investment_preview",
+        "weekly_no_investment_draft_create",
+        "weekly_no_investment_draft_get",
+        "weekly_no_investment_draft_renew",
+        "weekly_no_investment_draft_commit",
         "weekly_plan_get",
         "weekly_report_preview",
         "weekly_report_draft_create",
@@ -209,6 +214,18 @@ def test_phase1_mcp_exposes_guarded_ledger_tools() -> None:
     assert "never sends or trades" in weekly_report_tools["weekly_report_draft_create"]
     assert "creates no report or financial fact" in weekly_report_tools[
         "weekly_report_draft_renew"
+    ]
+    no_investment_tools = {
+        tool.name: tool.description or ""
+        for tool in tools
+        if tool.name.startswith("weekly_no_investment_")
+    }
+    assert len(no_investment_tools) == 5
+    assert "never creates a plan or financial fact" in no_investment_tools[
+        "weekly_no_investment_preview"
+    ]
+    assert "terminal SKIPPED plan record" in no_investment_tools[
+        "weekly_no_investment_draft_commit"
     ]
 
 

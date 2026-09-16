@@ -58,6 +58,11 @@ def test_weekly_plan_skip_reconfirmation_api_is_discoverable(tmp_path: Path) -> 
     assert "/v1/weekly-report-drafts/{draft_id}/renew" in paths
     assert "/v1/weekly-reports" in paths
     assert "/v1/weekly-reports/{report_id}" in paths
+    assert "/v1/weekly-no-investment-preview" in paths
+    assert "/v1/weekly-no-investment-drafts" in paths
+    assert "/v1/weekly-no-investment-drafts/{draft_id}" in paths
+    assert "/v1/weekly-no-investment-drafts/{draft_id}/renew" in paths
+    assert "/v1/weekly-no-investment-drafts/{draft_id}/commit" in paths
 
 
 def test_notification_test_api_requires_explicit_confirmation(tmp_path: Path) -> None:
