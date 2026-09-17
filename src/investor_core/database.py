@@ -22,6 +22,9 @@ REQUIRED_TABLES = {
     "automation_policies",
     "automation_policy_drafts",
     "automation_scheduler_snapshots",
+    "scheduler_control",
+    "scheduler_change_drafts",
+    "scheduler_worker_snapshots",
     "backups",
     "cash_event_drafts",
     "cash_ledger_events",
@@ -89,7 +92,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0036_no_investment_week"
+EXPECTED_ALEMBIC_REVISION = "0037_background_scheduler"
 
 
 def ensure_database_parent(settings: Settings) -> None:
