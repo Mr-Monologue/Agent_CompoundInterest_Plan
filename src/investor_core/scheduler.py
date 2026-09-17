@@ -118,6 +118,8 @@ class SchedulerService:
             ).fetchall()
         snapshot = json.loads(row[0]) if row else None
         anomalies = []
+        if state["source"] == "HERMES":
+            anomalies.append("HERMES_HEARTBEAT_NOT_VERIFIED")
         if state["source"] == "WINDOWS" and (
             not snapshot
             or (now - instant(snapshot["received_at"])).total_seconds() > HEARTBEAT_SECONDS
@@ -177,7 +179,12 @@ class SchedulerService:
                         "policies",
                     )
                 }
-                | {"policies": self._policies()}
+                | {
+                    "policies": [
+                        {k: v for k, v in policy.items() if k != "next_run_at"}
+                        for policy in status["policies"]
+                    ]
+                }
             ),
         }
 

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$ProjectRoot,
     [ValidateSet("Preview", "Install", "Switch", "Pause", "Rollback")][string]$Action = "Preview",
@@ -49,7 +49,7 @@ if ($Action -eq "Install") {
 }
 $Task = Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop
 $ExpectedExecutable = Join-Path $env:SystemRoot "System32\wscript.exe"
-if ($Task.Actions.Count -ne 1 -or $Task.Actions[0].Execute -ne $ExpectedExecutable -or -not $Task.Actions[0].Arguments.Contains($Runner)) {
+if (@($Task.Actions).Count -ne 1 -or $Task.Actions[0].Execute -ne $ExpectedExecutable -or -not $Task.Actions[0].Arguments.Contains($Runner)) {
     throw "Existing task does not match this runtime; refusing to control it."
 }
 # Preview + short-lived governed draft + explicit confirmation; token stays in memory.
