@@ -716,3 +716,19 @@ class ExternalSubscriptionTransactionDraftReviseRequest(RequestModel):
 class ExternalSubscriptionTransactionCommitRequest(RequestModel):
     confirmation_token: str = Field(min_length=1, max_length=200)
     confirmed_by: str = Field(min_length=1, max_length=120)
+
+
+class BackgroundRunRequest(AutomationJobRunRequest):
+    scheduler_generation: str = Field(min_length=1, max_length=80)
+    scheduler_policy_hash: str = Field(min_length=1, max_length=80)
+
+
+class SchedulerChangeRequest(RequestModel):
+    target: Literal["WINDOWS", "HERMES", "PAUSED"]
+    actor_ref: str = Field(default="local-user", min_length=1, max_length=120)
+
+
+class SchedulerHeartbeatRequest(RequestModel):
+    generation: str = Field(min_length=1, max_length=80)
+    failures: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
+    pending_count: int = Field(ge=0)
