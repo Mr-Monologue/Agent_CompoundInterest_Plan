@@ -25,6 +25,14 @@ from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.research import ResearchService
 from investor_core.risk import RiskService
+from investor_core.scheduler import (
+    BACKGROUND_JOBS,
+    RETRY_MINUTES,
+    SchedulerService,
+    check_authority,
+    control,
+    instant,
+)
 from investor_core.weekly_reports import WeeklyReportService
 
 SUPPORTED_JOBS = {
@@ -357,6 +365,14 @@ class OperationsService:
         policy_version: int,
         timezone: str,
     ) -> sqlite3.Row | None:
+        if job_name in BACKGROUND_JOBS and control(connection)["cutover_at"]:
+            prior = connection.execute(
+                "SELECT * FROM job_runs WHERE job_name=? AND scheduled_for=? "
+                "AND json_extract(input_json, '$.portfolio_id') IS ? ORDER BY started_at LIMIT 1",
+                (job_name, scheduled_for, portfolio_id),
+            ).fetchone()
+            if prior is not None:
+                return cast(sqlite3.Row, prior)
         idempotency_key = f"{job_name}:{portfolio_id or 'global'}:{scheduled_for}:v{policy_version}"
         existing = connection.execute(
             "SELECT * FROM job_runs WHERE idempotency_key = ?",
@@ -956,6 +972,8 @@ class OperationsService:
         scheduled_for: str | None = None,
         portfolio_id: str | None = None,
         actor_ref: str = "operations-runner",
+        scheduler_generation: str | None = None,
+        scheduler_policy_hash: str | None = None,
     ) -> JsonDict:
         job = self._normalize_job(job_name)
         policy, resolved_portfolio, account_id = self._resolve_policy(
@@ -973,6 +991,32 @@ class OperationsService:
                 "AUTOMATION_SCHEDULED_FOR_INVALID",
                 "scheduled_for must be a stable date or timestamp",
             )
+        with self._connect() as connection:
+            check_authority(
+                connection,
+                job_name=job,
+                scheduled_for=scheduled,
+                generation=scheduler_generation,
+                now=self._now(),
+            )
+        if scheduler_generation is not None:
+            if policy is None or scheduler_policy_hash != str(policy["content_hash"]):
+                raise LedgerError(
+                    "SCHEDULER_POLICY_CHANGED", "Refresh approved policies", http_status=409
+                )
+            occurrence = instant(scheduled)
+            if _iso(self._scheduled_occurrence(policy, before=occurrence)) != scheduled:
+                raise LedgerError(
+                    "SCHEDULER_NOT_AN_OCCURRENCE",
+                    "Timestamp does not match policy",
+                    http_status=409,
+                )
+            if occurrence < instant(str(policy["approved_at"])):
+                raise LedgerError(
+                    "SCHEDULER_BEFORE_APPROVAL",
+                    "Occurrence predates policy approval",
+                    http_status=409,
+                )
         if policy is None:
             return self._record_skip(
                 job_name=job,
@@ -1004,6 +1048,25 @@ class OperationsService:
         policy_version = int(policy["version"])
         idempotency_key = f"{job}:{resolved_portfolio or 'global'}:{scheduled}:v{policy_version}"
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            check_authority(
+                connection,
+                job_name=job,
+                scheduled_for=scheduled,
+                generation=scheduler_generation,
+                now=self._now(),
+            )
+            current = connection.execute(
+                "SELECT status, content_hash FROM automation_policies WHERE id=?", (policy["id"],)
+            ).fetchone()
+            if (
+                current is None
+                or current["status"] != "ACTIVE"
+                or current["content_hash"] != policy["content_hash"]
+            ):
+                raise LedgerError(
+                    "SCHEDULER_POLICY_CHANGED", "Policy changed before claim", http_status=409
+                )
             existing = self._find_existing_run(
                 connection,
                 job_name=job,
@@ -1022,6 +1085,18 @@ class OperationsService:
                     "job_run": self._run_data(existing),
                     "idempotent_replay": True,
                     "display_text": self._display_for_run(connection, str(existing["id"])),
+                }
+            if (
+                scheduler_generation
+                and existing is not None
+                and existing["next_retry_at"]
+                and instant(str(existing["next_retry_at"])) > self._now()
+            ):
+                return {
+                    "job_run": self._run_data(existing),
+                    "idempotent_replay": True,
+                    "reason_code": "RETRY_NOT_DUE",
+                    "display_text": "[SILENT]",
                 }
             max_attempts = int(config["max_attempts"])
             if existing is not None and int(existing["attempt_count"]) >= max_attempts:
@@ -1058,6 +1133,8 @@ class OperationsService:
                                 "policy_id": str(policy["id"]),
                                 "policy_version": policy_version,
                                 "actor_ref": actor_ref,
+                                "scheduler_source": "WINDOWS" if scheduler_generation else "HERMES",
+                                "scheduler_generation": scheduler_generation,
                             }
                         ),
                         str(uuid4()),
@@ -1542,7 +1619,7 @@ class OperationsService:
         actor_ref: str,
     ) -> JsonDict:
         now = self._now()
-        retry_minutes = (5, 15, 30, 60, 120)[min(attempt_count - 1, 4)]
+        retry_minutes = RETRY_MINUTES[min(attempt_count - 1, len(RETRY_MINUTES) - 1)]
         next_retry = (
             _iso(now + timedelta(minutes=retry_minutes)) if attempt_count < max_attempts else None
         )
@@ -2530,6 +2607,10 @@ class OperationsService:
         )
         results: list[JsonDict] = []
         for item in missed:
+            if not self._legacy_scheduler_allowed(
+                str(item["job_name"]), str(item["scheduled_for"])
+            ):
+                continue
             results.append(
                 self.run_job(
                     job_name=str(item["job_name"]),
@@ -2666,6 +2747,7 @@ class OperationsService:
             "missed_runs": missed_runs,
             "scheduler_manifest": self.scheduler_manifest(),
             "scheduler_snapshot": scheduler_snapshot,
+            "background_scheduler": SchedulerService(self).status(),
             "scheduler_status": (
                 str(scheduler_snapshot["reconciliation_status"])
                 if scheduler_snapshot is not None
@@ -2673,6 +2755,20 @@ class OperationsService:
             ),
             "automatic_trade": False,
         }
+
+    def _legacy_scheduler_allowed(self, job: str, scheduled: str) -> bool:
+        with self._connect() as connection:
+            try:
+                check_authority(
+                    connection,
+                    job_name=job,
+                    scheduled_for=scheduled,
+                    generation=None,
+                    now=self._now(),
+                )
+            except LedgerError:
+                return False
+        return True
 
     def retry_due(self, *, limit: int = 20) -> JsonDict:
         """Retry due failed jobs while preserving their original idempotency identity."""
@@ -2690,6 +2786,8 @@ class OperationsService:
             ).fetchall()
         results: list[JsonDict] = []
         for row in rows:
+            if not self._legacy_scheduler_allowed(str(row["job_name"]), str(row["scheduled_for"])):
+                continue
             input_data = json.loads(str(row["input_json"]))
             results.append(
                 self.run_job(

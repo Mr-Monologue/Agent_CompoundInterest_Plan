@@ -1,3 +1,11 @@
+## v0.32.0 独立后台调度（开发审查阶段，2026-09-17）
+
+- 当前生产只读核验：v0.31.8，HTTP health/ready PASS；本轮没有生产升级或调度切换。
+- 新增 Core 调度来源确认与原子领取、Windows 独立 HTTP worker、本地失败日志、24 小时补跑及工作台心跳。
+- 首批仅每日行情、每日风险、系统健康；政策原值复用，Hermes 通知投递与其他任务未迁移。
+- 部署脚本默认预览、安装保持禁用。历史三次漏跑不自动补跑。参见 [部署与回滚预案](docs/windows-background-scheduler.md)。
+- 已通过本地 Windows 全套 288 项及最终相关 35 项测试、真实隔离 HTTP 进程实测、Ruff、mypy 和 PowerShell 语法检查。Ubuntu/Windows CI 结果随审查 PR 核对；不将测试等同生产运行通过。
+
 # Roadmap
 
 ## Windows 本机 Codex 优先
