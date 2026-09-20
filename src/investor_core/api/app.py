@@ -14,6 +14,7 @@ from investor_core.api.schemas import (
     AutomationJobRunRequest,
     AutomationPolicyDraftCreateRequest,
     AutomationSchedulerSnapshotRequest,
+    BackgroundRunRequest,
     CashEventDraftCreateRequest,
     ExternalSubscriptionConfirmationDraftRequest,
     ExternalSubscriptionConfirmationDraftReviseRequest,
@@ -55,6 +56,8 @@ from investor_core.api.schemas import (
     RiskScanRequest,
     SatelliteSignalPolicyDraftRequest,
     SatelliteSignalSnapshotRequest,
+    SchedulerChangeRequest,
+    SchedulerHeartbeatRequest,
     SellDecisionDraftCreateRequest,
     SellFollowupEvaluateRequest,
     StrategyInstrumentConfigDraftRequest,
@@ -87,6 +90,7 @@ from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.research import ResearchService
 from investor_core.risk import RiskService
+from investor_core.scheduler import SchedulerService
 from investor_core.signals import SignalService
 from investor_core.strategy import StrategyService
 from investor_core.subscriptions import SubscriptionService
@@ -119,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     risk = RiskService(runtime_settings)
     signals = SignalService(runtime_settings)
     operations = OperationsService(runtime_settings)
+    scheduler = SchedulerService(operations)
     performance = PerformanceService(runtime_settings)
     capital = CapitalService(runtime_settings)
     research = ResearchService(runtime_settings)
@@ -159,6 +164,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if report.status == "FAIL":
             raise HTTPException(status_code=503, detail=report.model_dump(mode="json"))
         return report.model_dump(mode="json")
+
+    @app.get("/v1/background-scheduler")
+    def background_status() -> dict[str, Any]:
+        return success(scheduler.status())
+
+    @app.get("/v1/background-scheduler/preview")
+    def background_preview(target: str = "WINDOWS") -> dict[str, Any]:
+        return success(scheduler.preview(target=target))
+
+    @app.post("/v1/background-scheduler/drafts")
+    def background_draft(request: SchedulerChangeRequest) -> dict[str, Any]:
+        return success(scheduler.create_draft(**request.model_dump()))
+
+    @app.post("/v1/background-scheduler/drafts/{draft_id}/commit")
+    def background_commit(draft_id: str, request: TransactionDraftCommitRequest) -> dict[str, Any]:
+        return success(scheduler.commit(draft_id=draft_id, **request.model_dump()))
+
+    @app.post("/v1/background-scheduler/heartbeat")
+    def background_heartbeat(request: SchedulerHeartbeatRequest) -> dict[str, Any]:
+        return success(scheduler.heartbeat(**request.model_dump()))
+
+    @app.post("/v1/background-scheduler/run")
+    def background_run(request: BackgroundRunRequest) -> dict[str, Any]:
+        return automation_run(request)
 
     @app.post("/v1/automation-policy-drafts")
     def automation_policy_draft_create(

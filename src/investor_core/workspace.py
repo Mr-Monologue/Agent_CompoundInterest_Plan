@@ -88,9 +88,7 @@ class WorkspaceService:
                     "abandoned_amount": "0.00",
                     "execution_rate_pct": "0.00",
                     "reason_code": (
-                        str(row["closure_reason_code"])
-                        if "closure_reason_code" in row
-                        else ""
+                        str(row["closure_reason_code"]) if "closure_reason_code" in row else ""
                     ),
                     "note": (str(row["closure_note"]) if "closure_note" in row else ""),
                     "carry_forward": False,
@@ -1134,9 +1132,7 @@ class WorkspaceService:
                 )
             )
         missing_weekly_reports = [
-            item
-            for item in workflows["weekly_reports"]
-            if item["report_status"] == "MISSING"
+            item for item in workflows["weekly_reports"] if item["report_status"] == "MISSING"
         ]
         if missing_weekly_reports:
             actions.append(
@@ -1415,6 +1411,14 @@ class WorkspaceService:
             actions=actions,
             readiness=readiness,
         )
+        scheduler = operations["background_scheduler"]
+        daily_display += (
+            f"\n后台调度来源: {scheduler['source']};"
+            f"心跳: {(scheduler['heartbeat'] or {}).get('received_at', '未收到')};"
+            f"异常: {', '.join(scheduler['anomalies']) or '未发现'}。"
+        )
+        for policy in scheduler["policies"]:
+            daily_display += f"\n{policy['job_name']} 下次计划: {policy['next_run_at'] or '已停用'}"
         readiness_display = self._readiness_display(
             as_of_date=as_of_date.isoformat(), readiness=readiness
         )
@@ -1459,6 +1463,7 @@ class WorkspaceService:
                 "due_retry_count": operations["due_retry_count"],
                 "missed_run_count": operations["missed_run_count"],
                 "scheduler_status": operations["scheduler_status"],
+                "background_scheduler": operations["background_scheduler"],
                 "pending_outbox_count": operations["pending_outbox_count"],
             },
             "workflows": workflows,
