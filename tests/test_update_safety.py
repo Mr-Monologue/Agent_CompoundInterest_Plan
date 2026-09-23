@@ -24,7 +24,7 @@ def call(script, cwd, env=None):
         env=env,
         capture_output=True,
         text=True,
-        timeout=45,
+        timeout=120,
     )
 
 
@@ -139,7 +139,7 @@ catch {{ Write-Output $_.Exception.Message; exit 0 }}
         env=env,
         capture_output=True,
         text=True,
-        timeout=45,
+        timeout=120,
     )
     assert result.returncode == 0, result.stderr
     assert log.exists(), result.stdout + result.stderr

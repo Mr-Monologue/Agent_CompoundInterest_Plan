@@ -106,6 +106,29 @@ class CalendarDay(StrictModel):
         return self
 
 
+class RemainingQuota(StrictModel):
+    business_date: date
+    observed_at: datetime
+    valid_until: datetime
+    remaining_minor: int = Field(ge=0)
+    quota_scope: Literal["CHANNEL_ACCOUNT", "FUND_ACCOUNT_ALL_CHANNELS"]
+    source_ids: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validity(self) -> RemainingQuota:
+        if self.observed_at.tzinfo is None or self.valid_until.tzinfo is None:
+            raise ValueError("quota observation requires timezone")
+        if self.observed_at >= self.valid_until:
+            raise ValueError("quota observation must have a finite validity interval")
+        if self.observed_at.astimezone(TZ).date() != self.business_date:
+            raise ValueError("quota observation must belong to its business date")
+        if self.valid_until > datetime.combine(
+            self.business_date + timedelta(days=1), datetime.min.time(), TZ
+        ):
+            raise ValueError("daily quota observation cannot carry into the next day")
+        return self
+
+
 class ConstraintBundle(StrictModel):
     instrument_code: str = Field(min_length=1)
     share_class: str = Field(min_length=1)
@@ -115,6 +138,7 @@ class ConstraintBundle(StrictModel):
     applicability_source_ids: list[str] = Field(min_length=1)
     limits: list[LimitRule] = Field(min_length=1, max_length=100)
     calendar: list[CalendarDay] = Field(min_length=1, max_length=366)
+    quota_observations: list[RemainingQuota] = Field(default_factory=list, max_length=366)
     rationale: str = Field(min_length=1)
 
 
@@ -129,6 +153,8 @@ def scope(bundle: Json) -> str:
 
 def source_ids(bundle: Json) -> set[str]:
     ids = set(bundle["applicability_source_ids"])
+    for observation in bundle.get("quota_observations", []):
+        ids.update(observation["source_ids"])
     for rule in bundle["limits"]:
         ids.update(rule["source_ids"])
     for day in bundle["calendar"]:
@@ -211,6 +237,9 @@ class ExecutionService:
             (bundle["instrument_code"],),
         ).fetchone():
             raise LedgerError("EXECUTION_FUND_INVALID", "Active fund required")
+        for observation in bundle.get("quota_observations", []):
+            if instant(observation["observed_at"]) > self.research._now():
+                raise LedgerError("EXECUTION_QUOTA_FUTURE", "Cannot approve a future observation")
         for eid in source_ids(bundle):
             row = connection.execute(
                 "SELECT facts_json FROM market_research_evidence WHERE id=?", (eid,)
@@ -368,6 +397,7 @@ class ExecutionService:
             f"\n执行期间: {start.astimezone(TZ).isoformat()} 至 "
             f"{end.astimezone(TZ).isoformat()} (不含)",
             "以下为只读安排, 不冻结、不改分配、不自动提交; WARNING 仍保留。",
+            "未来日期安排以执行前复核账户剩余额度为条件; 当日须有有效余额度证据。",
         ]
         for i in items:
             lines.append(
@@ -463,6 +493,14 @@ def calculate(
                 if lo < instant(r[k]) < hi
             }
         )
+        boundaries = sorted(
+            set(boundaries)
+            | {
+                instant(o["valid_until"])
+                for o in bundle.get("quota_observations", [])
+                if lo < instant(o["valid_until"]) < hi
+            }
+        )
         for at, before in pairwise(boundaries):
             rules = [
                 r
@@ -528,6 +566,37 @@ def calculate(
                 if r["cumulative_minor"] is None
                 else max(0, r["cumulative_minor"] - total),
             )
+            if day == now.astimezone(TZ).date():
+                observations = [
+                    o
+                    for o in bundle.get("quota_observations", [])
+                    if o["business_date"] == day.isoformat()
+                    and o["quota_scope"] == r["quota_scope"]
+                    and instant(o["observed_at"]) <= now
+                    and at < instant(o["valid_until"])
+                ]
+                latest = max((instant(o["observed_at"]) for o in observations), default=None)
+                observations = [o for o in observations if instant(o["observed_at"]) == latest]
+                if len(observations) != 1:
+                    unknown = True
+                    reasons.add("CURRENT_ACCOUNT_REMAINING_QUOTA_MISSING_STALE_OR_CONFLICTING")
+                    continue
+                observation = observations[0]
+                # The account observation already includes submissions at/before observed_at.
+                after_observation = sum(
+                    occupied(o)
+                    for o in orders
+                    if o["submitted_business_date"] == day.isoformat()
+                    and instant(o["submitted_at"]) > instant(observation["observed_at"])
+                )
+                planned_today = sum(
+                    o["amount_minor"] for o in schedule if o["business_date"] == day.isoformat()
+                )
+                capacity = min(
+                    capacity,
+                    max(0, observation["remaining_minor"] - after_observation - planned_today),
+                )
+                before = min(before, instant(observation["valid_until"]))
             cap = capacity if r["per_order_minor"] is None else r["per_order_minor"]
             while min(capacity, cap) >= r["minimum_order_minor"] and remaining:
                 value = min(capacity, cap)
@@ -561,5 +630,9 @@ def calculate(
         "unverified_minor": remaining if unknown else 0,
         "infeasible_minor": 0 if unknown else remaining,
         "schedule": schedule,
+        "future_quota_recheck_required": any(
+            date.fromisoformat(order["business_date"]) > now.astimezone(TZ).date()
+            for order in schedule
+        ),
         "reasons": sorted(reasons),
     }
