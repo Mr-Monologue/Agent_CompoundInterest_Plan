@@ -417,7 +417,7 @@ class LedgerService:
                 "source": "LEGACY_SETTING",
             }
 
-    def get_investment_context(self) -> JsonDict:
+    def get_investment_context(self, *, persist_if_missing: bool = True) -> JsonDict:
         """Return a saved context or persist an unambiguous single active context."""
         connection = self._connect()
         try:
@@ -520,15 +520,18 @@ class LedgerService:
                     ),
                 )
             account = accounts[0]
-            self._save_investment_context(
-                connection,
-                portfolio=portfolio,
-                account=account,
-                actor_ref="system:auto-singleton",
-                actor_type="SYSTEM",
-            )
+            if persist_if_missing:
+                self._save_investment_context(
+                    connection,
+                    portfolio=portfolio,
+                    account=account,
+                    actor_ref="system:auto-singleton",
+                    actor_type="SYSTEM",
+                )
             connection.commit()
-            return self._context_payload(portfolio, account, source="AUTO_SELECTED")
+            return self._context_payload(
+                portfolio, account, source="AUTO_SELECTED" if persist_if_missing else "UNAMBIGUOUS"
+            )
         finally:
             connection.close()
 

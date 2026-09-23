@@ -1000,6 +1000,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def investment_context_get() -> dict[str, Any]:
         return success(ledger.get_investment_context())
 
+    @app.get("/v1/investment-context/resolve")
+    def investment_context_resolve() -> dict[str, Any]:
+        return success(ledger.get_investment_context(persist_if_missing=False))
+
     @app.post("/v1/investment-context")
     def investment_context_set(request: InvestmentContextSetRequest) -> dict[str, Any]:
         return success(
@@ -1547,6 +1551,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 actor_ref=request.actor_ref,
             )
         )
+
+    @app.get("/v1/weekly-report-drafts")
+    def weekly_report_draft_list(
+        plan_id: str, limit: int = Query(default=100, ge=1, le=500)
+    ) -> dict[str, Any]:
+        return success({"items": weekly_reports.list_drafts(plan_id=plan_id, limit=limit)})
 
     @app.get("/v1/weekly-report-drafts/{draft_id}")
     def weekly_report_draft_get(draft_id: str) -> dict[str, Any]:

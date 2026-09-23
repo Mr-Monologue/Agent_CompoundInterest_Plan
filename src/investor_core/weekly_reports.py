@@ -8,6 +8,7 @@ import json
 import secrets
 import sqlite3
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -543,7 +544,7 @@ class WeeklyReportService:
         return result
 
     def preview(self, *, plan_id: str) -> JsonDict:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             facts = self._facts(connection, plan_id)
         return {**facts, "facts_hash": _hash(facts)}
 
@@ -678,37 +679,25 @@ class WeeklyReportService:
         finally:
             connection.close()
 
+    def list_drafts(self, *, plan_id: str, limit: int = 100) -> list[JsonDict]:
+        """Read projected expiry without changing stored draft state or issuing tokens."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT * FROM weekly_report_drafts WHERE plan_id=? "
+                "ORDER BY created_at DESC, id LIMIT ?", (plan_id, limit),
+            ).fetchall()
+            return [self._draft_data(row, now=self._now()) for row in rows]
+
     def get_draft(self, *, draft_id: str) -> JsonDict:
-        connection = self._connect()
-        try:
-            connection.execute("BEGIN IMMEDIATE")
+        with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT * FROM weekly_report_drafts WHERE id=?", (draft_id,)
             ).fetchone()
             if row is None:
-                self._rollback(
-                    connection,
-                    LedgerError(
-                        "WEEKLY_REPORT_DRAFT_NOT_FOUND", "没有找到周报草稿。", http_status=404
-                    ),
+                raise LedgerError(
+                    "WEEKLY_REPORT_DRAFT_NOT_FOUND", "没有找到周报草稿。", http_status=404
                 )
-            if (
-                str(row["status"]) == "PENDING"
-                and _parse_iso(str(row["expires_at"])) <= self._now()
-            ):
-                connection.execute(
-                    """UPDATE weekly_report_drafts SET status='EXPIRED'
-                       WHERE id=? AND status='PENDING'""",
-                    (draft_id,),
-                )
-                row = connection.execute(
-                    "SELECT * FROM weekly_report_drafts WHERE id=?", (draft_id,)
-                ).fetchone()
-                assert row is not None
-            connection.commit()
             return self._draft_data(row, now=self._now())
-        finally:
-            connection.close()
 
     def commit_draft(
         self,
@@ -994,7 +983,7 @@ class WeeklyReportService:
             connection.close()
 
     def get_report(self, *, report_id: str) -> JsonDict:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             row = connection.execute(
                 "SELECT * FROM weekly_reports WHERE id=?", (report_id,)
             ).fetchone()
@@ -1024,11 +1013,11 @@ class WeeklyReportService:
             query += " AND r.is_current=1"
         query += " ORDER BY p.period_end DESC, r.report_version DESC LIMIT ?"
         params.append(limit)
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             return [self._report_data(row) for row in connection.execute(query, params).fetchall()]
 
     def report_statuses(self, *, portfolio_id: str) -> list[JsonDict]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             rows = connection.execute(
                 """
                 SELECT p.id, p.status, p.period_start, p.period_end,
@@ -1064,7 +1053,7 @@ class WeeklyReportService:
 
     def generate_eligible(self, *, portfolio_id: str, actor_ref: str = "cron") -> JsonDict:
         """Finalize missing terminal-plan reports under an approved automation run."""
-        with self._connect() as connection:
+        with closing(self._connect()) as connection:
             plan_ids = [
                 str(row["id"])
                 for row in connection.execute(

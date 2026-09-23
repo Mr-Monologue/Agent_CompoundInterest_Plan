@@ -766,7 +766,7 @@ class PlanningService:
                 )
             row = self._expire_if_needed(connection, row)
             result = self._plan_data(connection, row)
-            connection.commit()
+            connection.rollback()  # Query projects expiry without persisting a state change.
             return result
         finally:
             connection.close()
@@ -815,7 +815,7 @@ class PlanningService:
             for row in rows:
                 row = self._expire_if_needed(connection, row)
                 result.append(self._plan_data(connection, row))
-            connection.commit()
+            connection.rollback()  # Query projects expiry without persisting a state change.
             return result
         finally:
             connection.close()
