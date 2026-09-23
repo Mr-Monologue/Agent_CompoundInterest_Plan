@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.32.0",
+  "version": "0.33.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
   "database_revision": "0037_background_scheduler",
   "minimum_current_version": "0.5.3",
-  "notes": "Add governed Windows background scheduling for daily market sync, risk scan and system doctor; preserve policies, fence competing sources, journal bounded retries and catch-up. Manual production approval required. Notification delivery remains Hermes-owned."
+  "notes": "Daily local HTTP workflows with confirmation gates and durable no-blind-retry protection; read-only context and report drafts, scheduler audit, bounded opportunity explanation. No schema migration."
 }

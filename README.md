@@ -1,3 +1,7 @@
+# 日常使用入口
+
+本机 Codex 可通过 [HTTP 日常操作说明](docs/CODEX_DAILY_OPERATIONS.md) 查询、预览和受确认约束地记录真实事实。上线与交接以 [唯一清单](docs/LAUNCH_CHECKLIST.md) 为准。
+
 # Value DCA Agent
 
 ## Instrument role contract (v0.31.2)

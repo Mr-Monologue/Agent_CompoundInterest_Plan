@@ -1,3 +1,9 @@
+# 当前 Windows 日常入口
+
+自 v0.33.0 起，优先使用已验证的本机 Core HTTP 日常封装，不等待 MCP 修复。见 [日常操作说明](CODEX_DAILY_OPERATIONS.md) 与 [唯一交接清单](LAUNCH_CHECKLIST.md)。Core 为唯一账本，Windows 为后台调度，Codex 为自然语言入口。以下保留原 v0.31.8 MCP 接入历史，不表示仍需重新安装或接入。
+
+---
+
 # Windows 本机 Codex 接入
 
 目标：在同一个本机 Codex 入口完成日常查询、计划与报告操作、源码排查和授权后的部署。
