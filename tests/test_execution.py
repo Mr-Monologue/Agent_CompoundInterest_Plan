@@ -351,3 +351,27 @@ def test_account_quota_unknown_never_becomes_zero_candidate(case):
     assert result["candidate_minor"] == 4000
     assert result["executable_minor"] == 1000
     assert result["unverified_minor"] == 3000
+
+
+def test_account_capture_keeps_fingerprint_and_cannot_cross_accounts(tmp_path):
+    settings, _, aid, _ = terminal_plan(tmp_path / "db", outcome="SKIPPED")
+    service = ExecutionService(ResearchService(settings, now=lambda: START))
+    fingerprint = "a" * 64
+    request = SourceArchive(
+        instrument_code="CORE01",
+        source_name="Redacted account capture",
+        source_ref="attachment:sha256:" + fingerprint,
+        source_lineage="USER_ACCOUNT_CAPTURE",
+        retrieved_at=START,
+        published_date=None,
+        data_date=START.date(),
+        excerpt="Remaining quota",
+        quality="ACCOUNT_OBSERVATION",
+        original_sha256=fingerprint,
+        facts={"account_id": "another-account"},
+    )
+    saved = service.archive(request)
+    b = json_replace(bundle(), "source", saved["id"])
+    b["account_id"] = aid
+    with pytest.raises(LedgerError, match="Account capture scope mismatch"):
+        service.create_draft(ConstraintDraft(bundle=ConstraintBundle.model_validate(b)))

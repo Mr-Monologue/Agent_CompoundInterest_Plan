@@ -30,7 +30,7 @@ class StrictModel(BaseModel):
 class SourceArchive(StrictModel):
     instrument_code: str = Field(min_length=1, max_length=40)
     source_name: str = Field(min_length=1, max_length=200)
-    source_ref: str = Field(pattern=r"^https://", max_length=1000)
+    source_ref: str = Field(pattern=r"^(https://|attachment:sha256:[a-f0-9]{64}$)", max_length=1000)
     source_lineage: str = Field(min_length=1, max_length=120)
     retrieved_at: datetime
     published_date: date | None
@@ -43,6 +43,11 @@ class SourceArchive(StrictModel):
 
     @model_validator(mode="after")
     def validate_time(self) -> SourceArchive:
+        if self.source_ref.startswith("attachment:"):
+            if self.quality != "ACCOUNT_OBSERVATION" or not self.facts.get("account_id"):
+                raise ValueError("account capture requires its explicit account scope")
+            if self.original_sha256 != self.source_ref.removeprefix("attachment:sha256:"):
+                raise ValueError("account capture must retain its original content fingerprint")
         if self.retrieved_at.tzinfo is None:
             raise ValueError("retrieved_at requires timezone")
         return self
@@ -247,6 +252,11 @@ class ExecutionService:
             if not row or json.loads(row[0]).get("kind") != "EXECUTION_SOURCE_V1":
                 raise LedgerError("EXECUTION_SOURCE_MISSING", "Archive the quoted evidence first")
             evidence = json.loads(row[0])
+            if (
+                evidence["quality"] == "ACCOUNT_OBSERVATION"
+                and evidence["facts"].get("account_id") != bundle["account_id"]
+            ):
+                raise LedgerError("EXECUTION_ACCOUNT_MISMATCH", "Account capture scope mismatch")
             if evidence["quality"] not in {"OFFICIAL", "ACCOUNT_OBSERVATION"} or evidence[
                 "facts"
             ].get("unresolved_conflict"):
