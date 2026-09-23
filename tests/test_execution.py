@@ -69,6 +69,16 @@ def bundle(channel="CHANNEL_A", cap=1000):
         applicability_source_ids=["source"],
         limits=[rule],
         calendar=calendar,
+        quota_observations=[
+            dict(
+                business_date="2026-09-23",
+                observed_at=START.isoformat(),
+                valid_until="2026-09-23T15:00:00+08:00",
+                remaining_minor=cap,
+                quota_scope="CHANNEL_ACCOUNT",
+                source_ids=["source"],
+            )
+        ],
         rationale="Account and channel applicability explicitly reviewed",
     )
 
@@ -96,6 +106,16 @@ def test_mid_period_limit_and_intraday_change():
     new = dict(old, effective_from="2026-09-24T12:00:00+08:00", per_day_minor=500)
     old["effective_to"] = new["effective_from"]
     b["limits"].append(new)
+    b["quota_observations"] = [
+        dict(
+            business_date="2026-09-24",
+            observed_at="2026-09-24T12:00:00+08:00",
+            valid_until="2026-09-24T15:00:00+08:00",
+            remaining_minor=500,
+            quota_scope="CHANNEL_ACCOUNT",
+            source_ids=["source"],
+        )
+    ]
     result = run(b, now=dt("2026-09-24T13:00:00+08:00"))
     assert result["executable_minor"] == 500
     assert all(dt(s["at"]) >= dt(new["effective_from"]) for s in result["schedule"])
@@ -124,6 +144,7 @@ def test_existing_submission_daily_and_cumulative_scope():
     submitted[0]["external_platform"] = "OTHER"
     assert run(b, submitted=submitted)["executable_minor"] == 1500
     b["limits"][0]["quota_scope"] = "FUND_ACCOUNT_ALL_CHANNELS"
+    b["quota_observations"][0]["quota_scope"] = "FUND_ACCOUNT_ALL_CHANNELS"
     assert run(b, submitted=submitted)["executable_minor"] == 800
 
 
@@ -282,4 +303,75 @@ def test_unverified_evidence_cannot_approve_a_constraint(tmp_path):
     b = json_replace(bundle(), "source", source["id"])
     b["account_id"] = aid
     with pytest.raises(LedgerError, match="Resolve source"):
+        service.create_draft(ConstraintDraft(bundle=ConstraintBundle.model_validate(b)))
+
+
+def test_account_remaining_quota_counts_only_submissions_after_observation():
+    b = bundle()
+    b["quota_observations"][0].update(observed_at="2026-09-23T10:00:00+08:00", remaining_minor=200)
+    orders = [
+        dict(
+            code="CORE01",
+            external_platform="CHANNEL_A",
+            requested_amount_minor=700,
+            cancelled_amount_minor=0,
+            refunded_amount_minor=0,
+            submitted_business_date="2026-09-23",
+            submitted_at="2026-09-23T09:00:00+08:00",
+        ),
+        dict(
+            code="CORE01",
+            external_platform="CHANNEL_A",
+            requested_amount_minor=50,
+            cancelled_amount_minor=0,
+            refunded_amount_minor=0,
+            submitted_business_date="2026-09-23",
+            submitted_at="2026-09-23T11:00:00+08:00",
+        ),
+    ]
+    result = run(b, now=dt("2026-09-23T12:00:00+08:00"), submitted=orders)
+    assert (
+        sum(o["amount_minor"] for o in result["schedule"] if o["business_date"] == "2026-09-23")
+        == 150
+    )
+    assert result["executable_minor"] == 1150
+    assert result["future_quota_recheck_required"]
+
+
+@pytest.mark.parametrize("case", ["missing", "stale", "conflict"])
+def test_account_quota_unknown_never_becomes_zero_candidate(case):
+    b = bundle()
+    if case == "missing":
+        b["quota_observations"] = []
+    elif case == "stale":
+        b["quota_observations"][0]["valid_until"] = "2026-09-23T11:00:00+08:00"
+    else:
+        b["quota_observations"].append(dict(b["quota_observations"][0], remaining_minor=500))
+    result = run(b, now=dt("2026-09-23T12:00:00+08:00"))
+    assert result["candidate_minor"] == 4000
+    assert result["executable_minor"] == 1000
+    assert result["unverified_minor"] == 3000
+
+
+def test_account_capture_keeps_fingerprint_and_cannot_cross_accounts(tmp_path):
+    settings, _, aid, _ = terminal_plan(tmp_path / "db", outcome="SKIPPED")
+    service = ExecutionService(ResearchService(settings, now=lambda: START))
+    fingerprint = "a" * 64
+    request = SourceArchive(
+        instrument_code="CORE01",
+        source_name="Redacted account capture",
+        source_ref="attachment:sha256:" + fingerprint,
+        source_lineage="USER_ACCOUNT_CAPTURE",
+        retrieved_at=START,
+        published_date=None,
+        data_date=START.date(),
+        excerpt="Remaining quota",
+        quality="ACCOUNT_OBSERVATION",
+        original_sha256=fingerprint,
+        facts={"account_id": "another-account"},
+    )
+    saved = service.archive(request)
+    b = json_replace(bundle(), "source", saved["id"])
+    b["account_id"] = aid
+    with pytest.raises(LedgerError, match="Account capture scope mismatch"):
         service.create_draft(ConstraintDraft(bundle=ConstraintBundle.model_validate(b)))
