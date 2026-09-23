@@ -319,58 +319,7 @@ class DailyClient:
         }
 
     def research(self, topic: str) -> Json:
-        scope = self.scope()
-        brief = self.get("/v1/portfolio-brief", **scope)
-        strategy = self.get("/v1/strategy-assignment", portfolio_id=scope["portfolio_id"])
-        keys = ("医疗", "医药", "健康") if topic == "医疗" else (topic,)
-        instruments = [
-            i for i in strategy["instruments"] if any(k in i["instrument_name"] for k in keys)
-        ]
-        positions = {p["holding"]["instrument_code"]: p for p in brief["valuation"]["positions"]}
-        lines = [
-            f"{topic}主题受限研究 | 查询日期 {brief['as_of_date']} | WARNING",
-            "事实: 下列净值来自 Core 已保存快照; 不是板块指数涨幅或新闻因果证据。",
-            "推断: 基金名称仅用于识别候选相关性, 不能证明穿透行业暴露。",
-        ]
-        evidence: list[Json] = []
-        for i in instruments:
-            p = positions.get(i["instrument_code"], {})
-            nav = p.get("nav_snapshot") or {}
-            evidence.append({"instrument": i, "holding": p, "source_ref": nav.get("source_ref")})
-            lines.append(
-                f"- {i['instrument_code']} {i['instrument_name']}: "
-                f"市值 {p.get('market_value', '无持仓估值')}; "
-                f"组合权重 {p.get('weight_pct', '未知')}%; "
-                f"净值日期 {nav.get('nav_date', '缺失')}; "
-                f"来源 {nav.get('source_ref') or '缺失'}; "
-                f"质量 {p.get('data_quality', 'UNKNOWN')}"
-            )
-            lines.append(
-                f"  批准角色 {i['strategy_role']}; 定投资格 {i['contribution_eligible']}; "
-                f"基准 {i['benchmark_code'] or '未配置'}; 投资论点 {i['thesis_status']}"
-            )
-            lines.append(
-                "  新增资金: "
-                + (
-                    "当前不具备定投资格。"
-                    if not i["contribution_eligible"]
-                    else "资格不等于可买入, 仍须明确预算后由 Core 预览核对。"
-                )
-            )
-        lines += [
-            "缺失: 板块定义与区间涨幅、事件原文及时间、基金最新行业持仓、独立验证净值。",
-            "上涨及原因未获证实; 不把单只基金变化当作板块上涨, 不推导买入信号。",
-            "适用条件: 新资金须满足现有批准资格、舱位、在途占用、限购及信号条件。",
-            "策略决定: 如需改变资格/映射/风险阈值, 必须另建草稿并明确确认; 本研究不改变配置。",
-        ]
-        return {
-            "topic": topic,
-            "data_quality": "WARNING",
-            "evidence": evidence,
-            "causal_claim": "NOT_ESTABLISHED",
-            "lookthrough_exposure": "UNKNOWN",
-            "display_text": "\n".join(lines),
-        }
+        return self.get("/v1/research-diagnosis", **self.scope(), topic=topic)
 
     def workflow(
         self,

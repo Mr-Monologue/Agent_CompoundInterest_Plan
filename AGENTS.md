@@ -48,3 +48,8 @@
 - MCP 不可用时排查连接、版本、托管服务和脱敏日志，不用直接 SQL 或聊天记忆替代事实。
 - 开发测试使用独立检出和临时数据，生产部署仍遵循上面的当前版本确认边界。
 - Codex 接入不等于 Hermes Cron/通知已迁移，不自动停用旧任务或添加重复调度。
+
+## 背景与候选架构入口
+- 接手先读 `docs/PROJECT_BACKGROUND.md` 与唯一实施清单 `docs/LAUNCH_CHECKLIST.md`；实例稳定约定读 Git 排除的 `.codex/instance-background.md`。
+- `docs/architecture/value-dca-adaptive-architecture-v1.7-draft.md` 是候选来源，不是已激活策略或模型；旧运行形态服从 Windows Codex + Core + 后台调度。
+- HTTP 预览的候选分配不等于平台可执行安排；未知限额、有效期或交易日历必须明确阻断拆单承诺。
