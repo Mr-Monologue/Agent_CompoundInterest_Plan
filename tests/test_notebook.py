@@ -172,7 +172,14 @@ def test_dynamic_quota_separate_scoped_and_idempotent(tmp_path):
             data_date="2026-09-23",
             excerpt="remaining",
             quality="ACCOUNT_OBSERVATION",
-            facts=dict(account_id=aid, share_class="A", channel="test", observed_at=time),
+            facts=dict(
+                account_id=aid,
+                share_class="A",
+                channel="test",
+                observed_at=time,
+                remaining_minor=500,
+                quota_scope="CHANNEL_ACCOUNT",
+            ),
         )
     )
     request = QuotaCapture(
@@ -194,6 +201,12 @@ def test_dynamic_quota_separate_scoped_and_idempotent(tmp_path):
     assert len(svc.list_quotas(aid)) == 1 and not svc.list_constraints(aid)
     with pytest.raises(LedgerError):
         svc.record_quota(request.model_copy(update={"channel": "other"}))
+    for field, value in [("remaining_minor", 999), ("quota_scope", "FUND_ACCOUNT_ALL_CHANNELS")]:
+        mismatched = request.model_copy(
+            update={"observation": request.observation.model_copy(update={field: value})}
+        )
+        with pytest.raises(LedgerError):
+            svc.record_quota(mismatched)
     after = dump(settings.db_path)
     assert [
         v for v in before if not v.startswith('INSERT INTO "execution_quota_observations"')
