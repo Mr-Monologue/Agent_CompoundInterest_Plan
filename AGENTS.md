@@ -43,7 +43,8 @@
 
 - Ryan 选择使用本机 Codex 同时处理开发和日常投资操作，不要求 Hermes 中转。
 - 接入及排障先读 `docs/CODEX_WINDOWS.md`，使用现有 Core 和默认组合，禁止另建账本。
-- 日常事实从 `investor_core` MCP 获取；先检查健康与就绪、默认投资上下文和工作台。
+- 日常事实优先使用现有 Core HTTP 日常入口，先检查健康、就绪、只读默认上下文和工作台；不等待 MCP 修复。
+- 自然语言操作遵循 `docs/CODEX_DAILY_OPERATIONS.md`；唯一进度与恢复入口为 `docs/LAUNCH_CHECKLIST.md`。
 - MCP 不可用时排查连接、版本、托管服务和脱敏日志，不用直接 SQL 或聊天记忆替代事实。
 - 开发测试使用独立检出和临时数据，生产部署仍遵循上面的当前版本确认边界。
 - Codex 接入不等于 Hermes Cron/通知已迁移，不自动停用旧任务或添加重复调度。
