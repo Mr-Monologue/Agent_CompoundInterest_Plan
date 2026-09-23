@@ -197,6 +197,29 @@ def test_real_http_entry_queries_and_preview(tmp_path: Path) -> None:
                 time.sleep(0.2)
         else:
             pytest.fail("isolated HTTP server did not start")
+        # Actual socket HTTP evidence chain; all writes stay in this isolated database.
+        from datetime import UTC, datetime
+
+        source = {
+            "instrument_code": "CORE01",
+            "source_name": "Isolated source",
+            "source_ref": "https://example.com/execution-test",
+            "source_lineage": "TEST",
+            "retrieved_at": datetime.now(UTC).isoformat(),
+            "published_date": None,
+            "data_date": "2026-09-23",
+            "excerpt": "Isolated quote",
+            "quality": "UNVERIFIED",
+        }
+        archived = client.http.post("/v1/execution-evidence", json=source)
+        assert archived.status_code == 200
+        first_id = archived.json()["data"]["id"]
+        assert (
+            client.http.post("/v1/execution-evidence", json=source).json()["data"]["id"] == first_id
+        )
+        saved = client.get("/v1/execution-evidence", instrument_code="CORE01")["items"]
+        assert saved[0]["facts"]["excerpt"] == "Isolated quote"
+        assert not client.get("/v1/execution-constraints", account_id=_aid)["items"]
         before = dump(settings.db_path)
         assert client.investment()["brief"]["valuation"]["data_quality"] != "PASS"
         assert client.plan("200")["display_text"]

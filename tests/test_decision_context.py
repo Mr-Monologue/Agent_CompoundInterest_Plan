@@ -105,3 +105,41 @@ def test_http_research_and_execution_context_are_read_only(tmp_path: Path):
         == 422
     )
     assert dump(settings.db_path) == before
+
+
+def test_saved_official_mandate_is_reused_without_strategy_promotion():
+    assignment = {
+        "strategy": {"version": "1.6"},
+        "instruments": [
+            {
+                "instrument_code": "MED",
+                "instrument_name": "医疗",
+                "strategy_role": "SATELLITE",
+                "contribution_eligible": False,
+                "thesis_status": "ACTIVE",
+            }
+        ],
+    }
+    record = {
+        "source_name": "Annual report",
+        "source_ref": "https://example.com/report",
+        "facts": {
+            "kind": "EXECUTION_SOURCE_V1",
+            "quality": "OFFICIAL",
+            "data_date": "2025-12-31",
+            "published_date": "2026-03-31",
+            "retrieved_at": "2026-09-23T00:00:00Z",
+            "facts": {"mandate_summary": "医疗健康股票为主"},
+        },
+    }
+    result = research_context(
+        "医疗",
+        {"as_of_date": "2026-09-23", "valuation": {"positions": []}},
+        assignment,
+        {"MED": [record]},
+    )
+    dossier = result["evidence"][0]
+    assert "FUND_MANDATE" not in dossier["missing"]
+    assert dossier["documented_mandates"][0]["data_date"] == "2025-12-31"
+    assert dossier["why_hold"] is None and not result["money_action"]
+    assert "医疗健康股票为主" in result["display_text"]

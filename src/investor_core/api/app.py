@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -81,6 +81,7 @@ from investor_core.api.schemas import (
 from investor_core.capital import CapitalService
 from investor_core.config import Settings, get_settings
 from investor_core.decision_context import execution_context, research_context
+from investor_core.execution import ConstraintDraft, ExecutionService, SourceArchive
 from investor_core.health import build_doctor_report
 from investor_core.ledger import LedgerError, LedgerService
 from investor_core.logging_config import build_uvicorn_log_config
@@ -128,6 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     performance = PerformanceService(runtime_settings)
     capital = CapitalService(runtime_settings)
     research = ResearchService(runtime_settings)
+    execution = ExecutionService(research)
     workspace = WorkspaceService(runtime_settings)
     subscriptions = SubscriptionService(runtime_settings)
     weekly_reports = WeeklyReportService(runtime_settings)
@@ -1302,12 +1304,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             data_quality=quality,
         )
 
+    @app.post("/v1/execution-evidence")
+    def execution_archive(request: SourceArchive) -> dict[str, Any]:
+        return success(execution.archive(request))
+
+    @app.get("/v1/execution-evidence")
+    def execution_evidence_list(
+        instrument_code: str, limit: int = Query(100, ge=1, le=500)
+    ) -> dict[str, Any]:
+        records = research.list_evidence(instrument_code=instrument_code, limit=limit)
+        return success(
+            {"items": [r for r in records if r["facts"].get("kind") == "EXECUTION_SOURCE_V1"]}
+        )
+
+    @app.get("/v1/execution-constraints")
+    def execution_list(account_id: str) -> dict[str, Any]:
+        return success({"items": execution.list_constraints(account_id)})
+
+    @app.get("/v1/execution-constraint-drafts")
+    def execution_drafts_list(account_id: str) -> dict[str, Any]:
+        return success({"items": execution.list_drafts(account_id)})
+
+    @app.post("/v1/execution-constraint-drafts")
+    def execution_draft(request: ConstraintDraft) -> dict[str, Any]:
+        return success(execution.create_draft(request))
+
+    @app.post("/v1/execution-constraint-drafts/{draft_id}/commit")
+    def execution_commit(draft_id: str, request: TransactionDraftCommitRequest) -> dict[str, Any]:
+        return success(execution.commit(draft_id=draft_id, **request.model_dump()))
+
     @app.get("/v1/weekly-plan-preview")
     def weekly_plan_preview_get(
         portfolio_id: str,
         account_id: str,
         contribution_amount: str,
         as_of_date: str | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+        channel: str | None = None,
     ) -> dict[str, Any]:
         result = market_data.weekly_plan_preview(
             portfolio_id=portfolio_id,
@@ -1316,6 +1350,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             as_of_date_value=as_of_date,
         )
         result = execution_context(result, strategies.get_assignment(portfolio_id=portfolio_id))
+        if (period_start is None) != (period_end is None):
+            raise LedgerError("EXECUTION_PERIOD_INVALID", "Provide both exact period boundaries")
+        if period_start is None:
+            plan_day = date.fromisoformat(result["as_of_date"])
+            period_start = datetime.combine(
+                plan_day, datetime.min.time(), ZoneInfo("Asia/Shanghai")
+            )
+            period_end = period_start + timedelta(days=7)
+        assert period_end is not None
+        result = execution.assess(
+            result, account_id=account_id, start=period_start, end=period_end, channel=channel
+        )
         return success(result, warnings=result["warnings"], data_quality=result["data_quality"])
 
     @app.get("/v1/research-diagnosis")
