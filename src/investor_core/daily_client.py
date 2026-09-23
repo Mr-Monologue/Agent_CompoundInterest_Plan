@@ -21,6 +21,9 @@ from croniter import croniter
 Json = dict[str, Any]
 # Named workflows only: no generic POST, trading, source switch or market refresh.
 WORKFLOWS = {
+    "quota-observation": ("/v1/execution-quota-observations", "draft", False),
+    "research-case-draft": ("/v1/research-case-drafts", "draft", True),
+    "decision-journal": ("/v1/decision-journal", "draft", True),
     "evidence-archive": ("/v1/execution-evidence", "draft", False),
     "constraint-draft": ("/v1/execution-constraint-drafts", "draft", False),
     "constraint-commit": ("/v1/execution-constraint-drafts/{id}/commit", "confirm", False),
@@ -425,6 +428,8 @@ def main() -> None:
     plan.add_argument("--period-end")
     plan.add_argument("--channel")
     sub.add_parser("system").add_argument("--since")
+    sub.add_parser("case").add_argument("--code", required=True)
+    sub.add_parser("risk-coverage")
     sub.add_parser("research").add_argument("--topic", default="医疗")
     inspect = sub.add_parser("inspect")
     inspect.add_argument("kind")
@@ -447,6 +452,14 @@ def main() -> None:
             )
         elif args.command == "system":
             result = client.system(args.since)
+        elif args.command == "case":
+            result = client.get(
+                "/v1/research-case",
+                portfolio_id=client.scope()["portfolio_id"],
+                instrument_code=args.code,
+            )
+        elif args.command == "risk-coverage":
+            result = client.get("/v1/risk-coverage", **client.scope())
         elif args.command == "research":
             result = client.research(args.topic)
         elif args.command == "inspect":
