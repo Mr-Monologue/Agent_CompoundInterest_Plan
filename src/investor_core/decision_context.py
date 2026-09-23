@@ -119,6 +119,8 @@ def research_context(
             missing.remove("VERSIONED_THESIS")
             missing.remove("RETURN_DRIVER_PROFILE")
             missing += ["THESIS_APPROVAL_PENDING", "DRIVER_REVIEW_PENDING"]
+            if any(c["kind"] == "COUNTER_EVIDENCE" for c in draft["counter_evidence"]):
+                missing.remove("COUNTER_EVIDENCE")
         dossier = {
             "draft_thesis_version": draft["version"] if draft else None,
             "research_notebook": saved,

@@ -164,6 +164,7 @@ def test_journal_append_reviews_and_http_reads_no_writes(tmp_path):
     assert item["decision_frame"]["persisted_decision_journal"]
     assert "THESIS_APPROVAL_PENDING" in item["missing"]
     assert "VERSIONED_THESIS" not in item["missing"]
+    assert "COUNTER_EVIDENCE" not in item["missing"]
     assert "已有版本化研究草稿" in diagnosis["display_text"]
     risk = web.get("/v1/risk-coverage", params={"portfolio_id": pid, "account_id": aid}).json()[
         "data"
