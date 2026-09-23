@@ -304,3 +304,39 @@ def test_research_does_not_convert_name_or_recent_nav_into_buy_signal(monkeypatc
     assert result["causal_claim"] == "NOT_ESTABLISHED"
     assert "当前不具备定投资格" in result["display_text"]
     assert "https://example.org/nav" in result["display_text"]
+
+
+def test_week_uses_selected_account_and_marks_truncated_history(monkeypatch) -> None:
+    client = DailyClient()
+    monkeypatch.setattr(client, "scope", lambda: {"portfolio_id": "p", "account_id": "selected"})
+    plans = [
+        {
+            "id": "mine",
+            "account_id": "selected",
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-07",
+            "status": "SKIPPED",
+        }
+    ]
+    plans += [
+        {
+            "id": "other",
+            "account_id": "other",
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-07",
+            "status": "SKIPPED",
+        }
+    ] * 499
+
+    def get(path, **kwargs):
+        if path == "/v1/weekly-plans":
+            return {"items": plans}
+        if path == "/v1/weekly-report-drafts":
+            assert kwargs["plan_id"] == "mine"
+        return {"items": []}
+
+    monkeypatch.setattr(client, "get", get)
+    result = client.week()
+    assert [p["id"] for p in result["plans"]] == ["mine"]
+    assert result["history_may_be_truncated"]
+    assert "WARNING" in result["display_text"]

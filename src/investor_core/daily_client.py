@@ -202,6 +202,8 @@ class DailyClient:
     def week(self) -> Json:
         scope = self.scope()
         plans = self.get("/v1/weekly-plans", portfolio_id=scope["portfolio_id"], limit=500)["items"]
+        history_may_be_truncated = len(plans) == 500
+        plans = [p for p in plans if p["account_id"] == scope["account_id"]]
         today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
         current = [p for p in plans if p["period_start"] <= today <= p["period_end"]]
         reports = self.get("/v1/weekly-reports", portfolio_id=scope["portfolio_id"], limit=500)
@@ -213,6 +215,8 @@ class DailyClient:
             "当前周期计划: "
             + ("、".join(p["status"] for p in current) if current else "尚无覆盖今日的计划"),
         ]
+        if history_may_be_truncated:
+            lines.append("WARNING: 历史列表达到查询上限, 未展示不等于不存在。")
         for p in plans:
             lines.append(f"- {p['period_start']}—{p['period_end']}: {p['status']}")
             for d in drafts[p["id"]]:
@@ -225,7 +229,7 @@ class DailyClient:
             "plans": plans,
             "report_drafts": drafts,
             "reports": reports,
-            "history_may_be_truncated": len(plans) == 500,
+            "history_may_be_truncated": history_may_be_truncated,
             "display_text": "\n".join(lines),
         }
 
