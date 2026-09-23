@@ -21,6 +21,9 @@ from croniter import croniter
 Json = dict[str, Any]
 # Named workflows only: no generic POST, trading, source switch or market refresh.
 WORKFLOWS = {
+    "evidence-archive": ("/v1/execution-evidence", "draft", False),
+    "constraint-draft": ("/v1/execution-constraint-drafts", "draft", False),
+    "constraint-commit": ("/v1/execution-constraint-drafts/{id}/commit", "confirm", False),
     "plan-draft": ("/v1/weekly-plans", "draft", True),
     "plan-freeze": ("/v1/weekly-plans/{id}/freeze", "confirm", False),
     "skip-draft": ("/v1/weekly-plans/{id}/skip-drafts", "draft", False),
@@ -190,14 +193,28 @@ class DailyClient:
             + workspace["display_text"],
         }
 
-    def plan(self, budget: str) -> Json:
+    def plan(
+        self,
+        budget: str,
+        *,
+        period_start: str | None = None,
+        period_end: str | None = None,
+        channel: str | None = None,
+    ) -> Json:
         try:
             value = Decimal(budget)
             if not value.is_finite() or value <= 0 or value != value.quantize(Decimal("0.01")):
                 raise ValueError
         except (InvalidOperation, ValueError):
             raise AssistantError("需要用户明确给出的正数预算, 最多两位小数。") from None
-        return self.get("/v1/weekly-plan-preview", **self.scope(), contribution_amount=str(value))
+        return self.get(
+            "/v1/weekly-plan-preview",
+            **self.scope(),
+            contribution_amount=str(value),
+            period_start=period_start,
+            period_end=period_end,
+            channel=channel,
+        )
 
     def week(self) -> Json:
         scope = self.scope()
@@ -402,7 +419,11 @@ def main() -> None:
     sub.add_parser("investment")
     sub.add_parser("context")
     sub.add_parser("week")
-    sub.add_parser("plan").add_argument("--budget", required=True)
+    plan = sub.add_parser("plan")
+    plan.add_argument("--budget", required=True)
+    plan.add_argument("--period-start")
+    plan.add_argument("--period-end")
+    plan.add_argument("--channel")
     sub.add_parser("system").add_argument("--since")
     sub.add_parser("research").add_argument("--topic", default="医疗")
     inspect = sub.add_parser("inspect")
@@ -418,7 +439,12 @@ def main() -> None:
     client = DailyClient(args.core_url, portfolio_id=args.portfolio, account_id=args.account)
     try:
         if args.command == "plan":
-            result = client.plan(args.budget)
+            result = client.plan(
+                args.budget,
+                period_start=args.period_start,
+                period_end=args.period_end,
+                channel=args.channel,
+            )
         elif args.command == "system":
             result = client.system(args.since)
         elif args.command == "research":

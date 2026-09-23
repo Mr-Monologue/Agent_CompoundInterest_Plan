@@ -2060,6 +2060,7 @@ class ResearchService:
         if not facts:
             raise LedgerError("RESEARCH_FACTS_REQUIRED", "research evidence facts are required")
         with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             instrument = connection.execute(
                 "SELECT * FROM instruments WHERE code=? AND status='ACTIVE'",
                 (instrument_code.strip().upper(),),
@@ -2079,7 +2080,13 @@ class ResearchService:
                 "source_lineage": source_lineage.strip().upper(),
                 "facts": facts,
             }
-            facts_hash = _hash(payload)
+            identity = payload
+            if facts.get("kind") == "EXECUTION_SOURCE_V1":
+                identity = {
+                    **payload,
+                    "facts": {k: v for k, v in facts.items() if k != "retrieved_at"},
+                }
+            facts_hash = _hash(identity)
             existing = connection.execute(
                 "SELECT * FROM market_research_evidence WHERE facts_hash=?",
                 (facts_hash,),
