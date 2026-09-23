@@ -1414,9 +1414,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for i in assignment["instruments"]
             if any(k in i["instrument_name"] for k in keys)
         }
-        result = research_context(topic, brief, assignment, evidence)
+        notebooks = {code: notebook.read(portfolio_id, code) for code in evidence}
+        result = research_context(topic, brief, assignment, evidence, notebooks)
         for dossier in result["evidence"]:
-            saved = notebook.read(portfolio_id, dossier["instrument"]["instrument_code"])
+            saved = notebooks[dossier["instrument"]["instrument_code"]]
             dossier["research_notebook"] = saved
             if saved["latest"]:
                 result["display_text"] += "\n\n" + saved["display_text"]

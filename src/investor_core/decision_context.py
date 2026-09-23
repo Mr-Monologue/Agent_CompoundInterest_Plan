@@ -69,7 +69,11 @@ def execution_context(preview: Json, assignment: Json) -> Json:
 
 
 def research_context(
-    topic: str, brief: Json, assignment: Json, evidence: dict[str, list[Json]]
+    topic: str,
+    brief: Json,
+    assignment: Json,
+    evidence: dict[str, list[Json]],
+    notebooks: dict[str, Json] | None = None,
 ) -> Json:
     """Project saved facts and explicit unknowns; never infer a thesis from a status flag."""
     keys = ("医疗", "医药", "健康") if topic == "医疗" else (topic,)
@@ -87,6 +91,8 @@ def research_context(
         position = positions.get(code, {})
         nav = position.get("nav_snapshot") or {}
         records = evidence.get(code, [])
+        saved = (notebooks or {}).get(code, {})
+        draft = saved.get("latest")
         missing = [
             "VERSIONED_THESIS",
             "RETURN_DRIVER_PROFILE",
@@ -109,7 +115,13 @@ def research_context(
         ]
         if mandates:
             missing.remove("FUND_MANDATE")
+        if draft:
+            missing.remove("VERSIONED_THESIS")
+            missing.remove("RETURN_DRIVER_PROFILE")
+            missing += ["THESIS_APPROVAL_PENDING", "DRIVER_REVIEW_PENDING"]
         dossier = {
+            "draft_thesis_version": draft["version"] if draft else None,
+            "research_notebook": saved,
             "documented_mandates": mandates,
             "instrument": i,
             "holding": position,
@@ -135,7 +147,7 @@ def research_context(
                 "chosen_action": "RESEARCH_ONLY_NO_MONEY_ACTION",
                 "process_quality": "NOT_REVIEWED",
                 "outcome_quality": "UNKNOWN",
-                "persisted_decision_journal": False,
+                "persisted_decision_journal": bool(saved.get("journal")),
             },
             "relative_diagnosis": "DATA_BLOCKED",
         }
@@ -154,9 +166,17 @@ def research_context(
                 if not i["contribution_eligible"]
                 else "仍需预算、舱位、在途、信号及执行条件核查。"
             ),
-            f"  原持有理由/收益来源: 未形成可读取的版本化证据; 旧状态 {i['thesis_status']} "
-            "不等于完整投资论点。",
-            "  MAPER 待补: 合同边界、产品优势、长期空间、执行约束、收益可靠性及反方证据。",
+            (
+                "  原始买入理由仍未知; 已有版本化研究草稿, 未经确认不改变策略。"
+                if draft
+                else f"  原持有理由/收益来源: 未形成版本化证据; 旧状态 {i['thesis_status']} "
+                "不等于完整投资论点。"
+            ),
+            (
+                "  MAPER 与反证详见版本化草稿; 未完成项仍保持未知。"
+                if draft
+                else "  MAPER 待补: 合同边界、产品优势、长期空间、执行约束、收益可靠性及反方证据。"
+            ),
             "  相对表现: DATA_BLOCKED; 需确认适用基准、窗口与可比收益数据。",
         ]
         for mandate in mandates:
