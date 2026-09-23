@@ -315,6 +315,11 @@ class ExecutionService:
                 raise LedgerError("EXECUTION_SOURCE_MISSING", "Archive the quoted evidence first")
             evidence = json.loads(row[0])
             if (
+                evidence["instrument_code"].strip().upper()
+                != bundle["instrument_code"].strip().upper()
+            ):
+                raise LedgerError("EXECUTION_FUND_MISMATCH", "Source must reference the exact fund")
+            if (
                 evidence["quality"] == "ACCOUNT_OBSERVATION"
                 and evidence["facts"].get("account_id") != bundle["account_id"]
             ):

@@ -147,6 +147,25 @@ def test_journal_append_reviews_and_http_reads_no_writes(tmp_path):
         "/v1/research-case", params={"portfolio_id": pid, "instrument_code": "CORE01"}
     ).json()["data"]
     assert len(result["journal"]) == 2 and result["latest"]["thesis"]["original_buy_reason"] is None
+    diagnosis = web.get(
+        "/v1/research-diagnosis",
+        params={"portfolio_id": pid, "account_id": aid, "topic": payload["instrument_code"]},
+    ).json()["data"]
+    # Match the actual registered display name, rather than relying on topic code matching.
+    assignment = web.get("/v1/strategy-assignment", params={"portfolio_id": pid}).json()["data"]
+    name = next(
+        i["instrument_name"] for i in assignment["instruments"] if i["instrument_code"] == "CORE01"
+    )
+    diagnosis = web.get(
+        "/v1/research-diagnosis", params={"portfolio_id": pid, "account_id": aid, "topic": name}
+    ).json()["data"]
+    item = next(i for i in diagnosis["evidence"] if i["instrument"]["instrument_code"] == "CORE01")
+    assert item["draft_thesis_version"] == 1 and item["thesis_version"] is None
+    assert item["decision_frame"]["persisted_decision_journal"]
+    assert "THESIS_APPROVAL_PENDING" in item["missing"]
+    assert "VERSIONED_THESIS" not in item["missing"]
+    assert "COUNTER_EVIDENCE" not in item["missing"]
+    assert "已有版本化研究草稿" in diagnosis["display_text"]
     risk = web.get("/v1/risk-coverage", params={"portfolio_id": pid, "account_id": aid}).json()[
         "data"
     ]
@@ -211,3 +230,22 @@ def test_dynamic_quota_separate_scoped_and_idempotent(tmp_path):
     assert [
         v for v in before if not v.startswith('INSERT INTO "execution_quota_observations"')
     ] == [v for v in after if not v.startswith('INSERT INTO "execution_quota_observations"')]
+
+
+def test_constraint_cannot_reuse_another_funds_evidence(tmp_path):
+    import json
+
+    from test_execution import bundle
+
+    from investor_core.execution import ConstraintBundle, ConstraintDraft
+    from investor_core.ledger import LedgerService
+
+    settings, _, aid, research, payload = setup_case(tmp_path)
+    LedgerService(settings).create_instrument(code="OTHER", name="Other fund")
+    evidence_id = payload["maper"]["M"][0]["evidence_ids"][0]
+    data = json.loads(json.dumps(bundle()).replace('"source"', json.dumps(evidence_id)))
+    data.update(account_id=aid, instrument_code="OTHER")
+    with pytest.raises(LedgerError, match="exact fund"):
+        ExecutionService(research).create_draft(
+            ConstraintDraft(bundle=ConstraintBundle.model_validate(data))
+        )
