@@ -173,6 +173,15 @@ def source_ids(bundle: Json) -> set[str]:
     return ids
 
 
+class QuotaCapture(StrictModel):
+    account_id: str
+    instrument_code: str
+    share_class: str
+    channel: str
+    observation: RemainingQuota
+    actor_ref: str = "codex"
+
+
 class ExecutionService:
     def __init__(self, research: ResearchService) -> None:
         self.research = research
@@ -204,6 +213,56 @@ class ExecutionService:
             facts=facts,
             actor_ref=request.actor_ref,
         )
+
+    def record_quota(self, request: QuotaCapture) -> Json:
+        payload = request.model_dump(mode="json")
+        observation = payload["observation"]
+        if request.observation.observed_at > self.research._now():
+            raise LedgerError("EXECUTION_QUOTA_FUTURE", "Cannot record future quota")
+        with self.research._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if not connection.execute(
+                "SELECT 1 FROM accounts WHERE id=? AND status='ACTIVE'", (request.account_id,)
+            ).fetchone():
+                raise LedgerError("EXECUTION_ACCOUNT_INVALID", "Active account required")
+            for eid in observation["source_ids"]:
+                row = connection.execute(
+                    "SELECT e.facts_json, i.code FROM market_research_evidence e "
+                    "JOIN instruments i ON i.id=e.instrument_id WHERE e.id=?",
+                    (eid,),
+                ).fetchone()
+                facts = json.loads(row[0]) if row else {}
+                scope_facts = facts.get("facts", {})
+                if (
+                    not row
+                    or row["code"] != request.instrument_code
+                    or facts.get("quality") != "ACCOUNT_OBSERVATION"
+                    or any(
+                        scope_facts.get(k) != payload[k]
+                        for k in ("account_id", "channel", "share_class")
+                    )
+                    or scope_facts.get("observed_at") != observation["observed_at"]
+                ):
+                    raise LedgerError(
+                        "EXECUTION_QUOTA_SCOPE",
+                        "Capture must match fund/account/channel/class/time",
+                    )
+            key = digest(payload)
+            connection.execute(
+                "INSERT OR IGNORE INTO execution_quota_observations VALUES (?,?,?)",
+                (key, request.account_id, json.dumps(payload, ensure_ascii=False)),
+            )
+        return dict(id=key, observation=payload, rule_approval=False)
+
+    def list_quotas(self, account_id: str) -> list[Json]:
+        with self.research._connect() as c:
+            return [
+                json.loads(r[0])
+                for r in c.execute(
+                    "SELECT payload_json FROM execution_quota_observations WHERE account_id=?",
+                    (account_id,),
+                )
+            ]
 
     def list_constraints(self, account_id: str) -> list[Json]:
         with self.research._connect() as connection:
@@ -347,6 +406,18 @@ class ExecutionService:
             )
         now = self.research._now()
         constraints = self.list_constraints(account_id)
+        observations = self.list_quotas(account_id)
+        for constraint in constraints:
+            bundle = constraint["bundle"]
+            captures = [
+                o["observation"]
+                for o in observations
+                if all(
+                    o[k] == bundle[k]
+                    for k in ("account_id", "instrument_code", "channel", "share_class")
+                )
+            ]
+            bundle["quota_observations"] = bundle.get("quota_observations", []) + captures
         with self.research._connect() as connection:
             # Entire relevant history: no pagination truncation and no inferred transaction date.
             submitted = [

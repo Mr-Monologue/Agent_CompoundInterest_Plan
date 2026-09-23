@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.34.0",
+  "version": "0.35.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
-  "database_revision": "0038_execution_constraints",
+  "database_revision": "0039_research_notebook",
   "minimum_current_version": "0.5.3",
-  "notes": "Evidence-backed execution constraints and calendar splits; verified recovery snapshots and cwd-independent updater. No strategy activation."
+  "notes": "Versioned advisory research, MAPER, decision journal, read-only risk coverage and independent quota observations. No strategy activation."
 }

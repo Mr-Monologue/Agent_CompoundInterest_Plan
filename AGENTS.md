@@ -53,3 +53,4 @@
 - 接手先读 `docs/PROJECT_BACKGROUND.md` 与唯一实施清单 `docs/LAUNCH_CHECKLIST.md`；实例稳定约定读 Git 排除的 `.codex/instance-background.md`。
 - `docs/architecture/value-dca-adaptive-architecture-v1.7-draft.md` 是候选来源，不是已激活策略或模型；旧运行形态服从 Windows Codex + Core + 后台调度。
 - HTTP 预览的候选分配不等于平台可执行安排；未知限额、有效期或交易日历必须明确阻断拆单承诺。
+- 阶段 B 研究及风险覆盖见 docs/RESEARCH_NOTEBOOK.md；账户取证优先 040046，独立于研究交付。研究草稿不代替原始买入理由或投资规则确认。

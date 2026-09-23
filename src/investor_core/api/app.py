@@ -81,12 +81,13 @@ from investor_core.api.schemas import (
 from investor_core.capital import CapitalService
 from investor_core.config import Settings, get_settings
 from investor_core.decision_context import execution_context, research_context
-from investor_core.execution import ConstraintDraft, ExecutionService, SourceArchive
+from investor_core.execution import ConstraintDraft, ExecutionService, QuotaCapture, SourceArchive
 from investor_core.health import build_doctor_report
 from investor_core.ledger import LedgerError, LedgerService
 from investor_core.logging_config import build_uvicorn_log_config
 from investor_core.market_data import MarketDataService
 from investor_core.market_sync import MarketSyncService
+from investor_core.notebook import CaseDraft, JournalEntry, NotebookService, risk_coverage
 from investor_core.operations import OperationsService
 from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
@@ -130,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     capital = CapitalService(runtime_settings)
     research = ResearchService(runtime_settings)
     execution = ExecutionService(research)
+    notebook = NotebookService(research)
     workspace = WorkspaceService(runtime_settings)
     subscriptions = SubscriptionService(runtime_settings)
     weekly_reports = WeeklyReportService(runtime_settings)
@@ -1317,6 +1319,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             {"items": [r for r in records if r["facts"].get("kind") == "EXECUTION_SOURCE_V1"]}
         )
 
+    @app.post("/v1/execution-quota-observations")
+    def execution_quota_record(request: QuotaCapture) -> dict[str, Any]:
+        return success(execution.record_quota(request))
+
+    @app.get("/v1/execution-quota-observations")
+    def execution_quotas_get(account_id: str) -> dict[str, Any]:
+        return success({"items": execution.list_quotas(account_id)})
+
     @app.get("/v1/execution-constraints")
     def execution_list(account_id: str) -> dict[str, Any]:
         return success({"items": execution.list_constraints(account_id)})
@@ -1364,6 +1374,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return success(result, warnings=result["warnings"], data_quality=result["data_quality"])
 
+    @app.post("/v1/research-case-drafts")
+    def research_case_create(request: CaseDraft) -> dict[str, Any]:
+        return success(notebook.create(request), data_quality="WARNING")
+
+    @app.post("/v1/decision-journal")
+    def decision_journal_create(request: JournalEntry) -> dict[str, Any]:
+        return success(notebook.journal(request), data_quality="WARNING")
+
+    @app.get("/v1/research-case")
+    def research_case_get(portfolio_id: str, instrument_code: str) -> dict[str, Any]:
+        return success(notebook.read(portfolio_id, instrument_code), data_quality="WARNING")
+
+    @app.get("/v1/risk-coverage")
+    def risk_coverage_get(portfolio_id: str, account_id: str) -> dict[str, Any]:
+        assignment = strategies.get_assignment(portfolio_id=portfolio_id)
+        brief = market_data.portfolio_brief(portfolio_id=portfolio_id, account_id=account_id)
+        observations = {
+            i["instrument_code"]: risk.list_lifecycle_observations(
+                instrument_code=i["instrument_code"], limit=500
+            )
+            for i in assignment["instruments"]
+        }
+        return success(risk_coverage(assignment, brief, observations), data_quality="WARNING")
+
     @app.get("/v1/research-diagnosis")
     def research_diagnosis_get(
         portfolio_id: str,
@@ -1381,6 +1415,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if any(k in i["instrument_name"] for k in keys)
         }
         result = research_context(topic, brief, assignment, evidence)
+        for dossier in result["evidence"]:
+            saved = notebook.read(portfolio_id, dossier["instrument"]["instrument_code"])
+            dossier["research_notebook"] = saved
+            if saved["latest"]:
+                result["display_text"] += "\n\n" + saved["display_text"]
         return success(result, data_quality="WARNING")
 
     @app.post("/v1/weekly-plans")
