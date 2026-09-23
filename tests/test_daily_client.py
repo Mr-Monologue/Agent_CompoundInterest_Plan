@@ -299,6 +299,12 @@ def test_research_does_not_convert_name_or_recent_nav_into_buy_signal(monkeypatc
         },
     }
     monkeypatch.setattr(client, "get", lambda path, **kwargs: responses[path])
+    from investor_core.decision_context import research_context
+
+    responses["/v1/strategy-assignment"]["strategy"] = {"version": "test"}
+    responses["/v1/research-diagnosis"] = research_context(
+        "医疗", responses["/v1/portfolio-brief"], responses["/v1/strategy-assignment"], {}
+    )
     result = client.research("医疗")
     assert result["lookthrough_exposure"] == "UNKNOWN"
     assert result["causal_claim"] == "NOT_ESTABLISHED"

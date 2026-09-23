@@ -1,3 +1,7 @@
+# v0.33.1
+
+Read-only execution constraint diagnostics distinguish candidate allocations from platform execution. Core research diagnosis preserves missing thesis, evidence and model limitations. Candidate v1.7 architecture is archived for audit only; no strategy, money algorithm or schema change.
+
 ## v0.33.0
 
 - 新增本机 HTTP 日常入口：真实组合、明确预算预览、周报草稿、调度审计和受限机会解释。
