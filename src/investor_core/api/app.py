@@ -80,6 +80,7 @@ from investor_core.api.schemas import (
 )
 from investor_core.capital import CapitalService
 from investor_core.config import Settings, get_settings
+from investor_core.decision_context import execution_context, research_context
 from investor_core.health import build_doctor_report
 from investor_core.ledger import LedgerError, LedgerService
 from investor_core.logging_config import build_uvicorn_log_config
@@ -1314,11 +1315,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             contribution_amount=contribution_amount,
             as_of_date_value=as_of_date,
         )
-        return success(
-            result,
-            warnings=result["warnings"],
-            data_quality=result["data_quality"],
-        )
+        result = execution_context(result, strategies.get_assignment(portfolio_id=portfolio_id))
+        return success(result, warnings=result["warnings"], data_quality=result["data_quality"])
+
+    @app.get("/v1/research-diagnosis")
+    def research_diagnosis_get(
+        portfolio_id: str,
+        account_id: str,
+        topic: str = Query(default="医疗", min_length=1, max_length=80),
+    ) -> dict[str, Any]:
+        brief = market_data.portfolio_brief(portfolio_id=portfolio_id, account_id=account_id)
+        assignment = strategies.get_assignment(portfolio_id=portfolio_id)
+        keys = ("医疗", "医药", "健康") if topic == "医疗" else (topic,)
+        evidence = {
+            i["instrument_code"]: research.list_evidence(
+                instrument_code=i["instrument_code"], limit=100
+            )
+            for i in assignment["instruments"]
+            if any(k in i["instrument_name"] for k in keys)
+        }
+        result = research_context(topic, brief, assignment, evidence)
+        return success(result, data_quality="WARNING")
 
     @app.post("/v1/weekly-plans")
     def weekly_plan_draft_create(

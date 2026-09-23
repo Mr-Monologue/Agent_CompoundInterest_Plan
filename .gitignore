@@ -25,3 +25,7 @@ update-state.json
 
 # Local release/update staging never belongs in source control.
 .update-staging/
+
+# User-instance agreements and timestamped production snapshots are private.
+.codex/instance-background.md
+.codex/production-snapshot.md
