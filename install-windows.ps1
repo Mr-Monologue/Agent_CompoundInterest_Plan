@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$InstallDir = "C:\investor\value-dca-agent",
     [string]$HermesProfile = "investor",
@@ -177,6 +177,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 
 Push-Location $ProjectRoot
 $DatabaseBackup = $null
+$DatabaseBackupVerified = $false
 try {
     Write-Step "Installing Python 3.11 and locked dependencies"
     $SyncExitCode = 1
@@ -219,6 +220,7 @@ try {
         Write-Step "Creating a verified pre-migration database backup"
         & uv run investor db backup --output $DatabaseBackup
         Assert-LastExit "database backup"
+        $DatabaseBackupVerified = $true
     }
 
     Write-Step "Applying idempotent database migrations"
@@ -443,7 +445,7 @@ try {
     Write-Host "Broker connections and automatic trading remain disabled."
 }
 catch {
-    if ($null -ne $DatabaseBackup -and (Test-Path $DatabaseBackup)) {
+    if ($DatabaseBackupVerified -and $null -ne $DatabaseBackup -and (Test-Path $DatabaseBackup)) {
         Write-Warning "Installation failed; restoring the pre-migration database backup."
         $Task = Get-ScheduledTask -TaskName $CoreTaskName -ErrorAction SilentlyContinue
         if ($null -ne $Task -and $Task.State -eq "Running") {

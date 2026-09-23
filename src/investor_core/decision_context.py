@@ -95,7 +95,22 @@ def research_context(
             "SECTOR_INDEX_AND_EVENT_EVIDENCE",
             "HOLDINGS_LOOKTHROUGH",
         ]
+        mandates = [
+            {
+                "summary": r["facts"]["facts"]["mandate_summary"],
+                "data_date": r["facts"]["data_date"],
+                "source_ref": r["source_ref"],
+                "current_strategy_approval": False,
+            }
+            for r in records
+            if r.get("facts", {}).get("kind") == "EXECUTION_SOURCE_V1"
+            and r["facts"].get("quality") == "OFFICIAL"
+            and r["facts"].get("facts", {}).get("mandate_summary")
+        ]
+        if mandates:
+            missing.remove("FUND_MANDATE")
         dossier = {
+            "documented_mandates": mandates,
             "instrument": i,
             "holding": position,
             "source_ref": nav.get("source_ref"),
@@ -144,6 +159,19 @@ def research_context(
             "  MAPER 待补: 合同边界、产品优势、长期空间、执行约束、收益可靠性及反方证据。",
             "  相对表现: DATA_BLOCKED; 需确认适用基准、窗口与可比收益数据。",
         ]
+        for mandate in mandates:
+            lines.append(
+                f"  历史产品边界 ({mandate['data_date']}): {mandate['summary']}; "
+                "不等于当前持仓穿透、用户投资论点或近期上涨原因。"
+            )
+        for record in records:
+            archived = record.get("facts", {})
+            if archived.get("kind") == "EXECUTION_SOURCE_V1":
+                lines.append(
+                    f"  可复用证据: {record['source_name']}; 数据 {archived['data_date']}; "
+                    f"发布 {archived['published_date'] or '未注明'}; "
+                    f"获取 {archived['retrieved_at']}; {record['source_ref']}"
+                )
     if not dossiers:
         lines.append("当前策略中没有名称匹配的候选; 不代表组合没有相关行业暴露。")
     lines += [

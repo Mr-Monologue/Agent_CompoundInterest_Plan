@@ -47,3 +47,6 @@ Windows 持续调度与 Codex 对话独立；历史离线日志不等于当前�
 - `research` 使用 Core `/v1/research-diagnosis`；旧论点状态不代表有版本化持有理由。未读取到的收益来源、反证、模型和相对诊断必须保留缺失。
 - 软件、当前策略、候选架构与模型版本分开显示；候选 v1.7 未激活。
 - 按 `PROJECT_BACKGROUND.md` 和唯一 `LAUNCH_CHECKLIST.md` 继续，不重做已完成工程。
+
+
+执行证据、账户约束确认、准确周期及拆单入口见 [EXECUTION_EVIDENCE](EXECUTION_EVIDENCE.md)。公开归档不等于账户适用或策略批准；计划显示候选、已核实、未核实与本期不可执行金额。

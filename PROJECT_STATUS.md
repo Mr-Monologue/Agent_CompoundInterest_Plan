@@ -1,7 +1,9 @@
 # 当前入口与交付状态（2026-09-23）
 
+- v0.34.0 执行证据、受治理约束、日历拆单与升级恢复修复正在交付；实时进度见唯一清单。
+
 - 已发布并在本机验收：v0.33.0 HTTP 日常入口；Windows 调度沿用 v0.32.0。
-- 当前补丁 v0.33.1：执行约束未知提示、Core 研究诊断及候选架构接手资料；不激活 v1.7。
+- 已发布并本机验收 v0.33.1：执行约束未知提示、Core 研究诊断及候选架构接手资料；不激活 v1.7。
 - 项目背景：[PROJECT_BACKGROUND](docs/PROJECT_BACKGROUND.md)。
 - 唯一执行进度与交接：[LAUNCH_CHECKLIST](docs/LAUNCH_CHECKLIST.md)。
 - 日常操作：[操作说明](docs/CODEX_DAILY_OPERATIONS.md)。
