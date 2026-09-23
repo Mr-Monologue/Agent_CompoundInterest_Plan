@@ -241,7 +241,10 @@ class ExecutionService:
                         scope_facts.get(k) != payload[k]
                         for k in ("account_id", "channel", "share_class")
                     )
-                    or scope_facts.get("observed_at") != observation["observed_at"]
+                    or any(
+                        scope_facts.get(k) != observation[k]
+                        for k in ("observed_at", "remaining_minor", "quota_scope")
+                    )
                 ):
                     raise LedgerError(
                         "EXECUTION_QUOTA_SCOPE",
