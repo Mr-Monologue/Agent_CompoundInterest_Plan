@@ -1,7 +1,8 @@
 # 当前入口与交付状态（2026-09-23）
 
-- 已发布基础能力：v0.32.0 独立 Windows 调度；HTTP 日常入口不等待 MCP。
-- 本轮目标：v0.33.0 日常操作入口、只读安全、调度审计及受限机会解释。
+- 已发布并在本机验收：v0.33.0 HTTP 日常入口；Windows 调度沿用 v0.32.0。
+- 当前补丁 v0.33.1：执行约束未知提示、Core 研究诊断及候选架构接手资料；不激活 v1.7。
+- 项目背景：[PROJECT_BACKGROUND](docs/PROJECT_BACKGROUND.md)。
 - 唯一执行进度与交接：[LAUNCH_CHECKLIST](docs/LAUNCH_CHECKLIST.md)。
 - 日常操作：[操作说明](docs/CODEX_DAILY_OPERATIONS.md)。
 - 通知投递、开机未登录、真实休眠与长期稳定性仍未验收。
