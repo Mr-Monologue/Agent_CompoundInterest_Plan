@@ -144,6 +144,14 @@ def research_context(
             "  MAPER 待补: 合同边界、产品优势、长期空间、执行约束、收益可靠性及反方证据。",
             "  相对表现: DATA_BLOCKED; 需确认适用基准、窗口与可比收益数据。",
         ]
+        for record in records:
+            archived = record.get("facts", {})
+            if archived.get("kind") == "EXECUTION_SOURCE_V1":
+                lines.append(
+                    f"  可复用证据: {record['source_name']}; 数据 {archived['data_date']}; "
+                    f"发布 {archived['published_date'] or '未注明'}; "
+                    f"获取 {archived['retrieved_at']}; {record['source_ref']}"
+                )
     if not dossiers:
         lines.append("当前策略中没有名称匹配的候选; 不代表组合没有相关行业暴露。")
     lines += [

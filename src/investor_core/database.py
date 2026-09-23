@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 
 REQUIRED_TABLES = {
+    "execution_constraints",
+    "execution_constraint_drafts",
     "alembic_version",
     "accounts",
     "alerts",
@@ -92,7 +94,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0037_background_scheduler"
+EXPECTED_ALEMBIC_REVISION = "0038_execution_constraints"
 
 
 def ensure_database_parent(settings: Settings) -> None:

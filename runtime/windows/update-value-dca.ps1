@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$InstallDir = "C:\investor\value-dca-agent",
     [string]$Repository = "Mr-Monologue/Agent_CompoundInterest_Plan",
@@ -12,6 +12,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "update-safety.ps1")
 Set-StrictMode -Version Latest
 
 $InstallDir = [IO.Path]::GetFullPath($InstallDir).TrimEnd("\")
@@ -128,6 +129,12 @@ if (-not $Mutex.WaitOne(0)) {
 $WorkingDirectory = Join-Path $env:TEMP "value-dca-update-$([guid]::NewGuid())"
 $RollbackRoot = $null
 $RollbackReady = $false
+$RuntimeStopped = $false
+$WasRunning = $false
+$InstallationStarted = $false
+$Paths = $null
+$OriginalDatabaseEnv = $env:INVESTOR_DB_PATH
+$RecoveryStatus = "NOT_NEEDED"
 $CurrentVersion = $null
 $CoreTaskXml = $null
 $UpdateTaskXml = $null
@@ -200,6 +207,7 @@ try {
     }
 
     $ExistingCoreTask = Get-ScheduledTask -TaskName $CoreTaskName -ErrorAction SilentlyContinue
+    $WasRunning = ($null -ne $ExistingCoreTask -and $ExistingCoreTask.State -eq "Running") -or (@(Get-InvestorSupervisorProcesses).Count -gt 0)
     if ($null -ne $ExistingCoreTask) {
         $CoreTaskXml = Export-ScheduledTask -TaskName $CoreTaskName
     }
@@ -209,12 +217,24 @@ try {
         $UpdateTaskXml = Export-ScheduledTask -TaskName $UpdateTaskName
     }
 
-    Stop-InvestorRuntime
+    $Paths = Get-UpdatePaths $InstallDir
+    $env:INVESTOR_DB_PATH = $Paths.Database
+    $Installer = Join-Path $SourceRoot "install-windows.ps1"
+    if (-not (Test-Path -LiteralPath $Installer)) { throw "Release installer missing" }
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $RollbackRoot = Join-Path $BackupDirectory "$Timestamp-v$CurrentVersion"
     $CodeBackup = Join-Path $RollbackRoot "code"
     $DatabaseBackup = Join-Path $RollbackRoot "investor.db"
     New-Item -ItemType Directory -Force $CodeBackup | Out-Null
+    # Private snapshots contain configuration and task definitions.
+    $CurrentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    & icacls $RollbackRoot /inheritance:r /grant:r "*${CurrentSid}:(OI)(CI)F" "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Cannot secure backup directory" }
+    Copy-Item -LiteralPath (Join-Path $InstallDir ".env") -Destination (Join-Path $RollbackRoot "config.env")
+    $TaskRecords = @(Get-ScheduledTask | Where-Object { $_.TaskName -like "ValueDCA*" } | ForEach-Object {
+        @{ name=$_.TaskName; xml=(Export-ScheduledTask -TaskName $_.TaskName) }
+    })
+    $TaskRecords | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $RollbackRoot "tasks.json") -Encoding UTF8
 
     Write-UpdateLog "Creating rollback snapshot at $RollbackRoot"
     & robocopy $InstallDir $CodeBackup /E /R:2 /W:1 `
@@ -222,23 +242,20 @@ try {
         /XF .env *.pyc *.db *.db-wal *.db-shm
     Assert-Robocopy "code backup"
 
-    $DatabasePath = Join-Path $InstallDir "data\investor.db"
-    $InvestorCli = Join-Path $InstallDir ".venv\Scripts\investor.exe"
-    if (Test-Path $DatabasePath) {
-        if (-not (Test-Path $InvestorCli)) {
-            throw "Investor CLI is missing; cannot create a verified database backup."
-        }
+    # All existence/write preflight and code/config backups complete before downtime.
+    $RuntimeStopped = $true
+    Stop-InvestorRuntime
+    $DatabasePath = $Paths.Database
+    $InvestorCli = $Paths.Cli
+    Push-Location $InstallDir
+    try {
         & $InvestorCli db backup --output $DatabaseBackup
-        if ($LASTEXITCODE -ne 0) {
-            throw "Verified database backup failed with exit code $LASTEXITCODE"
-        }
-    }
+        if ($LASTEXITCODE -ne 0) { throw "Verified database backup failed with exit code $LASTEXITCODE" }
+    } finally { Pop-Location }
+    Complete-RecoverySnapshot $RollbackRoot $Paths.Python
     $RollbackReady = $true
+    $InstallationStarted = $true
 
-    $Installer = Join-Path $SourceRoot "install-windows.ps1"
-    if (-not (Test-Path $Installer)) {
-        throw "Release installer is missing: $Installer"
-    }
     Write-UpdateLog "Installing v$AvailableVersion"
     $InstallerStdoutPath = Join-Path $WorkingDirectory "installer.stdout.log"
     $InstallerStderrPath = Join-Path $WorkingDirectory "installer.stderr.log"
@@ -329,9 +346,10 @@ try {
 catch {
     $Failure = $_.Exception.Message
     Write-UpdateLog "Update failed: $Failure"
-    if ($RollbackReady -and $null -ne $RollbackRoot -and (Test-Path $RollbackRoot)) {
+    if ($InstallationStarted -and $RollbackReady -and $null -ne $RollbackRoot -and (Test-Path $RollbackRoot)) {
         Write-UpdateLog "Restoring v$CurrentVersion from $RollbackRoot"
         try {
+            Assert-RecoverySnapshot $RollbackRoot $Paths.Python
             Stop-InvestorRuntime
             $CodeBackup = Join-Path $RollbackRoot "code"
             & robocopy $CodeBackup $InstallDir /MIR /R:2 /W:1 `
@@ -339,6 +357,7 @@ catch {
                 /XF .env *.pyc *.db *.db-wal *.db-shm
             Assert-Robocopy "code rollback"
 
+            Copy-Item -LiteralPath (Join-Path $RollbackRoot "config.env") -Destination (Join-Path $InstallDir ".env") -Force
             $DatabaseBackup = Join-Path $RollbackRoot "investor.db"
             $DatabasePath = Join-Path $InstallDir "data\investor.db"
             if (Test-Path $DatabaseBackup) {
@@ -392,15 +411,35 @@ catch {
                 }
             }
             Start-ScheduledTask -TaskName $CoreTaskName
-            Write-UpdateLog "Rollback to v$CurrentVersion completed."
+            $RecoveryStatus = Get-CoreRecoveryStatus ([string]$CurrentVersion)
+            Write-UpdateLog "Rollback data/code restored to v$CurrentVersion; Core status: $RecoveryStatus"
         }
         catch {
+            $RecoveryStatus = "ROLLBACK_FAILED_DATA_STATE_REQUIRES_INSPECTION"
             Write-UpdateLog "ROLLBACK FAILED: $($_.Exception.Message)"
         }
     }
+    elseif ($RuntimeStopped -and -not $InstallationStarted) {
+        try {
+            if ($WasRunning) {
+                Start-ScheduledTask -TaskName $CoreTaskName
+                $RecoveryStatus = Get-CoreRecoveryStatus ([string]$CurrentVersion)
+            } else { $RecoveryStatus = "ORIGINAL_STOPPED_STATE_PRESERVED" }
+            Write-UpdateLog "Installation never started; original data/code unchanged. Core: $RecoveryStatus"
+        } catch { $RecoveryStatus = "ORIGINAL_DATA_UNCHANGED_CORE_RESTART_FAILED" }
+    }
+    @{ status="FAILED"; failure=$Failure; installation_started=$InstallationStarted;
+       snapshot_verified=$RollbackReady; recovery=$RecoveryStatus; rollback_snapshot=$RollbackRoot } |
+        ConvertTo-Json | Set-Content -LiteralPath $StatePath -Encoding UTF8
     throw
 }
 finally {
+    $env:INVESTOR_DB_PATH = $OriginalDatabaseEnv
+    $ResolvedTemporary = [IO.Path]::GetFullPath($WorkingDirectory)
+    $TemporaryRoot = [IO.Path]::GetFullPath($env:TEMP).TrimEnd("\") + "\"
+    if (-not $ResolvedTemporary.StartsWith($TemporaryRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing cleanup outside temporary directory"
+    }
     if (Test-Path $WorkingDirectory) {
         Remove-Item -LiteralPath $WorkingDirectory -Recurse -Force
     }
