@@ -1494,12 +1494,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if any(k in i["instrument_name"] for k in keys)
         }
         notebooks = {code: notebook.read(portfolio_id, code) for code in evidence}
+        for code, saved in notebooks.items():
+            saved["governance"] = theses.read(portfolio_id, code)
         result = research_context(topic, brief, assignment, evidence, notebooks)
         for dossier in result["evidence"]:
             saved = notebooks[dossier["instrument"]["instrument_code"]]
             dossier["research_notebook"] = saved
             if saved["latest"]:
                 result["display_text"] += "\n\n" + saved["display_text"]
+                result["display_text"] += "\n" + saved["governance"]["display_text"]
         return success(result, data_quality="WARNING")
 
     @app.post("/v1/weekly-plans")
