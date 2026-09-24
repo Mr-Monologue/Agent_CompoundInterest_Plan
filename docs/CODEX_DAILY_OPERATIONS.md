@@ -55,3 +55,10 @@ Windows 持续调度与 Codex 对话独立；历史离线日志不等于当前�
 ## 基准与相对表现
 
 “这只基金跑赢基准了吗”：先运行 `investor-assistant benchmark --code <代码>`，复用归档结果和来源。按窗口展示净值总收益、历史口径基准、差额与警告。没有数据时查缺口，不以聊天记忆填数。映射的具体确认流程见 [BENCHMARK_RESEARCH](BENCHMARK_RESEARCH.md)。
+
+
+## 组合研究与通知可见性
+
+“哪些持仓值得复核”使用 `investor-assistant review`；“看看我的投资”已同时包含研究摘要。解释观察日期、批准状态和来源质量，历史相对收益不触发买卖。
+
+“通知是否送达”使用 `investor-assistant notifications`；平台接受、进程执行和用户收件是不同证据，不把任务执行成功称为消息送达。

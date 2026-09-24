@@ -177,6 +177,7 @@ class DailyClient:
         scope = self.scope()
         brief = self.get("/v1/portfolio-brief", **scope)
         workspace = self.get("/v1/investment-workspace", **scope, view="DAILY")
+        research = self.get("/v1/portfolio-research-summary", **scope)
         dates = [
             {
                 "code": p["holding"]["instrument_code"],
@@ -189,6 +190,7 @@ class DailyClient:
         return {
             "brief": brief,
             "nav_dates": dates,
+            "research_summary": research,
             "workspace": workspace,
             "display_text": brief["display_text"]
             + "\n\n净值日期(不等于查询日期):\n"
@@ -196,7 +198,9 @@ class DailyClient:
                 f"- {p['code']}: {p['nav_date'] or '缺失'}; {p['data_quality']}" for p in dates
             )
             + "\n\n"
-            + workspace["display_text"],
+            + workspace["display_text"]
+            + "\n\n"
+            + research["display_text"],
         }
 
     def plan(
@@ -258,6 +262,7 @@ class DailyClient:
 
     def system(self, since: str | None = None) -> Json:
         health, ready = self.get("/health"), self.get("/ready")
+        notifications = self.get("/v1/notification-status")
         scheduler = self.get("/v1/background-scheduler")
         now = datetime.now(UTC)
         start = datetime.combine(
@@ -319,6 +324,7 @@ class DailyClient:
                 f"记录数 {r['occurrence_count']}; {r['coverage']}"
             )
         lines.append("下一步: 缺失/失败先只读核对原因; 不自动补跑。通知投递未迁移。")
+        lines.append(notifications["display_text"])
         market = self.get("/v1/market-data/status")
         if market.get("runs"):
             latest = market["runs"][0]
@@ -434,6 +440,8 @@ def main() -> None:
     sub.add_parser("benchmark").add_argument("--code", required=True)
     sub.add_parser("case").add_argument("--code", required=True)
     sub.add_parser("risk-coverage")
+    sub.add_parser("review")
+    sub.add_parser("notifications")
     sub.add_parser("research").add_argument("--topic", default="医疗")
     inspect = sub.add_parser("inspect")
     inspect.add_argument("kind")
@@ -468,6 +476,10 @@ def main() -> None:
                 portfolio_id=client.scope()["portfolio_id"],
                 instrument_code=args.code,
             )
+        elif args.command == "review":
+            result = client.get("/v1/portfolio-research-summary", **client.scope())
+        elif args.command == "notifications":
+            result = client.get("/v1/notification-status")
         elif args.command == "risk-coverage":
             result = client.get("/v1/risk-coverage", **client.scope())
         elif args.command == "research":

@@ -40,7 +40,7 @@ class BenchmarkPeriod(StrictModel):
     observed_on: date
     components: list[Component] = Field(min_length=1)
     evidence_ids: list[str] = Field(min_length=1)
-    method: Literal["DAILY_REBALANCED", "UNKNOWN"] = "UNKNOWN"
+    method: Literal["DAILY_REBALANCED", "PUBLISHED_PATH", "UNKNOWN"] = "UNKNOWN"
     limitation: str = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -49,6 +49,10 @@ class BenchmarkPeriod(StrictModel):
             raise ValueError("Composite weights must sum to 10000 bps")
         if self.effective_from and self.effective_to and self.effective_to < self.effective_from:
             raise ValueError("Invalid validity interval")
+        if self.method == "PUBLISHED_PATH" and (
+            len(self.components) != 1 or self.components[0].return_basis != "PUBLISHED_INDEX"
+        ):
+            raise ValueError("Published path requires one disclosed composite series")
         identities = [(c.provider, c.code or c.name) for c in self.components]
         if len(set(identities)) != len(identities):
             raise ValueError("Duplicate component identity")
@@ -168,6 +172,7 @@ class DiagnosticInput(StrictModel):
 def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
     """Exact endpoints/calendar. No fill, no implicit FX, no fee double deduction."""
     gaps: set[str] = set()
+    missing_observations: dict[str, set[str]] = {}
     dates = request.expected_dates
     if (
         not dates
@@ -198,6 +203,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
     fund = {p.day: p.value for p in request.fund.points}
     if any(d not in fund for d in dates):
         gaps.add("FUND_NAV_MISSING")
+        missing_observations[request.fund.code] = {d.isoformat() for d in dates if d not in fund}
     series = {(s.provider, s.code): s for s in request.benchmarks}
     values_by_key = {key: {p.day: p.value for p in value.points} for key, value in series.items()}
     selected: list[Json] = []
@@ -214,7 +220,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
             continue
         period = periods[0]
         selected.append(period)
-        if period["method"] != "DAILY_REBALANCED":
+        if period["method"] not in {"DAILY_REBALANCED", "PUBLISHED_PATH"}:
             gaps.add("REBALANCING_METHOD_UNKNOWN")
         for component in period["components"]:
             s = series.get((component["provider"], component["code"]))
@@ -232,6 +238,9 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
             values = values_by_key[(s.provider, s.code)]
             if day not in values or previous not in values:
                 gaps.add("BENCHMARK_DATE_MISSING")
+                missing_observations.setdefault(f"{s.provider}:{s.code}", set()).update(
+                    d.isoformat() for d in (previous, day) if d not in values
+                )
     disclosed = []
     for w in request.reported_windows:
         disclosed.append(
@@ -250,6 +259,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
         start=request.start.isoformat(),
         end=request.end.isoformat(),
         gaps=sorted(gaps),
+        missing_observations={key: sorted(value) for key, value in missing_observations.items()},
         warnings=[
             "RESEARCH_ONLY",
             "NO_ALPHA_ATTRIBUTION",
@@ -263,6 +273,8 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
     )
     if any(s.validation != "CROSS_CHECKED" for s in [request.fund, *request.benchmarks]):
         result["warnings"].append("SINGLE_SOURCE_WARNING")
+    if any(p["method"] == "PUBLISHED_PATH" for p in mapping["diagnostic_mapping"]):
+        result["warnings"].append("ISSUER_COMPOSITE_NOT_COMPONENT_RECONSTRUCTION")
     if not gaps:
         fund_wealth = benchmark_wealth = Decimal(1)
         peak = Decimal(1)
@@ -306,7 +318,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
             daily_correlation=corr,
             observations=len(fr),
             daily=rows,
-            method="CHAIN_DAILY_WEIGHTED_RETURNS; EFFECTIVE_DATE_SELECTS_END_OF_DAY_RETURN",
+            method="CHAIN_DAILY_RETURNS; EFFECTIVE_DATE_SELECTS_END_OF_DAY_RETURN",
         )
     reconciliation = []
     if result["calculated"]:
@@ -344,6 +356,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
             f"基准 {x['benchmark_return_pct']:.4f}%, "
             f"差额 {x['excess_percentage_points']:.4f} 个百分点"
         )
+        lines.append(f"基金最大回撤（共同交易日）: {x['fund_max_drawdown_pct']:.4f}%")  # noqa: RUF001 -- User-specified column title.
     lines.append("验证警告: " + ", ".join(result["warnings"]))
     lines.extend(
         [
@@ -449,7 +462,7 @@ class BenchmarkService:
         ]
         if versions:
             latest = versions[-1]
-            lines.append(f"最新映射草稿版本 {latest['version']} | {latest['status']}")
+            lines.append(f"最新映射版本 {latest['version']} | {latest['status']}")
             for period in latest["diagnostic_mapping"]:
                 weights = " + ".join(
                     f"{x['name']} ({x['code'] or '代码未核实'}) {x['weight_bps'] / 100:g}%"
