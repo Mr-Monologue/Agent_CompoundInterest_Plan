@@ -352,10 +352,12 @@ catch {
             Assert-RecoverySnapshot $RollbackRoot $Paths.Python
             Stop-InvestorRuntime
             # Validate before changing installed code. Never overwrite current facts.
-            & $Paths.Python (Join-Path $PSScriptRoot "rollback-preflight.py") $RollbackRoot $Paths.Database
-            if ($LASTEXITCODE -ne 0) {
+            $CompatibilityOutput = & $Paths.Python (Join-Path $PSScriptRoot "rollback-preflight.py") $RollbackRoot $Paths.Database $InstallDir
+            $CompatibilityExitCode = $LASTEXITCODE
+            foreach ($Line in $CompatibilityOutput) { Write-UpdateLog ("Rollback compatibility: " + $Line) }
+            if ($CompatibilityExitCode -ne 0) {
                 $RecoveryStatus = "RECOVERY_BLOCKED_CURRENT_DATA_PRESERVED_CORE_STOPPED"
-                throw "Old code/current database compatibility not verified; manual recovery required"
+                throw "Old code/current database compatibility not verified; current data preserved. Follow docs/RECOVERY_RUNBOOK.md"
             }
             $CodeBackup = Join-Path $RollbackRoot "code"
             & robocopy $CodeBackup $InstallDir /MIR /R:2 /W:1 `
