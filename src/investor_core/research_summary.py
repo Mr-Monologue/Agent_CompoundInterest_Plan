@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 Json = dict[str, Any]
@@ -17,12 +18,15 @@ def summarize_fund(record: Json, *, today: date) -> Json:
     windows: dict[tuple[str, str], Json] = {}
     gaps: set[str] = set()
     warnings: set[str] = set()
+    missing: dict[str, set[str]] = {}
     if mapping:
         for run in record["runs"]:
             if run["mapping_id"] != mapping["id"]:
                 continue
             gaps.update(run["gaps"])
             warnings.update(run["warnings"])
+            for name, days in run.get("missing_observations", {}).items():
+                missing.setdefault(name, set()).update(days)
             calculated = run.get("calculated")
             if calculated is not None:
                 candidates = [dict(calculated, start=run["start"], end=run["end"])]
@@ -117,6 +121,7 @@ def summarize_fund(record: Json, *, today: date) -> Json:
         data_quality="WARNING",
         gaps=sorted(gaps),
         warnings=sorted(warnings),
+        missing_observations={name: sorted(days) for name, days in missing.items()},
         drawdown_label=DRAWDOWN_LABEL,
         limitations=mapping["limitations"] if mapping else ["尚无研究映射"],
         money_action=False,
@@ -128,6 +133,8 @@ def portfolio_summary(positions: list[Json], records: dict[str, Json], *, today:
     lines = [f"组合研究摘要 | 查询日期 {today} | 仅研究, 不产生买卖信号"]
     for position in positions:
         holding = position["holding"]
+        if Decimal(str(holding["total_shares"])) <= 0:
+            continue
         code = holding["instrument_code"]
         item = summarize_fund(records[code], today=today)
         item.update(instrument_code=code, instrument_name=holding["instrument_name"])
@@ -156,6 +163,8 @@ def portfolio_summary(positions: list[Json], records: dict[str, Json], *, today:
                 )
                 + ("; 仅管理人披露" if window["basis"] == "ISSUER_REPORTED_ONLY" else "")
             )
+        for name, days in item["missing_observations"].items():
+            lines.append(f"  缺少观测: {name}, {len(days)} 日; " + ", ".join(days))
         for source in item["sources"]:
             lines.append(f"  来源: {source['source_name']} {source['source_ref']}")
     lines.append(f"{DRAWDOWN_LABEL}仅来自日序列路径; 报告累计亏损不能替代。")

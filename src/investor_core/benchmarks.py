@@ -172,6 +172,7 @@ class DiagnosticInput(StrictModel):
 def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
     """Exact endpoints/calendar. No fill, no implicit FX, no fee double deduction."""
     gaps: set[str] = set()
+    missing_observations: dict[str, set[str]] = {}
     dates = request.expected_dates
     if (
         not dates
@@ -202,6 +203,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
     fund = {p.day: p.value for p in request.fund.points}
     if any(d not in fund for d in dates):
         gaps.add("FUND_NAV_MISSING")
+        missing_observations[request.fund.code] = {d.isoformat() for d in dates if d not in fund}
     series = {(s.provider, s.code): s for s in request.benchmarks}
     values_by_key = {key: {p.day: p.value for p in value.points} for key, value in series.items()}
     selected: list[Json] = []
@@ -236,6 +238,9 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
             values = values_by_key[(s.provider, s.code)]
             if day not in values or previous not in values:
                 gaps.add("BENCHMARK_DATE_MISSING")
+                missing_observations.setdefault(f"{s.provider}:{s.code}", set()).update(
+                    d.isoformat() for d in (previous, day) if d not in values
+                )
     disclosed = []
     for w in request.reported_windows:
         disclosed.append(
@@ -254,6 +259,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
         start=request.start.isoformat(),
         end=request.end.isoformat(),
         gaps=sorted(gaps),
+        missing_observations={key: sorted(value) for key, value in missing_observations.items()},
         warnings=[
             "RESEARCH_ONLY",
             "NO_ALPHA_ATTRIBUTION",

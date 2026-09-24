@@ -9,7 +9,12 @@ from test_daily_client import dump
 
 from investor_core.api.app import create_app
 from investor_core.benchmarks import DiagnosticInput, MappingApproval, MappingDraft
-from investor_core.research_summary import DRAWDOWN_LABEL, notification_status, summarize_fund
+from investor_core.research_summary import (
+    DRAWDOWN_LABEL,
+    notification_status,
+    portfolio_summary,
+    summarize_fund,
+)
 
 
 def test_approved_version_overrides_run_snapshot_and_new_candidate(tmp_path):
@@ -99,3 +104,19 @@ def test_notification_flags_never_claim_recipient_receipt():
     result = notification_status(outbox, attempts)
     assert result["recipient_delivery_verified"] is None
     assert result["sends_performed"] == 0 and result["history_may_be_truncated"]
+
+
+def test_closed_holding_is_not_current_review_and_missing_dates_are_explicit(tmp_path):
+    result = portfolio_summary(
+        [{"holding": {"instrument_code": "CLOSED", "total_shares": "0"}}],
+        {},
+        today=date(2026, 9, 24),
+    )
+    assert result["items"] == []
+    _, _, _, _, eid, service, payload = setup_mapping(tmp_path)
+    mapping = service.create(MappingDraft.model_validate(payload))
+    request = input_for(mapping, eid)
+    request["benchmarks"][0]["points"].pop(1)
+    run = service.run(DiagnosticInput.model_validate(request), persist=False)
+    assert run["calculated"] is None
+    assert run["missing_observations"] == {"issuer:EQ": ["2026-09-21"]}
