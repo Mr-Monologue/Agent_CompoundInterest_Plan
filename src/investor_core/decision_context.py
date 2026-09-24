@@ -93,6 +93,9 @@ def research_context(
         records = evidence.get(code, [])
         saved = (notebooks or {}).get(code, {})
         draft = saved.get("latest")
+        governance = saved.get("governance", {})
+        active = governance.get("active_case")
+        examined = active or draft
         missing = [
             "VERSIONED_THESIS",
             "RETURN_DRIVER_PROFILE",
@@ -115,11 +118,18 @@ def research_context(
         ]
         if mandates:
             missing.remove("FUND_MANDATE")
-        if draft:
+        if examined:
             missing.remove("VERSIONED_THESIS")
             missing.remove("RETURN_DRIVER_PROFILE")
-            missing += ["THESIS_APPROVAL_PENDING", "DRIVER_REVIEW_PENDING"]
-            if any(c["kind"] == "COUNTER_EVIDENCE" for c in draft["counter_evidence"]):
+            if not active:
+                missing += ["THESIS_APPROVAL_PENDING", "DRIVER_REVIEW_PENDING"]
+            else:
+                missing.append("DRIVER_EVIDENCE_LIMITED")
+                if governance["status"] == "REVIEW_REQUIRED":
+                    missing.append("THESIS_REVIEW_REQUIRED")
+                if governance["candidate_pending"]:
+                    missing.append("NEW_THESIS_CANDIDATE_PENDING")
+            if any(c["kind"] == "COUNTER_EVIDENCE" for c in examined["counter_evidence"]):
                 missing.remove("COUNTER_EVIDENCE")
         dossier = {
             "draft_thesis_version": draft["version"] if draft else None,
@@ -130,11 +140,15 @@ def research_context(
             "source_ref": nav.get("source_ref"),
             "saved_research_evidence": records,
             "history_may_be_truncated": len(records) == 100,
-            "why_hold": None,
-            "playbook": None,
-            "return_driver": "UNKNOWN",
-            "evidence_maturity": "UNVERIFIED",
-            "thesis_version": None,
+            "why_hold": None,  # Historical intent remains unknown even after research confirmation.
+            "current_research_why_hold": active["thesis"]["proposed_why_hold"] if active else None,
+            "research_governance": governance,
+            "playbook": active["thesis"]["playbook"] if active else None,
+            "return_driver": active["return_driver"]["primary"] if active else "UNKNOWN",
+            "evidence_maturity": active["return_driver"]["evidence_maturity"]
+            if active
+            else "UNVERIFIED",
+            "thesis_version": active["version"] if active else None,
             "legacy_thesis_status": i["thesis_status"],
             "missing": missing,
             "decision_frame": {
@@ -169,7 +183,9 @@ def research_context(
                 else "仍需预算、舱位、在途、信号及执行条件核查。"
             ),
             (
-                "  原始买入理由仍未知; 已有版本化研究草稿, 未经确认不改变策略。"
+                "  当前研究论点已确认; 历史买入理由仍未知, 研究确认不改变策略。"
+                if active
+                else "  原始买入理由仍未知; 已有版本化研究草稿, 未经确认不改变策略。"
                 if draft
                 else f"  原持有理由/收益来源: 未形成版本化证据; 旧状态 {i['thesis_status']} "
                 "不等于完整投资论点。"

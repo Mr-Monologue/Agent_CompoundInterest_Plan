@@ -452,7 +452,7 @@ def risk_coverage(assignment: Json, brief: Json, observations: dict[str, list[Js
                 configured=True,
                 current_values={"thesis_status": config["thesis_status"]},
                 gaps=["LEGACY_STATUS_NOT_VERSIONED_THESIS"],
-                evidence_basis="当前已批准旧论点状态;研究草稿未激活",
+                evidence_basis="当前已批准的策略旧论点状态;研究确认不修改正式风险配置",
                 observation_ids=[],
                 proposal=dict(
                     status="REVIEW_ONLY",

@@ -104,6 +104,7 @@ from investor_core.scheduler import SchedulerService
 from investor_core.signals import SignalService
 from investor_core.strategy import StrategyService
 from investor_core.subscriptions import SubscriptionService
+from investor_core.thesis import ThesisConfirmation, ThesisDraft, ThesisObservation, ThesisService
 from investor_core.version import __version__
 from investor_core.weekly_reports import WeeklyReportService
 from investor_core.workspace import WorkspaceService
@@ -139,6 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     research = ResearchService(runtime_settings)
     execution = ExecutionService(research)
     notebook = NotebookService(research)
+    theses = ThesisService(notebook)
     benchmarks = BenchmarkService(notebook)
     workspace = WorkspaceService(runtime_settings)
     subscriptions = SubscriptionService(runtime_settings)
@@ -1402,6 +1404,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
         for code, record in records.items():
             record["evidence"] = research.list_evidence(instrument_code=code, limit=1000)
+            record["thesis"] = theses.read(portfolio_id, code)
         result = portfolio_summary(
             positions,
             records,
@@ -1441,7 +1444,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/research-case")
     def research_case_get(portfolio_id: str, instrument_code: str) -> dict[str, Any]:
-        return success(notebook.read(portfolio_id, instrument_code), data_quality="WARNING")
+        result = notebook.read(portfolio_id, instrument_code)
+        result["governance"] = theses.read(portfolio_id, instrument_code)
+        result["display_text"] += "\n" + result["governance"]["display_text"]
+        return success(result, data_quality="WARNING")
+
+    @app.get("/v1/research-thesis")
+    def thesis_get(portfolio_id: str, instrument_code: str) -> dict[str, Any]:
+        return success(theses.read(portfolio_id, instrument_code), data_quality="WARNING")
+
+    @app.post("/v1/research-thesis-drafts")
+    def thesis_draft(request: ThesisDraft) -> dict[str, Any]:
+        return success(theses.create(request), data_quality="WARNING")
+
+    @app.post("/v1/research-thesis-drafts/{action_id}/confirm")
+    def thesis_confirm(action_id: str, request: ThesisConfirmation) -> dict[str, Any]:
+        return success(theses.confirm(action_id, request), data_quality="WARNING")
+
+    @app.post("/v1/research-thesis-observations")
+    def thesis_observe(request: ThesisObservation) -> dict[str, Any]:
+        return success(theses.observe(request), data_quality="WARNING")
 
     @app.get("/v1/risk-coverage")
     def risk_coverage_get(portfolio_id: str, account_id: str) -> dict[str, Any]:
@@ -1472,12 +1494,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if any(k in i["instrument_name"] for k in keys)
         }
         notebooks = {code: notebook.read(portfolio_id, code) for code in evidence}
+        for code, saved in notebooks.items():
+            saved["governance"] = theses.read(portfolio_id, code)
         result = research_context(topic, brief, assignment, evidence, notebooks)
         for dossier in result["evidence"]:
             saved = notebooks[dossier["instrument"]["instrument_code"]]
             dossier["research_notebook"] = saved
             if saved["latest"]:
                 result["display_text"] += "\n\n" + saved["display_text"]
+                result["display_text"] += "\n" + saved["governance"]["display_text"]
         return success(result, data_quality="WARNING")
 
     @app.post("/v1/weekly-plans")
