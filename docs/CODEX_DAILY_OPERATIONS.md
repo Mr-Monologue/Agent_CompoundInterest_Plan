@@ -51,3 +51,7 @@ Windows 持续调度与 Codex 对话独立；历史离线日志不等于当前�
 
 执行证据、账户约束确认、准确周期及拆单入口见 [EXECUTION_EVIDENCE](EXECUTION_EVIDENCE.md)。公开归档不等于账户适用或策略批准；计划显示候选、已核实、未核实与本期不可执行金额。
 `case --code <基金代码>` 与 `risk-coverage` 为只读入口；版本化研究与决策日志见 [RESEARCH_NOTEBOOK](RESEARCH_NOTEBOOK.md)。
+
+## 基准与相对表现
+
+“这只基金跑赢基准了吗”：先运行 `investor-assistant benchmark --code <代码>`，复用归档结果和来源。按窗口展示净值总收益、历史口径基准、差额与警告。没有数据时查缺口，不以聊天记忆填数。映射的具体确认流程见 [BENCHMARK_RESEARCH](BENCHMARK_RESEARCH.md)。

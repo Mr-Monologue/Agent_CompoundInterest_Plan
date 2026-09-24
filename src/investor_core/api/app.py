@@ -78,6 +78,12 @@ from investor_core.api.schemas import (
     WeeklyPlanTransactionLinkRequest,
     WeeklyReportDraftCreateRequest,
 )
+from investor_core.benchmarks import (
+    BenchmarkService,
+    DiagnosticInput,
+    MappingApproval,
+    MappingDraft,
+)
 from investor_core.capital import CapitalService
 from investor_core.config import Settings, get_settings
 from investor_core.decision_context import execution_context, research_context
@@ -132,6 +138,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     research = ResearchService(runtime_settings)
     execution = ExecutionService(research)
     notebook = NotebookService(research)
+    benchmarks = BenchmarkService(notebook)
     workspace = WorkspaceService(runtime_settings)
     subscriptions = SubscriptionService(runtime_settings)
     weekly_reports = WeeklyReportService(runtime_settings)
@@ -1373,6 +1380,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result, account_id=account_id, start=period_start, end=period_end, channel=channel
         )
         return success(result, warnings=result["warnings"], data_quality=result["data_quality"])
+
+    @app.post("/v1/benchmark-mapping-drafts")
+    def benchmark_draft(request: MappingDraft) -> dict[str, Any]:
+        return success(benchmarks.create(request), data_quality="WARNING")
+
+    @app.post("/v1/benchmark-mapping-drafts/{mapping_id}/confirm")
+    def benchmark_confirm(mapping_id: str, request: MappingApproval) -> dict[str, Any]:
+        return success(benchmarks.approve(mapping_id, request), data_quality="WARNING")
+
+    @app.get("/v1/benchmark-research")
+    def benchmark_read(portfolio_id: str, instrument_code: str) -> dict[str, Any]:
+        return success(benchmarks.read(portfolio_id, instrument_code), data_quality="WARNING")
+
+    @app.post("/v1/benchmark-research-preview")
+    def benchmark_preview(request: DiagnosticInput) -> dict[str, Any]:
+        return success(benchmarks.run(request, persist=False), data_quality="WARNING")
+
+    @app.post("/v1/benchmark-research-runs")
+    def benchmark_run(request: DiagnosticInput) -> dict[str, Any]:
+        return success(benchmarks.run(request), data_quality="WARNING")
 
     @app.post("/v1/research-case-drafts")
     def research_case_create(request: CaseDraft) -> dict[str, Any]:

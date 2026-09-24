@@ -21,6 +21,9 @@ from croniter import croniter
 Json = dict[str, Any]
 # Named workflows only: no generic POST, trading, source switch or market refresh.
 WORKFLOWS = {
+    "benchmark-draft": ("/v1/benchmark-mapping-drafts", "draft", True),
+    "benchmark-confirm": ("/v1/benchmark-mapping-drafts/{id}/confirm", "confirm", False),
+    "benchmark-run": ("/v1/benchmark-research-runs", "draft", True),
     "quota-observation": ("/v1/execution-quota-observations", "draft", False),
     "research-case-draft": ("/v1/research-case-drafts", "draft", True),
     "decision-journal": ("/v1/decision-journal", "draft", True),
@@ -428,6 +431,7 @@ def main() -> None:
     plan.add_argument("--period-end")
     plan.add_argument("--channel")
     sub.add_parser("system").add_argument("--since")
+    sub.add_parser("benchmark").add_argument("--code", required=True)
     sub.add_parser("case").add_argument("--code", required=True)
     sub.add_parser("risk-coverage")
     sub.add_parser("research").add_argument("--topic", default="医疗")
@@ -452,6 +456,12 @@ def main() -> None:
             )
         elif args.command == "system":
             result = client.system(args.since)
+        elif args.command == "benchmark":
+            result = client.get(
+                "/v1/benchmark-research",
+                portfolio_id=client.scope()["portfolio_id"],
+                instrument_code=args.code,
+            )
         elif args.command == "case":
             result = client.get(
                 "/v1/research-case",
