@@ -98,6 +98,7 @@ from investor_core.operations import OperationsService
 from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.research import ResearchService
+from investor_core.research_summary import notification_status, portfolio_summary
 from investor_core.risk import RiskService
 from investor_core.scheduler import SchedulerService
 from investor_core.signals import SignalService
@@ -1388,6 +1389,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/v1/benchmark-mapping-drafts/{mapping_id}/confirm")
     def benchmark_confirm(mapping_id: str, request: MappingApproval) -> dict[str, Any]:
         return success(benchmarks.approve(mapping_id, request), data_quality="WARNING")
+
+    @app.get("/v1/portfolio-research-summary")
+    def portfolio_research_get(portfolio_id: str, account_id: str) -> dict[str, Any]:
+        brief = market_data.portfolio_brief(portfolio_id=portfolio_id, account_id=account_id)
+        positions = brief["valuation"]["positions"]
+        records = {
+            p["holding"]["instrument_code"]: benchmarks.read(
+                portfolio_id, p["holding"]["instrument_code"]
+            )
+            for p in positions
+        }
+        for code, record in records.items():
+            record["evidence"] = research.list_evidence(instrument_code=code, limit=1000)
+        result = portfolio_summary(
+            positions,
+            records,
+            today=research._now().astimezone(ZoneInfo(runtime_settings.timezone)).date(),
+        )
+        return success(result, data_quality="WARNING")
+
+    @app.get("/v1/notification-status")
+    def notification_status_get() -> dict[str, Any]:
+        return success(
+            notification_status(
+                operations.list_outbox(status=None, limit=500),
+                operations.list_delivery_attempts(limit=500),
+            ),
+            data_quality="WARNING",
+        )
 
     @app.get("/v1/benchmark-research")
     def benchmark_read(portfolio_id: str, instrument_code: str) -> dict[str, Any]:

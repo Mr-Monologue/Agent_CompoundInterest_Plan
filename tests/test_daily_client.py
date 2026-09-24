@@ -244,6 +244,7 @@ def test_system_preserves_failure_history_dates_and_duplicates(monkeypatch) -> N
         "output": {"reason_code": "RISK_SCAN_PARTIAL"},
     }
     responses = {
+        "/v1/notification-status": {"display_text": "Receipt unknown"},
         "/health": {"version": "0.33.0"},
         "/ready": {"status": "PASS"},
         "/v1/background-scheduler": {
