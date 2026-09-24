@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.37.2",
+  "version": "0.37.3",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
   "database_revision": "0040_research_benchmarks",
   "minimum_current_version": "0.5.3",
-  "notes": "Guard rollback with old-code/current-database compatibility verification; preserve current database and block unverified recovery. No schema or investment rule change."
+  "notes": "Separate code compatibility from snapshot restore permission; preserve new facts and audit records. Add complete isolated HTTP lifecycle acceptance and bounded stage closeout. No schema or investment rule change."
 }
