@@ -48,7 +48,22 @@ def summarize_fund(record: Json, *, today: date) -> Json:
                         "daily_correlation",
                     )
                 }
+                # Persisted Decimal values may be JSON strings, unlike live calculations.
+                for field in (
+                    "fund_return_pct",
+                    "benchmark_return_pct",
+                    "excess_percentage_points",
+                    "fund_max_drawdown_pct",
+                    "daily_correlation",
+                ):
+                    if item[field] is not None:
+                        item[field] = float(Decimal(str(item[field])))
                 item.update(basis=basis, warnings=run["warnings"], run_id=run["id"])
+                item["benchmark_path"] = (
+                    "ISSUER_PUBLISHED"
+                    if "ISSUER_COMPOSITE_NOT_COMPONENT_RECONSTRUCTION" in run["warnings"]
+                    else "COMPONENT_RECONSTRUCTION"
+                )
                 # Keep a daily reconstruction when a later report-only attempt is blocked.
                 if key not in windows or basis == "DAILY_SERIES":
                     windows[key] = item
@@ -161,7 +176,13 @@ def portfolio_summary(positions: list[Json], records: dict[str, Json], *, today:
                     if drawdown is not None
                     else f"{DRAWDOWN_LABEL}: 缺少日序列"
                 )
-                + ("; 仅管理人披露" if window["basis"] == "ISSUER_REPORTED_ONLY" else "")
+                + (
+                    "; 仅管理人披露"
+                    if window["basis"] == "ISSUER_REPORTED_ONLY"
+                    else "; 管理人公布路径, 非成分独立重建"
+                    if window["benchmark_path"] == "ISSUER_PUBLISHED"
+                    else ""
+                )
             )
         for name, days in item["missing_observations"].items():
             lines.append(f"  缺少观测: {name}, {len(days)} 日; " + ", ".join(days))
