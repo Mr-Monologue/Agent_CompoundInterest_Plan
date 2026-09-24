@@ -40,7 +40,7 @@ class BenchmarkPeriod(StrictModel):
     observed_on: date
     components: list[Component] = Field(min_length=1)
     evidence_ids: list[str] = Field(min_length=1)
-    method: Literal["DAILY_REBALANCED", "UNKNOWN"] = "UNKNOWN"
+    method: Literal["DAILY_REBALANCED", "PUBLISHED_PATH", "UNKNOWN"] = "UNKNOWN"
     limitation: str = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -49,6 +49,10 @@ class BenchmarkPeriod(StrictModel):
             raise ValueError("Composite weights must sum to 10000 bps")
         if self.effective_from and self.effective_to and self.effective_to < self.effective_from:
             raise ValueError("Invalid validity interval")
+        if self.method == "PUBLISHED_PATH" and (
+            len(self.components) != 1 or self.components[0].return_basis != "PUBLISHED_INDEX"
+        ):
+            raise ValueError("Published path requires one disclosed composite series")
         identities = [(c.provider, c.code or c.name) for c in self.components]
         if len(set(identities)) != len(identities):
             raise ValueError("Duplicate component identity")
@@ -214,7 +218,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
             continue
         period = periods[0]
         selected.append(period)
-        if period["method"] != "DAILY_REBALANCED":
+        if period["method"] not in {"DAILY_REBALANCED", "PUBLISHED_PATH"}:
             gaps.add("REBALANCING_METHOD_UNKNOWN")
         for component in period["components"]:
             s = series.get((component["provider"], component["code"]))
@@ -263,6 +267,8 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
     )
     if any(s.validation != "CROSS_CHECKED" for s in [request.fund, *request.benchmarks]):
         result["warnings"].append("SINGLE_SOURCE_WARNING")
+    if any(p["method"] == "PUBLISHED_PATH" for p in mapping["diagnostic_mapping"]):
+        result["warnings"].append("ISSUER_COMPOSITE_NOT_COMPONENT_RECONSTRUCTION")
     if not gaps:
         fund_wealth = benchmark_wealth = Decimal(1)
         peak = Decimal(1)
@@ -306,7 +312,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
             daily_correlation=corr,
             observations=len(fr),
             daily=rows,
-            method="CHAIN_DAILY_WEIGHTED_RETURNS; EFFECTIVE_DATE_SELECTS_END_OF_DAY_RETURN",
+            method="CHAIN_DAILY_RETURNS; EFFECTIVE_DATE_SELECTS_END_OF_DAY_RETURN",
         )
     reconciliation = []
     if result["calculated"]:
@@ -344,6 +350,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
             f"基准 {x['benchmark_return_pct']:.4f}%, "
             f"差额 {x['excess_percentage_points']:.4f} 个百分点"
         )
+        lines.append(f"基金最大回撤（共同交易日）: {x['fund_max_drawdown_pct']:.4f}%")  # noqa: RUF001 -- User-specified column title.
     lines.append("验证警告: " + ", ".join(result["warnings"]))
     lines.extend(
         [
@@ -449,7 +456,7 @@ class BenchmarkService:
         ]
         if versions:
             latest = versions[-1]
-            lines.append(f"最新映射草稿版本 {latest['version']} | {latest['status']}")
+            lines.append(f"最新映射版本 {latest['version']} | {latest['status']}")
             for period in latest["diagnostic_mapping"]:
                 weights = " + ".join(
                     f"{x['name']} ({x['code'] or '代码未核实'}) {x['weight_bps'] / 100:g}%"
