@@ -120,3 +120,47 @@ def test_closed_holding_is_not_current_review_and_missing_dates_are_explicit(tmp
     run = service.run(DiagnosticInput.model_validate(request), persist=False)
     assert run["calculated"] is None
     assert run["missing_observations"] == {"issuer:EQ": ["2026-09-21"]}
+
+
+@pytest.mark.parametrize("reported_only", [False, True])
+def test_persisted_decimal_strings_render_without_changing_research_basis(reported_only):
+    values = dict(
+        start="2026-01-01",
+        end="2026-06-30",
+        fund_return_pct="-2.5",
+        benchmark_return_pct="1.5",
+        excess_percentage_points="-4.0",
+        fund_max_drawdown_pct=None if reported_only else "-6.25",
+        daily_correlation=None if reported_only else "0.8",
+    )
+    run = dict(
+        id="r",
+        mapping_id="m",
+        start=values["start"],
+        end=values["end"],
+        gaps=["NO_DAILY_SERIES"] if reported_only else [],
+        warnings=["ISSUER_COMPOSITE_NOT_COMPONENT_RECONSTRUCTION"],
+        calculated=None if reported_only else values,
+        reported_windows=[values] if reported_only else [],
+    )
+    record = dict(versions=[dict(id="m", status="DRAFT", version=1, limitations=[])], runs=[run])
+    result = portfolio_summary(
+        [
+            dict(
+                holding=dict(instrument_code="TEST", instrument_name="Test", total_shares="1"),
+                data_quality="WARNING",
+            )
+        ],
+        {"TEST": record},
+        today=date(2026, 9, 24),
+    )
+    item = result["items"][0]
+    assert item["classification"] == "REVIEW" and not item["mapping_approved"]
+    assert item["windows"][0]["excess_percentage_points"] == -4.0
+    assert "-2.50%" in result["display_text"]
+    if reported_only:
+        assert "仅管理人披露" in result["display_text"]
+        assert item["windows"][0]["fund_max_drawdown_pct"] is None
+    else:
+        assert "管理人公布路径, 非成分独立重建" in result["display_text"]
+        assert "-6.25%" in result["display_text"]

@@ -1492,7 +1492,7 @@ wheels = [
 
 [[package]]
 name = "value-dca-agent"
-version = "0.37.0"
+version = "0.37.1"
 source = { editable = "." }
 dependencies = [
     { name = "akshare" },
