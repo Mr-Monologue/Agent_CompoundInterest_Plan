@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 
 REQUIRED_TABLES = {
+    "research_benchmark_mappings",
+    "research_benchmark_runs",
     "execution_quota_observations",
     "research_case_versions",
     "research_decision_journal",
@@ -97,7 +99,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0039_research_notebook"
+EXPECTED_ALEMBIC_REVISION = "0040_research_benchmarks"
 
 
 def ensure_database_parent(settings: Settings) -> None:

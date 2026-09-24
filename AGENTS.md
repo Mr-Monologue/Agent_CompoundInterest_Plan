@@ -54,3 +54,5 @@
 - `docs/architecture/value-dca-adaptive-architecture-v1.7-draft.md` 是候选来源，不是已激活策略或模型；旧运行形态服从 Windows Codex + Core + 后台调度。
 - HTTP 预览的候选分配不等于平台可执行安排；未知限额、有效期或交易日历必须明确阻断拆单承诺。
 - 阶段 B 研究及风险覆盖见 docs/RESEARCH_NOTEBOOK.md；账户取证优先 040046，独立于研究交付。研究草稿不代替原始买入理由或投资规则确认。
+
+- 基准与相对表现入口见 docs/BENCHMARK_RESEARCH.md；官方比较基准与研究映射分开，历史有效期不得追溯套用新权重，研究批准不触发正式风险动作。
