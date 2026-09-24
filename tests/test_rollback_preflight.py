@@ -51,7 +51,7 @@ def test_old_code_checks_isolated_current_copy_without_mutating_live(tmp_path):
     assert result["compatibility"].startswith("VERIFIED")
     assert result["database_restore"] is False
     assert current.read_bytes() == before
-    assert not list(tmp_path.glob("rollback-check-*"))
+    assert not list(snapshot.glob("rollback-check-*"))
 
 
 @pytest.mark.parametrize(

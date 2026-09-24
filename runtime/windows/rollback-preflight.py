@@ -34,7 +34,7 @@ def verify(snapshot: Path, current: Path):
             if fingerprint(live) != fingerprint(old):
                 raise RuntimeError("DATABASE_CHANGED_REVIEW_REQUIRED_NO_RESTORE")
         with tempfile.TemporaryDirectory(
-            prefix="rollback-check-", dir=snapshot.parent
+            prefix="rollback-check-", dir=snapshot
         ) as temporary:
             isolated = Path(temporary) / "current.db"
             with closing(sqlite3.connect(isolated)) as target:
