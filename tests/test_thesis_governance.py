@@ -109,6 +109,19 @@ def test_history_unknown_reason_and_money_unchanged(tmp_path):
     item = next(i for i in response.json()["data"]["items"] if i["instrument_code"] == "CORE01")
     assert item["thesis"]["active_case"]["version"] == 2
     assert "历史买入理由" in item["thesis"]["display_text"]
+    assignment = web.get("/v1/strategy-assignment", params={"portfolio_id": pid}).json()["data"]
+    name = next(
+        x["instrument_name"] for x in assignment["instruments"] if x["instrument_code"] == "CORE01"
+    )
+    diagnosis = web.get("/v1/research-diagnosis", params=dict(scope, topic=name)).json()["data"]
+    dossier = next(
+        x for x in diagnosis["evidence"] if x["instrument"]["instrument_code"] == "CORE01"
+    )
+    assert dossier["thesis_version"] == 2
+    assert dossier["why_hold"] is None
+    assert dossier["current_research_why_hold"] == revised["thesis"]["proposed_why_hold"]
+    assert "THESIS_APPROVAL_PENDING" not in dossier["missing"]
+    assert "DRIVER_EVIDENCE_LIMITED" in dossier["missing"]
     assert dump(settings.db_path) == current
 
 
