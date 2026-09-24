@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.37.1",
+  "version": "0.37.2",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
   "database_revision": "0040_research_benchmarks",
   "minimum_current_version": "0.5.3",
-  "notes": "Fix persisted research Decimal strings in portfolio summaries; explicitly label issuer-published paths. No schema or investment rule change."
+  "notes": "Guard rollback with old-code/current-database compatibility verification; preserve current database and block unverified recovery. No schema or investment rule change."
 }

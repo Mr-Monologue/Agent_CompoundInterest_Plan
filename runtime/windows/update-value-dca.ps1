@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$InstallDir = "C:\investor\value-dca-agent",
     [string]$Repository = "Mr-Monologue/Agent_CompoundInterest_Plan",
@@ -351,6 +351,12 @@ catch {
         try {
             Assert-RecoverySnapshot $RollbackRoot $Paths.Python
             Stop-InvestorRuntime
+            # Validate before changing installed code. Never overwrite current facts.
+            & $Paths.Python (Join-Path $PSScriptRoot "rollback-preflight.py") $RollbackRoot $Paths.Database
+            if ($LASTEXITCODE -ne 0) {
+                $RecoveryStatus = "RECOVERY_BLOCKED_CURRENT_DATA_PRESERVED_CORE_STOPPED"
+                throw "Old code/current database compatibility not verified; manual recovery required"
+            }
             $CodeBackup = Join-Path $RollbackRoot "code"
             & robocopy $CodeBackup $InstallDir /MIR /R:2 /W:1 `
                 /XD .git .venv .mypy_cache .pytest_cache .ruff_cache __pycache__ data logs backups `
@@ -358,24 +364,12 @@ catch {
             Assert-Robocopy "code rollback"
 
             Copy-Item -LiteralPath (Join-Path $RollbackRoot "config.env") -Destination (Join-Path $InstallDir ".env") -Force
-            $DatabaseBackup = Join-Path $RollbackRoot "investor.db"
-            $DatabasePath = Join-Path $InstallDir "data\investor.db"
-            if (Test-Path $DatabaseBackup) {
-                Copy-Item -LiteralPath $DatabaseBackup -Destination $DatabasePath -Force
-                foreach ($Suffix in @("-wal", "-shm")) {
-                    $Sidecar = "$DatabasePath$Suffix"
-                    if (Test-Path $Sidecar) {
-                        Remove-Item -LiteralPath $Sidecar -Force
-                    }
-                }
-            }
+            # Keep the current database and WAL files. Snapshot restore needs separate review.
 
             Push-Location $InstallDir
             try {
                 & uv sync --python 3.11 --reinstall-package value-dca-agent
                 if ($LASTEXITCODE -ne 0) { throw "rollback dependency restore failed" }
-                & uv run investor db migrate
-                if ($LASTEXITCODE -ne 0) { throw "rollback migration restore failed" }
                 & uv run investor doctor
                 if ($LASTEXITCODE -ne 0) { throw "rollback diagnostics failed" }
 
@@ -412,10 +406,12 @@ catch {
             }
             Start-ScheduledTask -TaskName $CoreTaskName
             $RecoveryStatus = Get-CoreRecoveryStatus ([string]$CurrentVersion)
-            Write-UpdateLog "Rollback data/code restored to v$CurrentVersion; Core status: $RecoveryStatus"
+            Write-UpdateLog "Rollback code restored; current data preserved; version v$CurrentVersion; Core status: $RecoveryStatus"
         }
         catch {
-            $RecoveryStatus = "ROLLBACK_FAILED_DATA_STATE_REQUIRES_INSPECTION"
+            if ($RecoveryStatus -ne "RECOVERY_BLOCKED_CURRENT_DATA_PRESERVED_CORE_STOPPED") {
+                $RecoveryStatus = "ROLLBACK_FAILED_CURRENT_DATA_PRESERVED_SERVICE_REQUIRES_INSPECTION"
+            }
             Write-UpdateLog "ROLLBACK FAILED: $($_.Exception.Message)"
         }
     }
