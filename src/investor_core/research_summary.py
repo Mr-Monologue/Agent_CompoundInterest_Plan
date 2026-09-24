@@ -155,6 +155,12 @@ def portfolio_summary(positions: list[Json], records: dict[str, Json], *, today:
         item.update(instrument_code=code, instrument_name=holding["instrument_name"])
         item["holding_data_quality"] = position["data_quality"]
         item["holding_nav_date"] = (position.get("nav_snapshot") or {}).get("nav_date")
+        if "thesis" in records[code]:
+            item["thesis"] = records[code]["thesis"]
+            if item["thesis"]["status"] == "REVIEW_REQUIRED":
+                item["classification"] = "REVIEW"
+                item["reasons"].append("已确认研究论点存在可追溯复核触发, 见论点证据")
+                item["next_steps"].append("复核具体论点版本及证据; 不自动改变投资金额")
         items.append(item)
         approval = "研究映射已批准" if item["mapping_approved"] else "研究映射待确认"
         lines += [
@@ -164,6 +170,8 @@ def portfolio_summary(positions: list[Json], records: dict[str, Json], *, today:
             "  局限: " + "; ".join(item["gaps"] or item["limitations"]),
             "  下一步: " + "; ".join(item["next_steps"]),
         ]
+        if "thesis" in item:
+            lines.append(item["thesis"]["display_text"])
         for window in item["windows"]:
             drawdown = window["fund_max_drawdown_pct"]
             lines.append(

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.37.3",
+  "version": "0.38.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
-  "database_revision": "0040_research_benchmarks",
+  "database_revision": "0041_thesis_governance",
   "minimum_current_version": "0.5.3",
-  "notes": "Separate code compatibility from snapshot restore permission; preserve new facts and audit records. Add complete isolated HTTP lifecycle acceptance and bounded stage closeout. No schema or investment rule change."
+  "notes": "Governed research thesis confirmation, immutable history, evidence review and daily portfolio integration. Add two research tables only; no investment amount or strategy change."
 }

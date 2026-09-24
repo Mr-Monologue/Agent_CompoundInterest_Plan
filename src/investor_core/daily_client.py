@@ -21,6 +21,9 @@ from croniter import croniter
 Json = dict[str, Any]
 # Named workflows only: no generic POST, trading, source switch or market refresh.
 WORKFLOWS = {
+    "thesis-draft": ("/v1/research-thesis-drafts", "draft", True),
+    "thesis-confirm": ("/v1/research-thesis-drafts/{id}/confirm", "confirm", False),
+    "thesis-observation": ("/v1/research-thesis-observations", "draft", True),
     "benchmark-draft": ("/v1/benchmark-mapping-drafts", "draft", True),
     "benchmark-confirm": ("/v1/benchmark-mapping-drafts/{id}/confirm", "confirm", False),
     "benchmark-run": ("/v1/benchmark-research-runs", "draft", True),
@@ -439,6 +442,7 @@ def main() -> None:
     sub.add_parser("system").add_argument("--since")
     sub.add_parser("benchmark").add_argument("--code", required=True)
     sub.add_parser("case").add_argument("--code", required=True)
+    sub.add_parser("thesis").add_argument("--code", required=True)
     sub.add_parser("risk-coverage")
     sub.add_parser("review")
     sub.add_parser("notifications")
@@ -467,6 +471,12 @@ def main() -> None:
         elif args.command == "benchmark":
             result = client.get(
                 "/v1/benchmark-research",
+                portfolio_id=client.scope()["portfolio_id"],
+                instrument_code=args.code,
+            )
+        elif args.command == "thesis":
+            result = client.get(
+                "/v1/research-thesis",
                 portfolio_id=client.scope()["portfolio_id"],
                 instrument_code=args.code,
             )
