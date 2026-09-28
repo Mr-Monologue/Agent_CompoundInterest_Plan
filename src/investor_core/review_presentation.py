@@ -39,8 +39,10 @@ def disclosure_sections(item: Json) -> Json:
     for claim in item["comparison"]["disclosed_mandate"]:
         text = claim["text"]
         # Conservative: any purchase/suspension limit wording cannot establish type.
-        constrained = any(
-            x in text for x in ("限购", "限额", "不超过", "暂停申购", "累计申购", "受理截止")
+        purchase_terms = ("申购", "定投", "限购", "受理")
+        limit_terms = ("限购", "限额", "不超过", "暂停", "累计", "截止")
+        constrained = any(x in text for x in purchase_terms) and any(
+            x in text for x in limit_terms
         )
         (restrictions if constrained else mandate).append(claim)
     excluded = {e for c in restrictions for e in c["evidence_ids"]}
