@@ -89,6 +89,7 @@ from investor_core.config import Settings, get_settings
 from investor_core.decision_context import execution_context, research_context
 from investor_core.execution import ConstraintDraft, ExecutionService, QuotaCapture, SourceArchive
 from investor_core.health import build_doctor_report
+from investor_core.holding_review import HoldingReviewService, ReviewCapture, ReviewHandling
 from investor_core.ledger import LedgerError, LedgerService
 from investor_core.logging_config import build_uvicorn_log_config
 from investor_core.market_data import MarketDataService
@@ -142,6 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     notebook = NotebookService(research)
     theses = ThesisService(notebook)
     benchmarks = BenchmarkService(notebook)
+    holding_reviews = HoldingReviewService(benchmarks, theses, market_data)
     workspace = WorkspaceService(runtime_settings)
     subscriptions = SubscriptionService(runtime_settings)
     weekly_reports = WeeklyReportService(runtime_settings)
@@ -1391,6 +1393,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/v1/benchmark-mapping-drafts/{mapping_id}/confirm")
     def benchmark_confirm(mapping_id: str, request: MappingApproval) -> dict[str, Any]:
         return success(benchmarks.approve(mapping_id, request), data_quality="WARNING")
+
+    @app.get("/v1/holding-review")
+    def holding_review_get(portfolio_id: str, account_id: str) -> dict[str, Any]:
+        return success(holding_reviews.preview(portfolio_id, account_id), data_quality="WARNING")
+
+    @app.get("/v1/holding-review-history")
+    def holding_review_history(portfolio_id: str, account_id: str) -> dict[str, Any]:
+        return success(holding_reviews.history(portfolio_id, account_id), data_quality="WARNING")
+
+    @app.post("/v1/holding-review-captures")
+    def holding_review_capture(request: ReviewCapture) -> dict[str, Any]:
+        return success(holding_reviews.capture(request), data_quality="WARNING")
+
+    @app.post("/v1/holding-review-tasks/{task_id}/handling")
+    def holding_review_handle(task_id: str, request: ReviewHandling) -> dict[str, Any]:
+        return success(holding_reviews.handle(task_id, request), data_quality="WARNING")
 
     @app.get("/v1/portfolio-research-summary")
     def portfolio_research_get(portfolio_id: str, account_id: str) -> dict[str, Any]:
