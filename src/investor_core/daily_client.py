@@ -21,6 +21,8 @@ from croniter import croniter
 Json = dict[str, Any]
 # Named workflows only: no generic POST, trading, source switch or market refresh.
 WORKFLOWS = {
+    "review-capture": ("/v1/holding-review-captures", "draft", True),
+    "review-handle": ("/v1/holding-review-tasks/{id}/handling", "draft", True),
     "thesis-draft": ("/v1/research-thesis-drafts", "draft", True),
     "thesis-confirm": ("/v1/research-thesis-drafts/{id}/confirm", "confirm", False),
     "thesis-observation": ("/v1/research-thesis-observations", "draft", True),
@@ -445,6 +447,8 @@ def main() -> None:
     sub.add_parser("thesis").add_argument("--code", required=True)
     sub.add_parser("risk-coverage")
     sub.add_parser("review")
+    sub.add_parser("holdings-review")
+    sub.add_parser("review-history")
     sub.add_parser("notifications")
     sub.add_parser("research").add_argument("--topic", default="医疗")
     inspect = sub.add_parser("inspect")
@@ -486,6 +490,10 @@ def main() -> None:
                 portfolio_id=client.scope()["portfolio_id"],
                 instrument_code=args.code,
             )
+        elif args.command == "holdings-review":
+            result = client.get("/v1/holding-review", **client.scope())
+        elif args.command == "review-history":
+            result = client.get("/v1/holding-review-history", **client.scope())
         elif args.command == "review":
             result = client.get("/v1/portfolio-research-summary", **client.scope())
         elif args.command == "notifications":
