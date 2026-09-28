@@ -346,7 +346,12 @@ def state_hash(current: Json) -> str:
         dict(
             records=sorted(
                 [
-                    (r["observation_key"], structured(r, current["observed_on"]), r["data_dates"])
+                    (
+                        r["observation_key"],
+                        structured(r, current["observed_on"]),
+                        r["data_dates"],
+                        normalized_metadata(r),
+                    )
                     for r in current["records"]
                 ]
             ),

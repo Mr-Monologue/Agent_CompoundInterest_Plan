@@ -421,3 +421,14 @@ def test_same_gap_code_with_changed_missing_dates_is_material(tmp_path):
         if d["holding_id"] == item["instrument_code"] and d["subject"] == "comparison_coverage"
     )
     assert row["status"] == "CHANGED" and row["materiality"] == "MATERIAL"
+
+
+def test_explicit_save_state_keeps_minor_publication_change_but_not_refetch_time():
+    b = record()
+    a = deepcopy(b)
+    a["evidence"][0]["facts"]["published_date"] = "2026-09-28"
+    assert compare(b, a)["deltas"][0]["materiality"] == "MINOR"
+    assert state_hash(state(b)) != state_hash(state(a))
+    b = deepcopy(a)
+    a["evidence"][0]["facts"]["retrieved_at"] = "2026-09-29"
+    assert state_hash(state(b)) == state_hash(state(a))
