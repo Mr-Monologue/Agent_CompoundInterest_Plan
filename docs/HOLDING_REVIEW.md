@@ -1,3 +1,5 @@
+> v0.40.0：默认“复核我的持仓”改为首次基线差异复核。当前入口、显式观察保存和限制见 [BASELINE_DELTA_REVIEW](BASELINE_DELTA_REVIEW.md)。以下旧版描述保留历史；完整当前报告使用 holdings-research-current。
+
 # D1 现有持仓比较与复核
 
 ## 相对既有能力新增什么

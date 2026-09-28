@@ -87,6 +87,7 @@ from investor_core.benchmarks import (
 from investor_core.capital import CapitalService
 from investor_core.config import Settings, get_settings
 from investor_core.decision_context import execution_context, research_context
+from investor_core.delta_review_service import ObservationSave, ReviewService, SnapshotService
 from investor_core.execution import ConstraintDraft, ExecutionService, QuotaCapture, SourceArchive
 from investor_core.health import build_doctor_report
 from investor_core.holding_review import HoldingReviewService, ReviewCapture, ReviewHandling
@@ -1402,6 +1403,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if view == "DETAIL":
             data["display_text"] = data["detail_text"]
         return success(data, data_quality="WARNING")
+
+    @app.get("/v1/holding-review-delta")
+    def holding_review_delta(
+        portfolio_id: str,
+        account_id: str,
+        status: Literal["UNCHANGED", "NEW", "RESOLVED", "CHANGED", "REGRESSED", "STALE"]
+        | None = None,
+        instrument_code: str | None = None,
+        view: Literal["SUMMARY", "DETAIL"] = "SUMMARY",
+    ) -> dict[str, Any]:
+        return success(
+            ReviewService(holding_reviews).read(
+                portfolio_id,
+                account_id,
+                status=status,
+                code=instrument_code,
+                details=view == "DETAIL",
+            ),
+            data_quality="WARNING",
+        )
+
+    @app.post("/v1/holding-review-observations")
+    def holding_review_observation(request: ObservationSave) -> dict[str, Any]:
+        return success(SnapshotService(holding_reviews).save(request), data_quality="WARNING")
+
+    @app.get("/v1/holding-review-observations/{snapshot_id}/delta")
+    def holding_review_saved_delta(
+        snapshot_id: str, portfolio_id: str, account_id: str
+    ) -> dict[str, Any]:
+        return success(
+            SnapshotService(holding_reviews).recompute(portfolio_id, account_id, snapshot_id),
+            data_quality="WARNING",
+        )
 
     @app.get("/v1/holding-review-baseline-preview")
     def holding_review_baseline_preview(portfolio_id: str, account_id: str) -> dict[str, Any]:

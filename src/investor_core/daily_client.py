@@ -21,6 +21,7 @@ from croniter import croniter
 Json = dict[str, Any]
 # Named workflows only: no generic POST, trading, source switch or market refresh.
 WORKFLOWS = {
+    "review-save": ("/v1/holding-review-observations", "draft", True),
     "review-capture": ("/v1/holding-review-captures", "draft", True),
     "review-handle": ("/v1/holding-review-tasks/{id}/handling", "draft", True),
     "thesis-draft": ("/v1/research-thesis-drafts", "draft", True),
@@ -447,7 +448,13 @@ def main() -> None:
     sub.add_parser("thesis").add_argument("--code", required=True)
     sub.add_parser("risk-coverage")
     sub.add_parser("review")
-    sub.add_parser("holdings-review").add_argument("--details", action="store_true")
+    delta = sub.add_parser("holdings-review")
+    delta.add_argument("--details", action="store_true")
+    delta.add_argument("--code")
+    delta.add_argument(
+        "--status", choices=["UNCHANGED", "NEW", "RESOLVED", "CHANGED", "REGRESSED", "STALE"]
+    )
+    sub.add_parser("holdings-research-current").add_argument("--details", action="store_true")
     sub.add_parser("review-baseline-preview")
     sub.add_parser("review-history")
     sub.add_parser("notifications")
@@ -492,6 +499,14 @@ def main() -> None:
                 instrument_code=args.code,
             )
         elif args.command == "holdings-review":
+            result = client.get(
+                "/v1/holding-review-delta",
+                view="DETAIL" if args.details else "SUMMARY",
+                instrument_code=args.code,
+                status=args.status,
+                **client.scope(),
+            )
+        elif args.command == "holdings-research-current":
             result = client.get(
                 "/v1/holding-review", view="DETAIL" if args.details else "SUMMARY", **client.scope()
             )
