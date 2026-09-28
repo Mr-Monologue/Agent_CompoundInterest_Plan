@@ -69,3 +69,8 @@ Windows 持续调度与 Codex 对话独立；历史离线日志不等于当前�
 “看看持仓论点/为什么持有”用 `thesis --code <基金代码>`，展示已确认、新候选、支持/反证、变化和缺口。`review` 与 `investment` 同步读取这些状态及原研究窗口。先保留历史买入理由未知；当前新论点不是历史解释。
 
 用户表达修改研究意图后，可经 `research-case-draft` 建新版本，再 `thesis-draft` 生成具体内容确认；展示当前值、拟议版本/解释、证据有效期依据及不改变资金的边界。用户明确回复“确认”后才允许 `thesis-confirm`。未确认映射和论点不因软件部署而生效。观察事实用 `thesis-observation` 追加，失效观察仅触发研究复核；不能自动停投、卖出或调整金额。完整合同见 RESEARCH_NOTEBOOK。
+
+
+## D1 持仓比较与复核
+
+“复核我的持仓”使用 `holdings-review`，一次展示比较资格、证据原因、论点及相对上次保存的变化；查询不保存待办。“查看复核历史”使用 `review-history`。需保存时先读取当前输入，再用 `review-capture`；处理用 `review-handle` 记录具体说明，不能视为批准论点、映射或投资。响应未知先回读历史。详见 [HOLDING_REVIEW](HOLDING_REVIEW.md)。

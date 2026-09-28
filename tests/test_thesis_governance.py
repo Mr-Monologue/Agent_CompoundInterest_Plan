@@ -311,7 +311,13 @@ def test_migration_preserves_existing_research_and_facts(tmp_path):
     assert {"research_thesis_actions", "research_thesis_observations"} <= tables
 
     def existing(lines):
-        return [x for x in lines if "alembic_version" not in x and "research_thesis_" not in x]
+        return [
+            x
+            for x in lines
+            if "alembic_version" not in x
+            and "research_thesis_" not in x
+            and "holding_review_" not in x
+        ]
 
     assert existing(old) == existing(after)
 
