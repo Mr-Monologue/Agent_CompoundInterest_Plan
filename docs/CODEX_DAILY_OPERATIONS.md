@@ -1,3 +1,5 @@
+> v0.40.0：默认“复核我的持仓”改为首次基线差异复核。当前入口、显式观察保存和限制见 [BASELINE_DELTA_REVIEW](BASELINE_DELTA_REVIEW.md)。以下旧版描述保留历史；完整当前报告使用 holdings-research-current。
+
 # Codex 日常投资操作入口（v0.33.0）
 
 Core 是唯一账本和业务规则来源。Codex 负责识别意图、补齐用户事实、调用下列本机 HTTP 入口并用自然语言展示。HTTP 已可用时不等待 MCP；不重建账本，不运行数据库 CLI 代替查询。

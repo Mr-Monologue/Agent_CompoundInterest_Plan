@@ -5,6 +5,25 @@ description: Operate a personal long-term value-DCA investment assistant through
 
 # Value DCA Investor
 
+## Windows daily baseline review
+
+For the existing Windows Codex + Core deployment, use the existing Core HTTP daily client when
+session MCP tools are unavailable; do not repeat MCP discovery or invent a second ledger. Read
+`docs/CODEX_DAILY_OPERATIONS.md` and `docs/BASELINE_DELTA_REVIEW.md` for current HTTP contracts.
+
+- “复核我的持仓 / 和基线相比有什么变化 / 查看本次变化” uses `investor-assistant holdings-review`.
+- Filter with `--status NEW|RESOLVED|REGRESSED|UNCHANGED`; fund evidence with `--code <code> --details`.
+- Core owns Baseline/Current/Delta and materiality. Show its result, including genuine no-change,
+  dates, source limitations and unknowns. Do not recalculate, rank or turn research into trades.
+- Queries never save snapshots, approve mappings/theses or handle tasks. Only an explicit
+  “保存这次复核 / 保存为新的观察点 / 记录本次观察” authorizes the currently displayed observation save.
+  Re-read and use `workflow review-save` with the returned state hash, baseline ID and fixed key;
+  preserve current intent internally. Changed input must be shown again, not silently saved.
+- Same-state saves reuse the existing observation. Lost response: inspect `review-history` first,
+  never blindly resend or generate a new key. Saving an observation is not resolving a problem.
+- The first baseline is immutable. Context facts are not risk alerts; candidates never become
+  approved from a delta. Use `holdings-research-current --details` for all original windows.
+
 ## Execute the request
 
 1. Identify whether the request is a query, explanation, idempotent setup mutation, draft mutation,
