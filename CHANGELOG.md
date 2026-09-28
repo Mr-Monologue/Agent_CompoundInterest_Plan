@@ -1,5 +1,7 @@
 # v0.40.1
 
+- Keep redirected daily-client output lossless UTF-8 on Windows, avoiding GBK failures on archived source symbols.
+
 - State explicitly that baseline review uses archived research and fetches no new evidence; unchanged archives do not establish unchanged current market or product conditions. Preserve cutoff dates, comparison results, identity and read-only boundaries.
 - No schema, task, approval or financial changes.
 

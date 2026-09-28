@@ -370,3 +370,35 @@ def test_week_uses_selected_account_and_marks_truncated_history(monkeypatch) -> 
     assert [p["id"] for p in result["plans"]] == ["mine"]
     assert result["history_may_be_truncated"]
     assert "WARNING" in result["display_text"]
+
+
+@pytest.mark.parametrize("structured", [False, True])
+def test_daily_cli_redirected_output_is_lossless_utf8(structured, monkeypatch):
+    import json
+    import subprocess
+    import sys
+
+    monkeypatch.setenv("PYTHONIOENCODING", "gbk")
+    text = "归档研究 ® → 未获取新证据"
+    script = """
+import sys
+from investor_core import daily_client as daily
+text = sys.argv[1]
+structured = sys.argv[2] == 'True'
+class Stub:
+    def __init__(self, *args, **kwargs): pass
+    def scope(self): return {}
+    def get(self, *args, **kwargs): return {'display_text': text}
+    def close(self): pass
+daily.DailyClient = Stub
+sys.argv = ['investor-assistant'] + (['--json'] if structured else []) + ['holdings-review']
+daily.main()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, text, str(structured)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8")
+    output = result.stdout.decode("utf-8").strip()
+    assert (json.loads(output)["display_text"] if structured else output) == text
