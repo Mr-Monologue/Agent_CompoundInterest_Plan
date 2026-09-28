@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -1395,8 +1395,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return success(benchmarks.approve(mapping_id, request), data_quality="WARNING")
 
     @app.get("/v1/holding-review")
-    def holding_review_get(portfolio_id: str, account_id: str) -> dict[str, Any]:
-        return success(holding_reviews.preview(portfolio_id, account_id), data_quality="WARNING")
+    def holding_review_get(
+        portfolio_id: str, account_id: str, view: Literal["SUMMARY", "DETAIL"] = "SUMMARY"
+    ) -> dict[str, Any]:
+        data = holding_reviews.preview(portfolio_id, account_id)
+        if view == "DETAIL":
+            data["display_text"] = data["detail_text"]
+        return success(data, data_quality="WARNING")
+
+    @app.get("/v1/holding-review-baseline-preview")
+    def holding_review_baseline_preview(portfolio_id: str, account_id: str) -> dict[str, Any]:
+        return success(
+            holding_reviews.baseline_preview(portfolio_id, account_id), data_quality="WARNING"
+        )
 
     @app.get("/v1/holding-review-history")
     def holding_review_history(portfolio_id: str, account_id: str) -> dict[str, Any]:

@@ -74,3 +74,5 @@ Windows 持续调度与 Codex 对话独立；历史离线日志不等于当前�
 ## D1 持仓比较与复核
 
 “复核我的持仓”使用 `holdings-review`，一次展示比较资格、证据原因、论点及相对上次保存的变化；查询不保存待办。“查看复核历史”使用 `review-history`。需保存时先读取当前输入，再用 `review-capture`；处理用 `review-handle` 记录具体说明，不能视为批准论点、映射或投资。响应未知先回读历史。详见 [HOLDING_REVIEW](HOLDING_REVIEW.md)。
+
+D1使用补充：`holdings-review` 默认逐基金一行，`holdings-review --details` 查看Core提供的所有窗口、原因和来源。`review-baseline-preview` 仅预览首次观察基线或与已有基线比较；本阶段不自动调用保存/处理工作流。批准保存观察也不代表确认问题已处理。

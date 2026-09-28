@@ -269,10 +269,16 @@ try {
         -Principal $TaskPrincipal `
         -Settings $TaskSettings `
         -Description "Hidden local runtime supervisor for Value DCA Investor Core."
-    Register-ScheduledTask `
-        -TaskName $CoreTaskName `
-        -InputObject $TaskDefinition `
-        -Force | Out-Null
+    $ExistingCoreTask = Get-ScheduledTask -TaskName $CoreTaskName -ErrorAction SilentlyContinue
+    if ($null -eq $ExistingCoreTask) {
+        Register-ScheduledTask `
+            -TaskName $CoreTaskName `
+            -InputObject $TaskDefinition `
+            -Force | Out-Null
+    }
+    else {
+        Write-Host "Preserved existing Core task definition."
+    }
 
     if (-not $DisableAutoUpdate) {
         Write-Step "Installing the guarded GitHub release updater"
@@ -313,22 +319,13 @@ try {
                 "Checks stable GitHub releases for Value DCA, backs up the database, " +
                 "and rolls back failed updates."
             )
-        try {
+        if ($null -eq $ExistingUpdateTask) {
             Register-ScheduledTask `
                 -TaskName $UpdateTaskName `
-                -InputObject $UpdateDefinition `
-                -Force | Out-Null
+                -InputObject $UpdateDefinition | Out-Null
         }
-        catch {
-            if ($null -ne $ExistingUpdateTask -and $ExistingUpdateTask.State -eq "Running") {
-                Write-Warning (
-                    "The updater task is currently running; its console-free definition " +
-                    "will be installed by the post-update finalizer."
-                )
-            }
-            else {
-                throw
-            }
+        else {
+            Write-Host "Preserved existing updater task definition."
         }
     }
 
