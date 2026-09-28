@@ -77,3 +77,14 @@ def test_grouping_retains_windows_and_limit_cannot_prove_product_type(tmp_path):
     assert not separated["product_types"] and not separated["investment_scope"]
     assert separated["purchase_disclosures"] == item["comparison"]["disclosed_mandate"]
     assert not separated["purchase_schedule_effect"]
+
+    item["comparison"]["disclosed_mandate"].append(
+        dict(text="混合型基金投资股票不超过95%", evidence_ids=["mandate"])
+    )
+    item["comparison"]["product_labels"].append(
+        dict(label="混合型", source=dict(id="mandate"))
+    )
+    separated = disclosure_sections(item)
+    assert len(separated["purchase_disclosures"]) == 1
+    assert separated["investment_scope"][0]["evidence_ids"] == ["mandate"]
+    assert separated["product_types"][0]["label"] == "混合型"
