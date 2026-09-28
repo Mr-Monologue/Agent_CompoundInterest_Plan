@@ -420,12 +420,6 @@ class HoldingReviewService:
         )
         old = {i["instrument_code"]: i for i in previous["snapshot"]["items"]} if previous else {}
         tasks = {t["reason"]["evidence_version"]: t for t in history["tasks"]}
-        lines = [
-            "持仓比较与复核 | 仅当前持仓、各自基准;无统一排名或买卖信号",
-            "查询日期: "
-            + result["observed_on"]
-            + ";变化相对上次明确保存的复核,不把每次查询当新记录。",
-        ]
         for item in result["items"]:
             code = item["instrument_code"]
             prior = old.get(code)
@@ -434,23 +428,6 @@ class HoldingReviewService:
                 baseline_snapshot_id=previous["id"] if previous else None,
                 status="NO_BASELINE" if not prior else "CHANGED" if fields else "UNCHANGED",
                 fields=fields,
-            )
-            lines.append(
-                f"{code} {item['instrument_name']} | "
-                f"{ELIGIBILITY_LABELS[item['comparison']['eligibility']]}"
-                f" | {THESIS_LABELS[item['thesis']['status']]}"
-            )
-            active = item["thesis"]["active_case"]
-            lines.append(
-                "  已确认论点: " + (active["thesis"]["proposed_why_hold"] if active else "无")
-            )
-            lines.append(
-                "  相对上次变化: "
-                + ((", ".join(fields) or "无实质变化") if prior else "尚无保存的复核基线")
-            )
-            lines.append(
-                "  产品披露: "
-                + "; ".join(c["text"] for c in item["comparison"]["disclosed_mandate"])
             )
             for reason in item["reasons"]:
                 task = tasks.get(reason["evidence_version"])
@@ -464,45 +441,22 @@ class HoldingReviewService:
                     else "PROPOSED_NOT_SAVED",
                     latest_event_id=events[-1]["id"] if events else None,
                 )
-                lines.append(
-                    f"  [{CATEGORY_LABELS[reason['category']]}] {reason['text']}"
-                    f" | 数据 {', '.join(reason['data_dates']) or '缺失/见依据'}"
-                    f" | {TASK_LABELS[reason['task']['status']]}"
-                )
-                lines.append("    下一步: " + reason["next_step"])
-                for source in reason["sources"]:
-                    lines.append(
-                        "    来源: "
-                        + source["source_name"]
-                        + " | "
-                        + source["evidence_date"]
-                        + " | "
-                        + source["source_ref"]
-                    )
-            for w in item["windows"]:
-                drawdown = w["fund_max_drawdown_pct"]
-                drawdown_text = "缺失" if drawdown is None else str(drawdown)
-                lines.append(
-                    f"  {w['start']} 至 {w['end']}: "
-                    f"基金 {w['fund_return_pct']:.2f}%, 基准 {w['benchmark_return_pct']:.2f}%; "
-                    f"差额 {w['excess_percentage_points']:+.2f}百分点; "
-                    f"{DRAWDOWN_LABEL} "
-                    f"{drawdown_text}; "
-                    + (
-                        "仅管理人披露"
-                        if w["basis"] == "ISSUER_REPORTED_ONLY"
-                        else "日序列/管理人公布路径,非成分独立重建"
-                        if w["benchmark_path"] == "ISSUER_PUBLISHED"
-                        else "日序列/成分计算,质量限制仍保留"
-                    )
-                )
-            lines.append("  限制: " + "; ".join(item["comparison"]["gaps"] + item["warnings"]))
         result.update(
             previous_snapshot_id=previous["id"] if previous else None,
             history_count=len(history["snapshots"]),
-            display_text="\n".join(lines),
         )
+        from investor_core.review_presentation import present_review
+
+        result.update(present_review(result))
         return result
+
+    def baseline_preview(self, portfolio: str, account: str) -> Json:
+        """Read-only exact capture proposal; no draft, event or task is written."""
+        from investor_core.review_presentation import baseline_presentation
+
+        current = self.build(portfolio, account)
+        history = self.history(portfolio, account)
+        return baseline_presentation(current, history)
 
     def _replay(self, c: Any, portfolio: str, account: str, payload: Json) -> Json | None:
         for e in self._rows(c, "holding_review_events", portfolio, account):

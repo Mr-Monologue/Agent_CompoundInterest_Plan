@@ -149,3 +149,45 @@ catch {{ Write-Output $_.Exception.Message; exit 0 }}
     assert state["recovery"] == "HEALTHY"
     assert (root / "data/investor.db").read_bytes() == before
     assert not list((root / "backups/updates").glob("*/recovery.json"))
+
+
+def test_finalizer_preserves_real_isolated_task_definition(tmp_path):
+    # Actual Windows Task Scheduler: disabled, harmless action, unique name, exact XML.
+    # Not a production task or a sleep/reboot test.
+    import uuid
+
+    task = "ValueDCA-Isolated-Test-" + uuid.uuid4().hex
+    root = tmp_path / "isolated runtime"
+    root.mkdir()
+    finalizer = ROOT / "runtime/windows/finalize-update-task.ps1"
+    script = rf"""
+$ErrorActionPreference='Stop'
+$name='{task}'
+try {{
+ $user=[System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+ $principal=New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+ $trigger=New-ScheduledTaskTrigger -Daily -At '03:17'
+ $trigger.StartBoundary='2020-01-02T03:17:00+08:00'
+ $action=New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\cmd.exe" `
+  -Argument '/c exit 0' -WorkingDirectory '{root}'
+ $settings=New-ScheduledTaskSettingsSet -Disable -ExecutionTimeLimit (New-TimeSpan -Minutes 7) `
+  -MultipleInstances Queue
+ Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger `
+  -Principal $principal -Settings $settings | Out-Null
+ $before=Export-ScheduledTask -TaskName $name
+ 1..2 | ForEach-Object {{
+  & '{finalizer}' -InstallDir '{root}' -UpdateTaskName $name `
+   -Repository 'unchosen/repository' -CoreTaskName 'unused' -SkipHermes
+  if ((Export-ScheduledTask -TaskName $name) -cne $before) {{ throw 'Task definition drift' }}
+ }}
+ Write-Output 'UNCHANGED'
+}}
+finally {{
+ if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) {{
+  Unregister-ScheduledTask -TaskName $name -Confirm:$false
+ }}
+}}
+"""
+    result = call(script, tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "UNCHANGED" in result.stdout

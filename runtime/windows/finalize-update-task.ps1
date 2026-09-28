@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [string]$InstallDir,
@@ -73,6 +73,16 @@ try {
     }
     if ($null -ne $CurrentTask -and $CurrentTask.State -eq "Running") {
         throw "Updater task remained active for 120 seconds."
+    }
+
+    # Routine upgrades must not reconstruct a registered task from defaults.
+    # Its triggers, action arguments, principal and settings are user configuration.
+    if ($null -ne $CurrentTask) {
+        Write-FinalizerLog "Preserved existing updater task definition without registration."
+        if (-not $SkipHermes) {
+            Refresh-HermesGateway -Profile $HermesProfile
+        }
+        return
     }
 
     $HiddenLauncher = Join-Path $InstallDir "runtime\windows\run-powershell-hidden.vbs"
