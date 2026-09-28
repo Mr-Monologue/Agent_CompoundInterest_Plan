@@ -447,7 +447,8 @@ def main() -> None:
     sub.add_parser("thesis").add_argument("--code", required=True)
     sub.add_parser("risk-coverage")
     sub.add_parser("review")
-    sub.add_parser("holdings-review")
+    sub.add_parser("holdings-review").add_argument("--details", action="store_true")
+    sub.add_parser("review-baseline-preview")
     sub.add_parser("review-history")
     sub.add_parser("notifications")
     sub.add_parser("research").add_argument("--topic", default="医疗")
@@ -491,7 +492,11 @@ def main() -> None:
                 instrument_code=args.code,
             )
         elif args.command == "holdings-review":
-            result = client.get("/v1/holding-review", **client.scope())
+            result = client.get(
+                "/v1/holding-review", view="DETAIL" if args.details else "SUMMARY", **client.scope()
+            )
+        elif args.command == "review-baseline-preview":
+            result = client.get("/v1/holding-review-baseline-preview", **client.scope())
         elif args.command == "review-history":
             result = client.get("/v1/holding-review-history", **client.scope())
         elif args.command == "review":
