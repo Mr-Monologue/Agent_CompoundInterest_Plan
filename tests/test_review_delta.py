@@ -376,3 +376,23 @@ def test_approved_mapping_new_candidate_stays_pending(tmp_path):
     assert d["after"]["approval_state"] is False
     assert bench.read(pid, "CORE01")["approved_research_version"] == 1
     assert dump(settings.db_path) == before
+
+
+def test_legacy_source_without_original_digest_ignores_retrieval_metadata():
+    b = record("OBSERVATION")
+    b["evidence"][0]["facts"] = {"quality": "OFFICIAL", "metric": 12, "retrieved_at": "first"}
+    b["evidence"][0]["facts_hash"] = "metadata-sensitive-first"
+    a = deepcopy(b)
+    a["evidence"][0]["facts"]["retrieved_at"] = "second"
+    a["evidence"][0]["facts_hash"] = "metadata-sensitive-second"
+    assert compare(b, a)["deltas"][0]["status"] == "UNCHANGED"
+    a["evidence"][0]["facts"]["metric"] = 13
+    assert compare(b, a)["deltas"][0]["materiality"] == "MATERIAL"
+
+
+def test_previously_supported_provenance_becomes_unverified():
+    valid = dict(SOURCE, facts=dict(quality="OFFICIAL", original_sha256="content"))
+    unknown = dict(SOURCE, facts=dict(quality="UNVERIFIED", original_sha256="content"))
+    b = observation("003096", "source", "OBSERVATION", {}, evidence=[valid])
+    a = observation("003096", "source", "OBSERVATION", {}, evidence=[unknown])
+    assert compare(b, a)["deltas"][0]["status"] == "REGRESSED"

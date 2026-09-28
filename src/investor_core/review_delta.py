@@ -26,6 +26,8 @@ IGNORED = {
     "evidence_version",
     "run_id",
     "created_at",
+    "expires_at",
+    "facts_hash",
     "retrieved_at",
     "published_date",
     "idempotency_key",
@@ -75,6 +77,11 @@ def observation(
         quality = next(
             (q for q in ("CONFLICT", "INVALID", "UNAVAILABLE") if q in reported), quality
         )
+        if quality == "UNKNOWN" and reported:
+            if reported <= {"OFFICIAL", "VERIFIED", "PASS"}:
+                quality = "SUPPORTED"
+            elif reported & {"UNVERIFIED", "REPOST"}:
+                quality = "UNVERIFIED"
     # Category deliberately omitted: the same subject can migrate classifications.
     return dict(
         observation_key=digest([code, subject, window]),
@@ -108,7 +115,15 @@ def evidence_values(refs: list[Json]) -> list[Json]:
                     content=(
                         s.get("facts", {}).get("original_sha256")
                         or s.get("facts", {}).get("excerpt_sha256")
-                        or s.get("facts_hash")
+                        or (
+                            digest(
+                                dict(
+                                    normalized(s["facts"]), quoted_source=s["facts"].get("excerpt")
+                                )
+                            )
+                            if s.get("facts")
+                            else s.get("facts_hash")
+                        )
                     ),
                     quality=s.get("facts", {}).get("quality"),
                     data_date=s.get("facts", {}).get("data_date") or s.get("evidence_date"),
@@ -390,6 +405,10 @@ class DeltaEngine:
                 lost = (
                     (not bv["stale"] and av["stale"])
                     or (bool(bv["evidence"]) and not av["evidence"])
+                    or (
+                        b["quality"] in {"VALID", "SUPPORTED"}
+                        and a["quality"] in {"UNKNOWN", "UNVERIFIED"}
+                    )
                     or (
                         a["quality"] in {"INVALID", "UNAVAILABLE", "CONFLICT"}
                         and b["quality"] != a["quality"]
