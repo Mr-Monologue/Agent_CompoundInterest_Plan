@@ -35,7 +35,11 @@ def test_summary_details_and_baseline_readonly_preserve_inputs(tmp_path):
     url = "/v1/holding-review-baseline-preview"
     proposal = web.get(url, params=q).json()["data"]
     assert proposal == web.get(url, params=q).json()["data"]
-    assert proposal["proposed_snapshot"] == original
+    assert {k: v for k, v in proposal["proposed_snapshot"].items() if k != "observed_on"} == {
+        k: v for k, v in original.items() if k != "observed_on"
+    }
+    assert proposal["observed_on"] == summary["observed_on"]
+    assert svc.baseline_preview(pid, aid)["proposed_snapshot"] == original
     assert proposal["proposed_task_count"] == sum(len(i["reasons"]) for i in original["items"])
     assert sum(proposal["category_counts"].values()) == proposal["proposed_task_count"]
     assert not proposal["writes_performed"] and not proposal["money_action"]

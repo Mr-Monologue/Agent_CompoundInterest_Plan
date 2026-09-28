@@ -34,7 +34,8 @@ def window_label(w: Json) -> str:
 
 def disclosure_sections(item: Json) -> Json:
     """Keep original claims; separate execution text from mandate/type evidence."""
-    mandate, restrictions = [], []
+    mandate: list[Json] = []
+    restrictions: list[Json] = []
     for claim in item["comparison"]["disclosed_mandate"]:
         text = claim["text"]
         # Conservative: any purchase/suspension limit wording cannot establish type.
