@@ -1,3 +1,8 @@
+# v0.40.1
+
+- State explicitly that baseline review uses archived research and fetches no new evidence; unchanged archives do not establish unchanged current market or product conditions. Preserve cutoff dates, comparison results, identity and read-only boundaries.
+- No schema, task, approval or financial changes.
+
 # v0.40.0
 
 - Add structured Baseline / Current / Delta comparison with semantic identities, six states, materiality, explicit category transitions and evidence-bound resolution.

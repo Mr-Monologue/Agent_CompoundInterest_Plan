@@ -96,6 +96,11 @@ class ReviewService:
             observed_on=baseline["snapshot"]["observed_on"],
         )
         result["raw_current"] = current
+        # This path reads archived Core research only; comparison never refreshes sources.
+        # Acquisition context is not research state and must not affect snapshot identity.
+        result["evidence_acquisition"] = dict(
+            status="NOT_PERFORMED", new_evidence_fetched=False, scope="CORE_ARCHIVE_ONLY"
+        )
         warnings = {w for i in current["items"] for w in i["warnings"]}
         data_codes = {
             "SINGLE_SOURCE_WARNING",
