@@ -167,6 +167,13 @@ def test_http_review_save_replay_history_and_financial_boundaries(tmp_path):
     assert result["summary"]["materiality"]["MATERIAL"] == 0
     assert result["baseline"]["snapshot_id"] == saved["snapshot_id"]
     assert "没有发现需要你处理的实质变化" in result["display_text"]
+    assert result["evidence_acquisition"] == dict(
+        status="NOT_PERFORMED", new_evidence_fetched=False, scope="CORE_ARCHIVE_ONLY"
+    )
+    assert "本次未获取新证据" in result["display_text"]
+    assert "归档内容无变化不表示最新市场或产品情况无变化" in result["display_text"]
+    assert "归档研究窗口截止日" in result["display_text"]
+    assert result["current_state_hash"] == state_hash(project(svc.build(pid, aid)))
     for status in ["NEW", "RESOLVED", "CHANGED", "REGRESSED", "UNCHANGED", "STALE"]:
         assert web.get("/v1/holding-review-delta", params=dict(q, status=status)).status_code == 200
     assert dump(settings.db_path) == before

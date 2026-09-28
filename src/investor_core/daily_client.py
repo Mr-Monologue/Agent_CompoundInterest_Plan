@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import sqlite3
@@ -428,6 +429,11 @@ class DailyClient:
 
 
 def main() -> None:
+    # Native Windows pipes can default to GBK, which cannot encode all research text.
+    # Keep the console's own encoding, but make redirected output lossless UTF-8.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper) and not stream.isatty():
+            stream.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--core-url", default="http://127.0.0.1:8710")
     parser.add_argument("--portfolio")
