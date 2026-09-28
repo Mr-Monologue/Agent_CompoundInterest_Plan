@@ -86,6 +86,11 @@ def present(
     lines = [f"本次与 {date} 首次观察基线相比(查询日 {current['observed_on']}):"]
     cutoffs = sorted({w["end"] for i in result["raw_current"]["items"] for w in i["windows"]})
     lines.append("归档研究窗口截止日: " + ("、".join(cutoffs) if cutoffs else "未知"))
+    if result["evidence_acquisition"]["status"] == "NOT_PERFORMED":
+        lines.append(
+            "本次未获取新证据,仅比较Core当前归档研究;"
+            "归档内容无变化不表示最新市场或产品情况无变化。"
+        )
     material = summary["material_states"]
     lines.append(
         ";".join(
@@ -98,7 +103,7 @@ def present(
         f"细节变化:{summary['materiality']['MINOR']}。"
     )
     if summary["materiality"]["MATERIAL"] == 0:
-        lines.append(f"与 {date} 基线相比,没有发现需要你处理的实质变化。")
+        lines.append(f"就现有归档研究,与 {date} 基线相比,没有发现需要你处理的实质变化。")
     selected = [
         d
         for d in result["deltas"]
