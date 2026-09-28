@@ -61,3 +61,5 @@
 - 阶段 B 研究及风险覆盖见 docs/RESEARCH_NOTEBOOK.md；账户取证优先 040046，独立于研究交付。研究草稿不代替原始买入理由或投资规则确认。
 
 - 基准与相对表现入口见 docs/BENCHMARK_RESEARCH.md；官方比较基准与研究映射分开，历史有效期不得追溯套用新权重，研究批准不触发正式风险动作。
+
+- 基线差异复核：先读 docs/BASELINE_DELTA_REVIEW.md，默认比较首次保存基线；查询只读，显式保存才新增观察点，具体批准仍独立。当前阶段进度见唯一 LAUNCH_CHECKLIST。
