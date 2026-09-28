@@ -1,3 +1,10 @@
+# v0.40.0
+
+- Add structured Baseline / Current / Delta comparison with semantic identities, six states, materiality, explicit category transitions and evidence-bound resolution.
+- Default daily holding review focuses on changes against the first saved baseline; keep the complete current report and source details available. No query writes, implied approval, risk score or investment action.
+- Explicit observation saves preserve raw historical inputs, deduplicate current states and persist compact versioned comparison references. Lost responses require history reconciliation, not blind retries.
+- No schema migration. Existing baseline/capture/handling contracts and financial rules remain unchanged.
+
 # v0.33.1
 
 Read-only execution constraint diagnostics distinguish candidate allocations from platform execution. Core research diagnosis preserves missing thesis, evidence and model limitations. Candidate v1.7 architecture is archived for audit only; no strategy, money algorithm or schema change.
