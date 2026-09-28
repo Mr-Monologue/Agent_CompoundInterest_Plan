@@ -163,12 +163,15 @@ def project(raw: Json) -> Json:
             )
         )
         gaps = comparison["gaps"]
+        missing = next(
+            (r["basis"].get("missing", {}) for r in reasons if r["kind"] == "COVERAGE_GAP"), {}
+        )
         records.append(
             observation(
                 code,
                 "comparison_coverage",
                 "DATA_GAP" if gaps else "OBSERVATION",
-                dict(gaps=gaps, eligibility=comparison["eligibility"]),
+                dict(gaps=gaps, missing=missing, eligibility=comparison["eligibility"]),
                 unknowns=gaps,
                 sufficient=not gaps and bool(item["windows"]) and reliable,
                 description="比较资格与数据覆盖",

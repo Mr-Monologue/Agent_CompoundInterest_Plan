@@ -396,3 +396,28 @@ def test_previously_supported_provenance_becomes_unverified():
     b = observation("003096", "source", "OBSERVATION", {}, evidence=[valid])
     a = observation("003096", "source", "OBSERVATION", {}, evidence=[unknown])
     assert compare(b, a)["deltas"][0]["status"] == "REGRESSED"
+
+
+def test_same_gap_code_with_changed_missing_dates_is_material(tmp_path):
+    _, pid, aid, _, svc, _ = setup(tmp_path)
+    old = svc.build(pid, aid)
+    item = old["items"][0]
+    item["reasons"].append(
+        dict(
+            kind="COVERAGE_GAP",
+            basis=dict(missing={"INDEX": ["2026-09-21"]}),
+            sources=[],
+            category="DATA_GAP",
+            text="missing",
+            data_dates=[],
+        )
+    )
+    new = deepcopy(old)
+    new["items"][0]["reasons"][-1]["basis"]["missing"]["INDEX"] = ["2026-09-21", "2026-09-22"]
+    differences = DeltaEngine().evaluate(project(old), project(new))["deltas"]
+    row = next(
+        d
+        for d in differences
+        if d["holding_id"] == item["instrument_code"] and d["subject"] == "comparison_coverage"
+    )
+    assert row["status"] == "CHANGED" and row["materiality"] == "MATERIAL"
