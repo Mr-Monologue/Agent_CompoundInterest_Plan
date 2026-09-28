@@ -163,7 +163,7 @@ def project(raw: Json) -> Json:
             )
         )
         gaps = comparison["gaps"]
-        missing = next(
+        missing: Json = next(
             (r["basis"].get("missing", {}) for r in reasons if r["kind"] == "COVERAGE_GAP"), {}
         )
         records.append(
