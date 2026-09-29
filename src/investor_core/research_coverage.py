@@ -150,6 +150,8 @@ def summarize(item: Json, peers: list[Json], profiles: list[Json]) -> Json:
             "D1与同类研究同窗口值存在差异,原口径均保留",
             "核对详情中的来源、版本、舍入精度与收益方法",
         )
+    if not item["thesis"].get("active_case") and "已确认论点" in next_step:
+        next_step = "先核对现有研究假设(尚未生效)与对应窗口;具体论点仍须另行确认"
     profile_types = {p["profile"]["product_type"] for p in profiles}
     if len(profile_types) > 1:
         priority, finding, next_step = (

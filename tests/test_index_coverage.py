@@ -163,3 +163,15 @@ def test_tracking_never_substitutes_return_variant():
     w = evaluate(PeerStudy.model_validate(x))["rows"][0]["windows"][0]
     assert w["calculated"] and w["tracking"]["calculated"] is None
     assert w["tracking"]["gaps"] == ["INDEX_RETURN_BASIS_MISMATCH"]
+
+
+def test_next_work_does_not_claim_an_unapproved_thesis(tmp_path):
+    _settings, pid, aid, _eid, svc, _ = setup(tmp_path)
+    item = svc.build(pid, aid)["items"][0]
+    item["reasons"] = [r for r in item["reasons"] if r["kind"] == "RELATIVE_LAG"]
+    original = deepcopy(item)
+    profiles = [dict(profile=dict(product_type="正式类型"), data_date="2024-01-01")]
+    result = summarize(item, [], profiles)
+    assert "已确认论点" not in result["next_step"]
+    assert "尚未生效" in result["next_step"]
+    assert item == original
