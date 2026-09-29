@@ -169,6 +169,11 @@ class DiagnosticInput(StrictModel):
         return self
 
 
+def net_nav_period_return(previous: Decimal, current: Decimal, cash: Decimal) -> Decimal:
+    """Ex-date reinvestment; NAV already includes ongoing internal fees."""
+    return (current + cash) / previous - 1
+
+
 def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
     """Exact endpoints/calendar. No fill, no implicit FX, no fee double deduction."""
     gaps: set[str] = set()
@@ -284,7 +289,7 @@ def diagnose(mapping: Json, request: DiagnosticInput) -> Json:
         rows = []
         dividends = {d.ex_date: d.cash_per_unit for d in request.distributions}
         for prev, day, period in zip(dates[:-1], dates[1:], selected, strict=True):
-            f = (fund[day] + dividends.get(day, Decimal(0))) / fund[prev] - 1
+            f = net_nav_period_return(fund[prev], fund[day], dividends.get(day, Decimal(0)))
             b = Decimal(0)
             for component in period["components"]:
                 values = values_by_key[(component["provider"], component["code"])]

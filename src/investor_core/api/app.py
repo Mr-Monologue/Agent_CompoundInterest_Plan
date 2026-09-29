@@ -97,6 +97,8 @@ from investor_core.market_data import MarketDataService
 from investor_core.market_sync import MarketSyncService
 from investor_core.notebook import CaseDraft, JournalEntry, NotebookService, risk_coverage
 from investor_core.operations import OperationsService
+from investor_core.peer_models import PeerStudy
+from investor_core.peer_research import PeerResearchService
 from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.research import ResearchService
@@ -1481,6 +1483,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             notification_status(
                 operations.list_outbox(status=None, limit=500),
                 operations.list_delivery_attempts(limit=500),
+            ),
+            data_quality="WARNING",
+        )
+
+    @app.post("/v1/peer-research-runs")
+    def peer_archive(request: PeerStudy) -> dict[str, Any]:
+        return success(PeerResearchService(research).archive(request), data_quality="WARNING")
+
+    @app.get("/v1/peer-research")
+    def peer_read(
+        anchor_code: str,
+        cohort_key: str | None = None,
+        run_id: str | None = None,
+        as_of: date | None = None,
+        instrument_code: str | None = None,
+        view: Literal["SUMMARY", "DETAIL"] = "SUMMARY",
+    ) -> dict[str, Any]:
+        return success(
+            PeerResearchService(research).read(
+                anchor_code,
+                cohort_key=cohort_key,
+                run_id=run_id,
+                as_of=as_of,
+                code=instrument_code,
+                details=view == "DETAIL",
             ),
             data_quality="WARNING",
         )

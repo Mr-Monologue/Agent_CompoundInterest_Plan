@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.40.1",
+  "version": "0.41.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
-  "database_revision": "0042_holding_review",
+  "database_revision": "0043_peer_research",
   "minimum_current_version": "0.5.3",
-  "notes": "Readonly baseline delta review with semantic comparison, immutable historical snapshots and explicit idempotent observation saves. No migration or investment approval changes."
+  "notes": "Official-evidence peer fund research, exact-share common-calendar returns and drawdown, immutable public research versions. Adds one research table; no investment approval or financial changes."
 }
