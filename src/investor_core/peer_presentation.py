@@ -11,6 +11,8 @@ Json = dict[str, Any]
 
 
 def present(result: Json, study: Json, *, code: str | None, details: bool) -> str:
+    index_mode = study.get("research_method") == "INDEX_FEEDER"
+    title = "指数联接同类比较" if index_mode else "医疗主题同类比较"
     rows = [r for r in result["rows"] if not code or r["code"] == code]
     labels = [w["label"] for w in study["windows"]]
     archive_day = (
@@ -19,13 +21,17 @@ def present(result: Json, study: Json, *, code: str | None, details: bool) -> st
         else "尚未保存"
     )
     lines = [
-        f"医疗主题同类比较 | 查询日 {result['query_date']} | 研究版本 {result['version']}",
+        f"{title} | 查询日 {result['query_date']} | 研究版本 {result['version']}",
         f"共同日序列研究截止日: {result['common_research_cutoff'] or '尚无可计算共同窗口'};"
         f"资料可用截止日: {result['knowledge_date']}",
         f"实际归档日: {archive_day} (上海时区)",
         "本次查询未获取新证据,复用已归档公开资料。归档新不表示净值/持仓数据同样新。",
         "小规模研究样本,非全市场筛选;无总分、排名、换仓信号或新增资金资格。",
-        "同类条件:主动、境内医疗主题;股票型/混合型仓位约束不同。港股通和未知范围单列。",
+        (
+            "同类条件:同目标指数/变体、人民币及相同份额的独立ETF联接;不混排ETF或拼接其他份额。"
+            if index_mode
+            else "同类条件:主动、境内医疗主题;股票型/混合型仓位约束不同。港股通和未知范围单列。"
+        ),
         f"下表为日序列重算收益 / {result['drawdown_label']},均为百分比。",
         "",
         "|产品/份额|比较资格|" + "|".join(labels) + "|",
@@ -113,6 +119,36 @@ def present(result: Json, study: Json, *, code: str | None, details: bool) -> st
             f"同期结构截至{v['structural_date']},前十大共有{v['shared_top10_count']}只。"
         )
         lines.append("使用「验证比较结论」查看原窗口支持情况、新窗口方向及缺口。")
+    if index_mode:
+        lines.append("指数研究:差额可能来自目标ETF、现金、费用、申赎及分红;不归因为选股Alpha。")
+        lines.append("目标指数跟踪诊断与官方95/5复合基准分开;详情显示频率、公式、样本和缺口。")
+        for row in rows:
+            profile = next(p for p in study["products"] if p["code"] == row["code"]).get(
+                "index_profile"
+            )
+            if profile:
+                lines.append(
+                    f"{row['code']} 目标ETF {profile['target_etf_code']};"
+                    f"目标指数 {profile['provider']} {profile['index_code']} "
+                    f"{profile['variant']} {profile['currency']};"
+                    f"官方基准 {profile['official_benchmark']}"
+                )
+            if details:
+                for window in row["windows"]:
+                    t = window.get("tracking", {})
+                    c = t.get("calculated")
+                    lines.append(
+                        f"{window['label']} 目标指数诊断: "
+                        + (
+                            f"差异{c['tracking_difference_pp']:+.2f}个百分点,年化跟踪误差{c['tracking_error_pct']:.2f}%,样本{c['samples']}"
+                            if c
+                            else "未计算: " + ",".join(t.get("gaps", []))
+                        )
+                    )
+                    lines.append(t.get("formula", "") + ";" + t.get("limitation", ""))
+        lines.append(
+            "下一步:核实官方复合基准的税后现金腿与历史计息规则;跟踪误差不用于判断是否突破产品合同目标。"
+        )
     if details:
         for row in rows:
             lines.append(

@@ -23,6 +23,10 @@ COMPUTATION_VERSION = "peer-common-calendar-v1"
 
 
 def admission(p: PeerProduct, study: PeerStudy) -> tuple[str, str]:
+    if study.research_method == "INDEX_FEEDER":
+        from investor_core.index_peers import admission as index_admission
+
+        return index_admission(p, study)
     if p.active is False or p.product_type in {"INDEX", "OTHER"} or p.market == "QDII":
         return "EXCLUDED", "非本轮境内主动医疗同类;指数/QDII不可混入"
     if (
@@ -53,6 +57,11 @@ def path_for(p: PeerProduct, window: PeerWindow, study: PeerStudy) -> Json:
     gaps: list[str] = []
     if not days or days[0] != window.start or days[-1] != window.end:
         gaps.append("EXACT_COMMON_ENDPOINT_MISSING")
+    if p.index_profile and (
+        window.start < p.index_profile.effective_from
+        or (p.index_profile.effective_to and window.end > p.index_profile.effective_to)
+    ):
+        gaps.append("PRODUCT_STRUCTURE_NOT_EFFECTIVE_FOR_WINDOW")
     if not p.nav:
         return dict(calculated=None, gaps=["OFFICIAL_NAV_SERIES_MISSING"], missing_dates=[])
     if p.nav.return_basis not in {"NAV_NET_INTERNAL_FEES", "FUND_TOTAL_RETURN"}:
@@ -169,6 +178,15 @@ def evaluate(study: PeerStudy) -> Json:
                     ),
                 )
             )
+        if study.research_method == "INDEX_FEEDER":
+            from investor_core.index_peers import tracking
+
+            for window, output in zip(study.windows, windows, strict=True):
+                output["tracking"] = (
+                    tracking(p, window, study, path_for(p, window, study))
+                    if status == "COMPARABLE"
+                    else dict(calculated=None, gaps=["OUTSIDE_DIRECT_COMPARISON"])
+                )
         rows.append(
             dict(
                 code=p.code,
@@ -234,6 +252,12 @@ class PeerResearchService:
         if study.knowledge_date > self.research._now().astimezone(TZ).date():
             raise LedgerError("PEER_FUTURE_KNOWLEDGE", "不能归档未来研究日期")
         payload = study.model_dump(mode="json")
+        if study.research_method == "MEDICAL_ACTIVE":
+            payload.pop("research_method", None)
+            payload.pop("tracking_reference", None)
+            for product in payload["products"]:
+                if product.get("index_profile") is None:
+                    product.pop("index_profile", None)
         if study.validation is None:
             payload.pop("validation", None)  # Preserve v0.41.1 content hashes and replay keys.
         content = {
