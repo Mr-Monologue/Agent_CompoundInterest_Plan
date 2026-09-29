@@ -68,4 +68,4 @@
 
 - D2第一阶段已结项：v0.41.1实际部署/验收通过，阶段部署授权终止。日常医疗同类比较读docs/PEER_RESEARCH.md；最新完成证据与缺口读docs/D2_LIVE_ACCEPTANCE.md及LAUNCH_CHECKLIST末尾。查询复用归档，不新增D1观察/处理或批准；不得把候选研究当投资资格。
 
-- 当前D2第二阶段“比较结论验证”获阶段开发/公开证据/发布/部署授权；范围、完成标准及终止条件以LAUNCH_CHECKLIST末尾为准。仅追加公开研究版本，保留原四窗口及D1/批准/业务事实；不同发布渠道不等于独立上游。
+- D2第二阶段“比较结论验证”已以v0.42.0结项，阶段部署授权终止。当前完成证据见LAUNCH_CHECKLIST末尾与docs/D2_VALIDATION_LIVE_ACCEPTANCE.md；日常使用见docs/PEER_COMPARISON_VALIDATION.md。公开研究v3保留v1/v2、原四窗口和D1/批准/业务事实；不同渠道不等于独立上游，经理证据不可超出披露时点。
