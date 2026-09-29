@@ -311,12 +311,12 @@ def test_summary_keeps_unverified_candidate_inside_one_table():
     raw["products"].insert(1, unknown)
     study = PeerStudy.model_validate(raw)
     result = evaluate(study)
-    result.update(query_date="2024-01-07", version=1, archived_at="2024-01-06T12:00:00Z")
+    result.update(query_date="2024-01-07", version=1, archived_at="2024-01-06T20:00:00Z")
     text = present(result, study.model_dump(mode="json"), code=None, details=False)
     lines = text.splitlines()
     first = next(i for i, line in enumerate(lines) if line.startswith("|R "))
     last = next(i for i, line in enumerate(lines) if line.startswith("|P "))
     assert last - first == 2
     assert all(line.startswith("|") and line.endswith("|") for line in lines[first : last + 1])
-    assert "实际归档时间: 2024-01-06T12:00:00Z" in text
+    assert "实际归档日: 2024-01-07 (上海时区)" in text
     assert "资料可用截止日: 2024-01-05" in text
