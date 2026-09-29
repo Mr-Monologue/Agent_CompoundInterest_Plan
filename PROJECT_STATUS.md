@@ -1,3 +1,7 @@
+# 当前阶段更新
+
+v0.43.0组合研究覆盖与第二类产品验证已完成实现及隔离实测，生产仍为v0.42.0，等待发布/安装验收。当前权威进度见docs/LAUNCH_CHECKLIST.md末尾。下文既有版本记录保留。
+
 > D2第二阶段已结项：v0.42.0已部署，真实六窗口核验/同期结构/HTTP与日常入口通过，阶段部署授权终止。证据限制与下一步见docs/D2_VALIDATION_LIVE_ACCEPTANCE.md，唯一清单见docs/LAUNCH_CHECKLIST.md末尾。以下为历史记录。
 
 > D2第一阶段已结项（2026-09-29）：本机v0.41.1，医疗同类比较真实HTTP/日常入口及状态保持验收通过，阶段部署授权终止。唯一进度见 docs/LAUNCH_CHECKLIST.md；证据与限制见 docs/D2_LIVE_ACCEPTANCE.md。以下为历史记录。

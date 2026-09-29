@@ -1457,6 +1457,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def holding_review_handle(task_id: str, request: ReviewHandling) -> dict[str, Any]:
         return success(holding_reviews.handle(task_id, request), data_quality="WARNING")
 
+    @app.get("/v1/portfolio-research-coverage")
+    def research_coverage_get(
+        portfolio_id: str,
+        account_id: str,
+        instrument_code: str | None = None,
+        view: Literal["SUMMARY", "DETAIL"] = "SUMMARY",
+    ) -> dict[str, Any]:
+        from investor_core.research_coverage import CoverageService
+
+        return success(
+            CoverageService(holding_reviews).read(
+                portfolio_id, account_id, code=instrument_code, details=view == "DETAIL"
+            ),
+            data_quality="WARNING",
+        )
+
     @app.get("/v1/portfolio-research-summary")
     def portfolio_research_get(portfolio_id: str, account_id: str) -> dict[str, Any]:
         brief = market_data.portfolio_brief(portfolio_id=portfolio_id, account_id=account_id)
