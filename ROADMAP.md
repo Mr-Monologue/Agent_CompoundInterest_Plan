@@ -1,4 +1,4 @@
-> 当前阶段：D2医疗主题同类比较实现中，v0.41.0待双平台与部署验收；唯一进度见 docs/LAUNCH_CHECKLIST.md，范围与计算见 docs/PEER_RESEARCH.md。以下旧阶段记录保留。
+> D2第一阶段已结项（2026-09-29）：本机v0.41.1，医疗同类比较真实HTTP/日常入口及状态保持验收通过，阶段部署授权终止。唯一进度见 docs/LAUNCH_CHECKLIST.md；证据与限制见 docs/D2_LIVE_ACCEPTANCE.md。以下为历史记录。
 
 # 当前交付：基线差异复核已上线并结项（v0.40.1）
 
