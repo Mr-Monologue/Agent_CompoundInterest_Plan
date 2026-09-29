@@ -83,3 +83,8 @@ D1使用补充：`holdings-review` 默认逐基金一行，`holdings-review --de
 
 ## 比较结论验证
 “验证003096与009163的比较结论”调用 `investor-assistant peer-validation --anchor 003096`；详情追加 `--details`，或GET `/v1/peer-comparison-validation?anchor_code=003096&view=DETAIL`。显示Core原文，不在客户端重算；查询不采集或归档。说明研究截止与本次未获取新证据，保留渠道非独立与历史警告。方法及真实案例见 docs/PEER_COMPARISON_VALIDATION.md。
+
+
+## 组合研究覆盖
+
+“复核我的组合，哪些最值得进一步研究？”执行 `investor-assistant portfolio-research`；“查看某基金研究覆盖详情”增加 `--code <代码> --details`。该入口动态读取当前持仓，不替代原“复核我的持仓”的基线差异语义。先使用Core `display_text`，不在客户端重算结论。医疗继续 `peers --anchor 003096` / `peer-validation --anchor 003096`；A500联接比较使用 `peers --anchor 022463`。所有查询仅复用归档，明确说明没有取得新资料。完整口径见 PORTFOLIO_RESEARCH_COVERAGE.md。

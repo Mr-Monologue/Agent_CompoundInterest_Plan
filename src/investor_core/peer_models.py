@@ -10,6 +10,7 @@ from pydantic import Field, model_validator
 
 from investor_core.benchmarks import Distribution, Series
 from investor_core.execution import SourceArchive, StrictModel
+from investor_core.index_peers import IndexProfile, TrackingReference
 from investor_core.notebook import Claim
 from investor_core.peer_validation import ComparisonValidation
 
@@ -52,6 +53,7 @@ class PeerProduct(StrictModel):
     admission_note: str = Field(min_length=1)
     dimensions: dict[str, list[Claim]]
     attempts_and_gaps: list[str] = Field(default_factory=list)
+    index_profile: IndexProfile | None = None
     nav: Series | None = None
     distributions: list[Distribution] = Field(default_factory=list)
     distribution_from: date | None = None
@@ -81,6 +83,8 @@ class PeerProduct(StrictModel):
 
 
 class PeerStudy(StrictModel):
+    research_method: Literal["MEDICAL_ACTIVE", "INDEX_FEEDER"] = "MEDICAL_ACTIVE"
+    tracking_reference: TrackingReference | None = None
     anchor_code: str
     cohort_key: str = Field(min_length=1, max_length=100)
     scope_version: str = Field(min_length=1)
@@ -126,6 +130,28 @@ class PeerStudy(StrictModel):
             if source.data_date > self.knowledge_date:
                 raise ValueError("Future data")
         refs = list(self.calendar_sources)
+        if self.tracking_reference:
+            t = self.tracking_reference
+            refs += t.evidence_ids + t.series.evidence_ids
+            if self.research_method != "INDEX_FEEDER" or any(
+                p.day > self.knowledge_date for p in t.series.points
+            ):
+                raise ValueError("Tracking only for index research without future points")
+        for scoped_product in self.products:
+            if scoped_product.index_profile:
+                ip = scoped_product.index_profile
+                refs += ip.evidence_ids
+                if ip.effective_to and ip.effective_to < ip.effective_from:
+                    raise ValueError("Invalid structure validity")
+                if any(
+                    k in self.sources
+                    and (
+                        self.sources[k].quality != "OFFICIAL"
+                        or self.sources[k].instrument_code != scoped_product.code
+                    )
+                    for k in ip.evidence_ids
+                ):
+                    raise ValueError("Index profile needs exact product official evidence")
         if self.validation:
             v = self.validation
             if set(v.original_labels + v.additional_labels) != {w.label for w in self.windows}:
@@ -189,7 +215,14 @@ class PeerStudy(StrictModel):
             ):
                 if key in self.sources and self.sources[key].instrument_code != p.code:
                     raise ValueError("Evidence refers to a different share")
-        official_refs = self.calendar_sources + [
+        official_refs = (
+            self.calendar_sources
+            + (
+                self.tracking_reference.evidence_ids + self.tracking_reference.series.evidence_ids
+                if self.tracking_reference
+                else []
+            )
+        ) + [
             key
             for p in self.products
             for key in p.admission_sources

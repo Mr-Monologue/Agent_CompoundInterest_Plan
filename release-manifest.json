@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.42.0",
+  "version": "0.43.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
   "database_revision": "0043_peer_research",
   "minimum_current_version": "0.5.3",
-  "notes": "Versioned peer comparison validation: cross-channel NAV/dividend audit, two common windows and same-period structure. Readonly daily entry; retain source warnings and original versions. No migration or investment changes."
+  "notes": "Dynamic portfolio research coverage and separate index ETF feeder peer method. Preserve medical research, historical baseline and business facts. Read-only daily entry; no migration, approvals or investment changes."
 }
