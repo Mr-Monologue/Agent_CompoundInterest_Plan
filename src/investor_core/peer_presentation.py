@@ -102,6 +102,17 @@ def present(result: Json, study: Json, *, code: str | None, details: bool) -> st
     if any("DISCLOSED_RETURN_MISMATCH" in w["warnings"] for r in rows for w in r["windows"]):
         lines.append("WARNING:部分同区间报告收益与重算超出披露舍入范围,详情保留差额,未抹平。")
     lines += study["limitations"]
+    if result.get("validation"):
+        lines.append("结论验证已归档:跨发布渠道逐日核对及同期结构;上游未证实独立,单源警告保留。")
+        v = result["validation"]
+        complete = sum(
+            all(w["status"] == "EXACT_CHANNEL_AGREEMENT" for w in c["windows"]) for c in v["checks"]
+        )
+        lines.append(
+            f"验证摘要:{complete}/{len(v['checks'])}份额全部归档窗口跨渠道一致;"
+            f"同期结构截至{v['structural_date']},前十大共有{v['shared_top10_count']}只。"
+        )
+        lines.append("使用「验证比较结论」查看原窗口支持情况、新窗口方向及缺口。")
     if details:
         for row in rows:
             lines.append(
