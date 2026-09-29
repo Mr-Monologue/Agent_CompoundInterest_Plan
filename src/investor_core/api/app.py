@@ -1491,6 +1491,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def peer_archive(request: PeerStudy) -> dict[str, Any]:
         return success(PeerResearchService(research).archive(request), data_quality="WARNING")
 
+    @app.get("/v1/peer-comparison-validation")
+    def peer_validate_read(
+        anchor_code: str,
+        cohort_key: str | None = None,
+        run_id: str | None = None,
+        as_of: date | None = None,
+        view: Literal["SUMMARY", "DETAIL"] = "SUMMARY",
+    ) -> dict[str, Any]:
+        return success(
+            PeerResearchService(research).read(
+                anchor_code,
+                cohort_key=cohort_key,
+                run_id=run_id,
+                as_of=as_of,
+                details=view == "DETAIL",
+                validation_only=True,
+            ),
+            data_quality="WARNING",
+        )
+
     @app.get("/v1/peer-research")
     def peer_read(
         anchor_code: str,

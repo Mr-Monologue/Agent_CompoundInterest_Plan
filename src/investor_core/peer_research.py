@@ -189,6 +189,11 @@ def evaluate(study: PeerStudy) -> Json:
                 windows=windows,
             )
         )
+    validation = None
+    if study.validation:
+        from investor_core.peer_validation import evaluate_validation
+
+        validation = evaluate_validation(study, rows)
     shared = [
         w.end.isoformat()
         for w in study.windows
@@ -211,6 +216,7 @@ def evaluate(study: PeerStudy) -> Json:
         knowledge_date=study.knowledge_date.isoformat(),
         common_research_cutoff=max(shared) if shared else None,
         rows=rows,
+        validation=validation,
         limitations=study.limitations,
         drawdown_label=DRAWDOWN_LABEL,
         retrospective_only=True,
@@ -228,6 +234,8 @@ class PeerResearchService:
         if study.knowledge_date > self.research._now().astimezone(TZ).date():
             raise LedgerError("PEER_FUTURE_KNOWLEDGE", "不能归档未来研究日期")
         payload = study.model_dump(mode="json")
+        if study.validation is None:
+            payload.pop("validation", None)  # Preserve v0.41.1 content hashes and replay keys.
         content = {
             k: v
             for k, v in payload.items()
@@ -259,6 +267,14 @@ class PeerResearchService:
             previous = records[-1]["version"] if records else 0
             if previous != study.expected_previous_version:
                 raise LedgerError("PEER_VERSION_CHANGED", "研究版本已改变,请先回读")
+            if study.validation and records:
+                old = json.loads(records[-1]["input_json"])
+                old_windows = {w["label"]: w for w in old["windows"]}
+                for window in study.windows:
+                    if window.label in study.validation.original_labels and (
+                        old_windows.get(window.label) != window.model_dump(mode="json")
+                    ):
+                        raise LedgerError("PEER_ORIGINAL_WINDOW_CHANGED", "原窗口口径不得覆盖")
             key = str(uuid4())
             c.execute(
                 "INSERT INTO peer_research_runs VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -286,6 +302,7 @@ class PeerResearchService:
         as_of: date | None = None,
         code: str | None = None,
         details: bool = False,
+        validation_only: bool = False,
     ) -> Json:
         with self.research._connect() as c:
             rows = c.execute(
@@ -328,6 +345,12 @@ class PeerResearchService:
         from investor_core.peer_presentation import present
 
         result["display_text"] = present(result, study, code=code, details=details)
+        if validation_only:
+            from investor_core.peer_validation import present_validation
+
+            result["display_text"] = present_validation(result, details=details)
+            if details:
+                result["display_text"] += "\n" + present(result, study, code=code, details=True)
         if details:
             result["archived_input"] = study
         result["history"] = [
