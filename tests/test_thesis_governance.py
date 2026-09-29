@@ -317,6 +317,7 @@ def test_migration_preserves_existing_research_and_facts(tmp_path):
             if "alembic_version" not in x
             and "research_thesis_" not in x
             and "holding_review_" not in x
+            and "peer_research_runs" not in x
         ]
 
     assert existing(old) == existing(after)

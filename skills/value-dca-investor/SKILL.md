@@ -24,6 +24,14 @@ session MCP tools are unavailable; do not repeat MCP discovery or invent a secon
 - The first baseline is immutable. Context facts are not risk alerts; candidates never become
   approved from a delta. Use `holdings-research-current --details` for all original windows.
 
+## Medical peer research
+
+“比较003096与同类候选” uses `investor-assistant peers --anchor 003096`.
+Details use `--code 009163 --details`. Read `docs/PEER_RESEARCH.md`. Core returns the
+predefined scope, shared windows, excluded/unknown products and evidence. Preserve its
+cutoff, no-new-evidence notice, single-source limits and disclosure/reconstruction distinction.
+Do not rank, approve candidates, save D1 observations or infer trading permission.
+
 ## Execute the request
 
 1. Identify whether the request is a query, explanation, idempotent setup mutation, draft mutation,

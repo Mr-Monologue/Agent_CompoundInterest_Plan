@@ -183,7 +183,13 @@ def test_new_migration_preserves_old_tables(tmp_path):
         after = list(c.iterdump())
 
     def old(lines):
-        return [x for x in lines if "alembic_version" not in x and "holding_review_" not in x]
+        return [
+            x
+            for x in lines
+            if "alembic_version" not in x
+            and "holding_review_" not in x
+            and "peer_research_runs" not in x
+        ]
 
     assert old(before) == old(after)
 
