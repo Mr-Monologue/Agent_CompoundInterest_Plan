@@ -464,6 +464,9 @@ def main() -> None:
     sub.add_parser("case").add_argument("--code", required=True)
     sub.add_parser("thesis").add_argument("--code", required=True)
     sub.add_parser("risk-coverage")
+    coverage = sub.add_parser("portfolio-research")
+    coverage.add_argument("--code")
+    coverage.add_argument("--details", action="store_true")
     sub.add_parser("review")
     delta = sub.add_parser("holdings-review")
     delta.add_argument("--details", action="store_true")
@@ -548,6 +551,13 @@ def main() -> None:
             result = client.get("/v1/holding-review-baseline-preview", **client.scope())
         elif args.command == "review-history":
             result = client.get("/v1/holding-review-history", **client.scope())
+        elif args.command == "portfolio-research":
+            result = client.get(
+                "/v1/portfolio-research-coverage",
+                instrument_code=args.code,
+                view="DETAIL" if args.details else "SUMMARY",
+                **client.scope(),
+            )
         elif args.command == "review":
             result = client.get("/v1/portfolio-research-summary", **client.scope())
         elif args.command == "notifications":
