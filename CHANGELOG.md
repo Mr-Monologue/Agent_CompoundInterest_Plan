@@ -1,3 +1,8 @@
+## v0.41.1
+
+- Keep every peer candidate in one Markdown table; show scope explanations after it.
+- Distinguish evidence knowledge date from actual research archive time. No migration.
+
 ## v0.41.0
 
 - Official-evidence medical peer comparison with exact share classes and fixed common windows.

@@ -291,3 +291,32 @@ def test_peer_migration_preserves_every_existing_table(tmp_path):
         ]
 
     assert original(before) == original(after)
+
+
+def test_summary_keeps_unverified_candidate_inside_one_table():
+    from investor_core.peer_presentation import present
+
+    raw = payload()
+    unknown = deepcopy(raw["products"][1])
+    unknown.update(
+        code="U",
+        name="Unknown scope",
+        product_key="product-U",
+        active=None,
+        nav=None,
+        admission_sources=["U"],
+        distribution_sources=[],
+    )
+    raw["sources"]["U"] = dict(raw["sources"]["P"], instrument_code="U")
+    raw["products"].insert(1, unknown)
+    study = PeerStudy.model_validate(raw)
+    result = evaluate(study)
+    result.update(query_date="2024-01-07", version=1, archived_at="2024-01-06T12:00:00Z")
+    text = present(result, study.model_dump(mode="json"), code=None, details=False)
+    lines = text.splitlines()
+    first = next(i for i, line in enumerate(lines) if line.startswith("|R "))
+    last = next(i for i, line in enumerate(lines) if line.startswith("|P "))
+    assert last - first == 2
+    assert all(line.startswith("|") and line.endswith("|") for line in lines[first : last + 1])
+    assert "实际归档时间: 2024-01-06T12:00:00Z" in text
+    assert "资料可用截止日: 2024-01-05" in text

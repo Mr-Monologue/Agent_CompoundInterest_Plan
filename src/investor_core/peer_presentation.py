@@ -13,11 +13,13 @@ def present(result: Json, study: Json, *, code: str | None, details: bool) -> st
     lines = [
         f"医疗主题同类比较 | 查询日 {result['query_date']} | 研究版本 {result['version']}",
         f"共同日序列研究截止日: {result['common_research_cutoff'] or '尚无可计算共同窗口'};"
-        f"本研究资料归档日: {result['knowledge_date']}",
+        f"资料可用截止日: {result['knowledge_date']}",
+        f"实际归档时间: {result.get('archived_at', '尚未保存')}",
         "本次查询未获取新证据,复用已归档公开资料。归档新不表示净值/持仓数据同样新。",
         "小规模研究样本,非全市场筛选;无总分、排名、换仓信号或新增资金资格。",
         "同类条件:主动、境内医疗主题;股票型/混合型仓位约束不同。港股通和未知范围单列。",
         f"下表为日序列重算收益 / {result['drawdown_label']},均为百分比。",
+        "",
         "|产品/份额|比较资格|" + "|".join(labels) + "|",
         "|---|---|" + "|".join("---" for _ in labels) + "|",
     ]
@@ -39,6 +41,8 @@ def present(result: Json, study: Json, *, code: str | None, details: bool) -> st
             "EXCLUDED": "排除",
         }[row["status"]]
         lines.append(f"|{row['code']} {row['name']}|{status_text}|" + "|".join(cells) + "|")
+    lines.append("")
+    for row in rows:
         if row["status"] not in {"REFERENCE", "COMPARABLE"}:
             lines.append(f"{row['code']}: {row['admission_reason']};{row['admission_note']}")
     for row in rows:
