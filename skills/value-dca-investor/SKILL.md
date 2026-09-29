@@ -487,3 +487,6 @@ Read [output-templates.md](references/output-templates.md) for scheduled reports
 sell diagnostics, degraded responses, and confirmation previews.
 
 Keep Weixin messages compact: conclusion first, facts second, uncertainty and next action last.
+
+## 比较结论验证
+“验证003096与009163的比较结论”调用 `investor-assistant peer-validation --anchor 003096`；详情追加 `--details`，或GET `/v1/peer-comparison-validation?anchor_code=003096&view=DETAIL`。显示Core原文，不在客户端重算；查询不采集或归档。说明研究截止与本次未获取新证据，保留渠道非独立与历史警告。方法及真实案例见 docs/PEER_COMPARISON_VALIDATION.md。
