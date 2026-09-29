@@ -440,6 +440,11 @@ def main() -> None:
     parser.add_argument("--account")
     parser.add_argument("--json", action="store_true", help="Agent internal structured output")
     sub = parser.add_subparsers(dest="command", required=True)
+    validation = sub.add_parser("peer-validation", help="Read archived comparison validation")
+    validation.add_argument("--anchor", required=True)
+    validation.add_argument("--cohort")
+    validation.add_argument("--as-of")
+    validation.add_argument("--details", action="store_true")
     peers = sub.add_parser("peers", help="Read archived same-theme peer research")
     peers.add_argument("--anchor", required=True)
     peers.add_argument("--code")
@@ -483,7 +488,15 @@ def main() -> None:
     args = parser.parse_args()
     client = DailyClient(args.core_url, portfolio_id=args.portfolio, account_id=args.account)
     try:
-        if args.command == "peers":
+        if args.command == "peer-validation":
+            result = client.get(
+                "/v1/peer-comparison-validation",
+                anchor_code=args.anchor,
+                cohort_key=args.cohort,
+                as_of=args.as_of,
+                view="DETAIL" if args.details else "SUMMARY",
+            )
+        elif args.command == "peers":
             result = client.get(
                 "/v1/peer-research",
                 anchor_code=args.anchor,

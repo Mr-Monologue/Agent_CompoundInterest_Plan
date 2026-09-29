@@ -11,6 +11,7 @@ from pydantic import Field, model_validator
 from investor_core.benchmarks import Distribution, Series
 from investor_core.execution import SourceArchive, StrictModel
 from investor_core.notebook import Claim
+from investor_core.peer_validation import ComparisonValidation
 
 
 class PeerWindow(StrictModel):
@@ -97,6 +98,7 @@ class PeerStudy(StrictModel):
     sources: dict[str, SourceArchive]
     products: list[PeerProduct] = Field(min_length=2, max_length=10)
     limitations: list[str] = Field(min_length=1)
+    validation: ComparisonValidation | None = None
 
     @model_validator(mode="after")
     def integrity(self) -> PeerStudy:
@@ -113,8 +115,10 @@ class PeerStudy(StrictModel):
         if self.scope_defined_at > self.knowledge_date:
             raise ValueError("Scope is not yet known")
         for source in self.sources.values():
-            if source.quality != "OFFICIAL" or not source.original_sha256:
-                raise ValueError("First-stage evidence requires official source fingerprints")
+            if not source.original_sha256 or (not self.validation and source.quality != "OFFICIAL"):
+                raise ValueError(
+                    "Evidence fingerprints required; legacy inputs require official sources"
+                )
             if source.retrieved_at.date() > self.knowledge_date:
                 raise ValueError("Evidence not available at historical knowledge date")
             if source.published_date and source.published_date > self.knowledge_date:
@@ -122,6 +126,44 @@ class PeerStudy(StrictModel):
             if source.data_date > self.knowledge_date:
                 raise ValueError("Future data")
         refs = list(self.calendar_sources)
+        if self.validation:
+            v = self.validation
+            if set(v.original_labels + v.additional_labels) != {w.label for w in self.windows}:
+                raise ValueError("Validation must account for every window")
+            if self.anchor_code not in {ch.code for ch in v.checks}:
+                raise ValueError("Validation reference missing")
+            added = [w for w in self.windows if w.label in v.additional_labels]
+            if len({w.end for w in added}) != 1:
+                raise ValueError("New windows require the same complete common cutoff")
+            for ch in v.checks:
+                product = next((p for p in self.products if p.code == ch.code), None)
+                if not product or not product.nav:
+                    raise ValueError("Validated product requires official NAV")
+                specific = ch.nav.evidence_ids + ch.distribution_sources + ch.conflict_sources
+                refs += specific + ch.lineage_sources + ch.precision_sources
+                if any(
+                    k in self.sources and self.sources[k].instrument_code != ch.code
+                    for k in specific
+                ):
+                    raise ValueError("Cross-check evidence refers to a different share")
+                if any(p.day > self.knowledge_date for p in ch.nav.points) or (
+                    ch.distribution_to > self.knowledge_date
+                    or any(d.ex_date > self.knowledge_date for d in ch.distributions)
+                ):
+                    raise ValueError("Future cross-check evidence")
+            for st in v.structures:
+                refs += st.evidence_ids
+                if st.as_of > self.knowledge_date:
+                    raise ValueError("Future structural observation")
+                if any(
+                    k in self.sources
+                    and (
+                        self.sources[k].quality != "OFFICIAL"
+                        or self.sources[k].instrument_code != st.code
+                    )
+                    for k in st.evidence_ids
+                ):
+                    raise ValueError("Structure requires exact product official disclosure")
         for p in self.products:
             refs += p.admission_sources + p.distribution_sources
             if p.nav:
@@ -147,6 +189,15 @@ class PeerStudy(StrictModel):
             ):
                 if key in self.sources and self.sources[key].instrument_code != p.code:
                     raise ValueError("Evidence refers to a different share")
+        official_refs = self.calendar_sources + [
+            key
+            for p in self.products
+            for key in p.admission_sources
+            + p.distribution_sources
+            + (p.nav.evidence_ids if p.nav else [])
+        ]
+        if any(k in self.sources and self.sources[k].quality != "OFFICIAL" for k in official_refs):
+            raise ValueError("Scope/calendar/primary NAV still require official evidence")
         if any(key not in self.sources for key in refs):
             raise ValueError("Missing evidence reference")
         if any(w.end > self.knowledge_date for w in self.windows):
