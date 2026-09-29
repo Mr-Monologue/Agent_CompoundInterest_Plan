@@ -245,7 +245,11 @@ def present_validation(result: dict[str, Any], *, details: bool = False) -> str:
         f"同期结构披露数据日 {v['structural_date']};资料可用截止 {result['knowledge_date']}",
         "本次查询未获取新证据,读取已归档的版本化核验。不同发布渠道不等于独立上游。",
         "",
-        "|窗口|009163相对003096收益差额|核验|",
+        "|窗口|"
+        + next(c["code"] for c in v["checks"] if c["code"] != result["anchor_code"])
+        + "相对"
+        + result["anchor_code"]
+        + "收益差额|核验|",
         "|---|---|---|",
     ]
     for s in v["stability"]:
