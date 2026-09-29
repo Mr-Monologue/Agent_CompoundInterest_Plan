@@ -102,7 +102,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0042_holding_review"
+EXPECTED_ALEMBIC_REVISION = "0043_peer_research"
 
 
 def ensure_database_parent(settings: Settings) -> None:

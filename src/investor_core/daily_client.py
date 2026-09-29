@@ -440,6 +440,12 @@ def main() -> None:
     parser.add_argument("--account")
     parser.add_argument("--json", action="store_true", help="Agent internal structured output")
     sub = parser.add_subparsers(dest="command", required=True)
+    peers = sub.add_parser("peers", help="Read archived same-theme peer research")
+    peers.add_argument("--anchor", required=True)
+    peers.add_argument("--code")
+    peers.add_argument("--cohort")
+    peers.add_argument("--as-of")
+    peers.add_argument("--details", action="store_true")
     sub.add_parser("investment")
     sub.add_parser("context")
     sub.add_parser("week")
@@ -477,7 +483,16 @@ def main() -> None:
     args = parser.parse_args()
     client = DailyClient(args.core_url, portfolio_id=args.portfolio, account_id=args.account)
     try:
-        if args.command == "plan":
+        if args.command == "peers":
+            result = client.get(
+                "/v1/peer-research",
+                anchor_code=args.anchor,
+                instrument_code=args.code,
+                cohort_key=args.cohort,
+                as_of=args.as_of,
+                view="DETAIL" if args.details else "SUMMARY",
+            )
+        elif args.command == "plan":
             result = client.plan(
                 args.budget,
                 period_start=args.period_start,

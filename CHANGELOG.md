@@ -1,3 +1,10 @@
+## v0.41.0
+
+- Official-evidence medical peer comparison with exact share classes and fixed common windows.
+- Separate daily NAV reconstruction and issuer disclosures; fee/dividend/date guards.
+- Append-only public research versions and readonly Core/daily entry; no D1 or investment mutations.
+- Migration 0043 adds only the peer research archive table.
+
 # v0.40.1
 
 - Keep redirected daily-client output lossless UTF-8 on Windows, avoiding GBK failures on archived source symbols.
