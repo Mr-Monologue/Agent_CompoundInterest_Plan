@@ -341,3 +341,25 @@ def test_cash_page_decoration_is_not_new_evidence():
     )
     assert fingerprint(first) == fingerprint(second)
     assert first["applicability"] == "UNVERIFIED"
+
+
+@pytest.mark.parametrize("missing_kind", ["channel_nav", "channel_div"])
+def test_validated_study_cannot_mix_old_and_current_inputs(tmp_path, missing_kind):
+    _, peers, _ = services(tmp_path)
+    old = peers.read("003096", details=True)
+    # The incomplete group must stop before parsing or reusing old validation.
+    old["archived_input"]["validation"] = {"checks": [{"code": "003096"}]}
+    original = deepcopy(old)
+    base = source_probe(old)
+
+    def probe(key, url, kind, code):
+        result = base(key, url, kind, code)
+        if code == "003096" and kind == missing_kind:
+            return dict(result, status="FAILED", error="SOURCE_UNAVAILABLE")
+        return result
+
+    result = build(old, date(2024, 1, 10), probe)
+    assert result["candidate"] is None
+    assert result["blockers"] == ["VALIDATION_INPUT_GROUP_INCOMPLETE"]
+    assert old == original
+    assert len(peers.read("003096")["history"]) == 1

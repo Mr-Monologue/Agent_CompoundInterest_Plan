@@ -205,6 +205,17 @@ def build(old: Json, today: date, probe: Callable[..., Json]) -> Json:
     result["channel_checks"] = channel_reports
     if conflict:
         return dict(result, status="BLOCKED", blockers=["CROSS_CHANNEL_CONFLICT"], candidate=None)
+    # An already validated study must not inherit stale channel inputs while its
+    # primary input group advances. Keep the prior version until this group is complete.
+    if s.get("validation") and any(
+        c["status"] != "EXACT_CHANNEL_AGREEMENT" for c in channel_reports
+    ):
+        return dict(
+            result,
+            status="BLOCKED",
+            blockers=["VALIDATION_INPUT_GROUP_INCOMPLETE"],
+            candidate=None,
+        )
     evidence_changes = []
 
     def replace_source(ref: str, receipt: Json, code: str, value: Any, previous: Any) -> None:
