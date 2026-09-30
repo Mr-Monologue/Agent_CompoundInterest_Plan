@@ -1562,14 +1562,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         as_of: date | None = None,
         view: Literal["SUMMARY", "DETAIL"] = "SUMMARY",
     ) -> dict[str, Any]:
+        from investor_core.research_read_notices import attach_peer_limitations
+
         return success(
-            PeerResearchService(research).read(
-                anchor_code,
-                cohort_key=cohort_key,
-                run_id=run_id,
-                as_of=as_of,
-                details=view == "DETAIL",
-                validation_only=True,
+            attach_peer_limitations(
+                research,
+                PeerResearchService(research).read(
+                    anchor_code,
+                    cohort_key=cohort_key,
+                    run_id=run_id,
+                    as_of=as_of,
+                    details=view == "DETAIL",
+                    validation_only=True,
+                ),
+                {anchor_code},
+                historical=run_id is not None or as_of is not None,
             ),
             data_quality="WARNING",
         )
@@ -1583,21 +1590,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         instrument_code: str | None = None,
         view: Literal["SUMMARY", "DETAIL"] = "SUMMARY",
     ) -> dict[str, Any]:
+        from investor_core.research_read_notices import attach_peer_limitations
+
         return success(
-            PeerResearchService(research).read(
-                anchor_code,
-                cohort_key=cohort_key,
-                run_id=run_id,
-                as_of=as_of,
-                code=instrument_code,
-                details=view == "DETAIL",
+            attach_peer_limitations(
+                research,
+                PeerResearchService(research).read(
+                    anchor_code,
+                    cohort_key=cohort_key,
+                    run_id=run_id,
+                    as_of=as_of,
+                    code=instrument_code,
+                    details=view == "DETAIL",
+                ),
+                {anchor_code},
+                historical=run_id is not None or as_of is not None,
             ),
             data_quality="WARNING",
         )
 
     @app.get("/v1/benchmark-research")
     def benchmark_read(portfolio_id: str, instrument_code: str) -> dict[str, Any]:
-        return success(benchmarks.read(portfolio_id, instrument_code), data_quality="WARNING")
+        from investor_core.research_read_notices import attach_peer_limitations
+
+        return success(
+            attach_peer_limitations(
+                research, benchmarks.read(portfolio_id, instrument_code), {instrument_code}
+            ),
+            data_quality="WARNING",
+        )
 
     @app.post("/v1/benchmark-research-preview")
     def benchmark_preview(request: DiagnosticInput) -> dict[str, Any]:
@@ -1620,11 +1641,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result = notebook.read(portfolio_id, instrument_code)
         result["governance"] = theses.read(portfolio_id, instrument_code)
         result["display_text"] += "\n" + result["governance"]["display_text"]
-        return success(result, data_quality="WARNING")
+        from investor_core.research_read_notices import attach_peer_limitations
+
+        return success(
+            attach_peer_limitations(research, result, {instrument_code}), data_quality="WARNING"
+        )
 
     @app.get("/v1/research-thesis")
     def thesis_get(portfolio_id: str, instrument_code: str) -> dict[str, Any]:
-        return success(theses.read(portfolio_id, instrument_code), data_quality="WARNING")
+        from investor_core.research_read_notices import attach_peer_limitations
+
+        return success(
+            attach_peer_limitations(
+                research, theses.read(portfolio_id, instrument_code), {instrument_code}
+            ),
+            data_quality="WARNING",
+        )
 
     @app.post("/v1/research-thesis-drafts")
     def thesis_draft(request: ThesisDraft) -> dict[str, Any]:

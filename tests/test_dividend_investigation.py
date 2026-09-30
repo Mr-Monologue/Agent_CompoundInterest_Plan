@@ -104,3 +104,56 @@ def test_http_current_notices_leave_baseline_and_business_unchanged(tmp_path):
         assert "unresolved dividend evidence" in result["display_text"], endpoint
         assert result["current_peer_limitations"][0]["instrument_codes"] == ["CORE01"]
     assert dump(settings.db_path) == before
+
+
+def test_formal_exclusion_has_exact_windows_and_preserves_unrelated_warnings(tmp_path):
+    from investor_core.research_read_notices import dividend_judgments
+
+    research, peers, _ = services(tmp_path)
+    old = peers.read("003096", details=True)
+    request = deepcopy(old["archived_input"])
+    request.update(expected_previous_version=1, idempotency_key="formal-exclusion")
+    source = (
+        deepcopy(request["sources"]["003096"])
+        if "003096" in request["sources"]
+        else deepcopy(next(iter(request["sources"].values())))
+    )
+    source.update(
+        instrument_code="003096",
+        quality="OFFICIAL",
+        facts=dict(
+            claim="2023-01-03 cash_per_unit=0.057",
+            treatment="EXCLUDED_BY_FORMAL_ANNUAL_DISCLOSURE",
+            source_origin_cause="UNKNOWN",
+        ),
+    )
+    request["sources"]["formal-report"] = source
+    request["limitations"] = [
+        "five-year reconciliation warning",
+        "single-source warning",
+        "independent upstream unknown",
+    ]
+    peers.archive(PeerStudy.model_validate(request))
+    before = dump(research.settings.db_path)
+    result = attach_peer_limitations(
+        research,
+        {"display_text": "old unresolved statement", "rows": old["rows"]},
+        {"003096"},
+        historical=True,
+    )
+    notice = result["current_peer_limitations"][0]
+    judgement = notice["evidence_judgments"][0]
+    assert judgement["windows"][0]["crosses_disputed_date"]
+    assert not judgement["windows"][-1]["crosses_disputed_date"]
+    assert all(not w["calculation_restricted_by_this_claim"] for w in judgement["windows"])
+    assert not judgement["other_warnings_cleared"]
+    assert notice["limitations"] == request["limitations"]
+    assert result["display_text"].startswith("历史研究原文")
+    assert (
+        "已依据正式年报排除" in result["display_text"]
+        and "渠道异常原因未知" in result["display_text"]
+    )
+    assert result["rows"] == old["rows"]
+    source["quality"] = "UNVERIFIED"
+    assert not dividend_judgments(request, evaluate(PeerStudy.model_validate(request)))
+    assert dump(research.settings.db_path) == before
