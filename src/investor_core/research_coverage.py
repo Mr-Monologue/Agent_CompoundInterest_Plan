@@ -308,10 +308,24 @@ def present(result: Json, *, code: str | None, details: bool) -> str:
         "研究分类与投资角色、批准映射分别保存;背景观察不计为风险告警。本查询不处理原分类记录。",
     ]
     lines += ["", "优先研究事项(按工作类型,不作基金排名):"]
-    for key in ("FINDING_REVIEW", "EVIDENCE_FIRST", "CONFIG_DECISION", "MAINTENANCE"):
-        members = [r["instrument_code"] for r in rows if r["priority"] == key]
-        if members:
-            lines.append(PRIORITIES[key] + ": " + "、".join(members))
+    grouped: dict[tuple[str, str], list[str]] = {}
+    for row in rows:
+        grouped.setdefault((row["priority"], row["next_step"]), []).append(row["instrument_code"])
+    order = {"EVIDENCE_FIRST": 0, "FINDING_REVIEW": 1, "CONFIG_DECISION": 2, "MAINTENANCE": 3}
+    items = sorted(grouped.items(), key=lambda x: (order[x[0][0]], x[0][1]))
+    for (kind, step), members in items if details else items[:3]:
+        reason = (
+            "阻塞可比结论,先补证"
+            if kind == "EVIDENCE_FIRST"
+            else "影响已有结论,可推进核验"
+            if kind == "FINDING_REVIEW"
+            else "待具体确认"
+            if kind == "CONFIG_DECISION"
+            else "常规资料维护"
+        )
+        lines.append(f"{PRIORITIES[kind]}: {'、'.join(members)};{step}。顺序理由:{reason}")
+    if not details and len(items) > 3:
+        lines.append(f"其余{len(items) - 3}项见详情;此顺序不是基金优劣或交易排名。")
     if details:
         for r in rows:
             lines += [

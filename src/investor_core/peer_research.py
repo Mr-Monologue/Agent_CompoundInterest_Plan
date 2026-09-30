@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+from contextlib import nullcontext
 from datetime import date
 from decimal import Decimal
 from itertools import pairwise
@@ -248,7 +250,7 @@ class PeerResearchService:
     def __init__(self, research: ResearchService) -> None:
         self.research = research
 
-    def archive(self, study: PeerStudy) -> Json:
+    def archive(self, study: PeerStudy, *, connection: sqlite3.Connection | None = None) -> Json:
         if study.knowledge_date > self.research._now().astimezone(TZ).date():
             raise LedgerError("PEER_FUTURE_KNOWLEDGE", "不能归档未来研究日期")
         payload = study.model_dump(mode="json")
@@ -271,8 +273,9 @@ class PeerResearchService:
         }
         fingerprint = digest(content)
         result = evaluate(study)
-        with self.research._connect() as c:
-            c.execute("BEGIN IMMEDIATE")
+        with (nullcontext(connection) if connection is not None else self.research._connect()) as c:
+            if connection is None:
+                c.execute("BEGIN IMMEDIATE")
             records = c.execute(
                 "SELECT * FROM peer_research_runs WHERE anchor_code=? AND cohort_key=? "
                 "ORDER BY version",

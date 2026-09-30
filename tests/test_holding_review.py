@@ -171,14 +171,14 @@ def test_new_migration_preserves_old_tables(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from test_migrations import migrate_database, migrate_to
+    from test_migrations import migrate_to
 
     path = tmp_path / "old.db"
     migrate_to(path, "0041_thesis_governance")
     with closing(sqlite3.connect(path)) as c:
         before = list(c.iterdump())
-    migrate_database(path)
-    migrate_database(path)
+    migrate_to(path, "0042_holding_review")
+    migrate_to(path, "0042_holding_review")
     with closing(sqlite3.connect(path)) as c:
         after = list(c.iterdump())
 

@@ -102,8 +102,10 @@ def present(result: Json, study: Json, *, code: str | None, details: bool) -> st
         "未做持仓贡献或风险调整归因,不能证明基金选择能力。",
         "质量 WARNING:官方单源;持续管理/托管/销售服务费用已在净值中,不再次扣减;"
         "个人申赎费、持有期限及渠道折扣未知。",
-        "下一步:优先补相同季度的细分行业及持仓贡献、独立净值校验,核对共同管理任期;"
-        "未知候选补正式产品范围和完整日序列,不降低同类标准。",
+        ("下一步:补官方复合基准税后现金计息、目标ETF及现金配置差异、独立净值校验。"
+         if index_mode else
+         "下一步:优先补相同季度的细分行业及持仓贡献、独立净值校验,核对共同管理任期;"
+         "未知候选补正式产品范围和完整日序列,不降低同类标准。"),
     ]
     if any("DISCLOSED_RETURN_MISMATCH" in w["warnings"] for r in rows for w in r["windows"]):
         lines.append("WARNING:部分同区间报告收益与重算超出披露舍入范围,详情保留差额,未抹平。")

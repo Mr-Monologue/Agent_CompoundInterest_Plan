@@ -292,7 +292,7 @@ def test_migration_preserves_existing_research_and_facts(tmp_path):
     import sqlite3
     from contextlib import closing
 
-    from test_migrations import migrate_database, migrate_to
+    from test_migrations import migrate_to
 
     path = tmp_path / "old.db"
     migrate_to(path, "0040_research_benchmarks")
@@ -303,8 +303,8 @@ def test_migration_preserves_existing_research_and_facts(tmp_path):
         )
         c.commit()
         old = list(c.iterdump())
-    migrate_database(path)
-    migrate_database(path)
+    migrate_to(path, "0041_thesis_governance")
+    migrate_to(path, "0041_thesis_governance")
     with closing(sqlite3.connect(path)) as c:
         after = list(c.iterdump())
         tables = {x[0] for x in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}

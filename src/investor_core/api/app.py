@@ -103,6 +103,7 @@ from investor_core.performance import PerformanceService
 from investor_core.planning import PlanningService
 from investor_core.research import ResearchService
 from investor_core.research_summary import notification_status, portfolio_summary
+from investor_core.research_updates import ResearchUpdates, UpdateRequest
 from investor_core.risk import RiskService
 from investor_core.scheduler import SchedulerService
 from investor_core.signals import SignalService
@@ -1502,6 +1503,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ),
             data_quality="WARNING",
         )
+
+    @app.get("/v1/research-update-check")
+    def research_update_check() -> dict[str, Any]:
+        return success(ResearchUpdates(research).check(), data_quality="WARNING")
+
+    @app.get("/v1/research-updates/latest")
+    def research_update_latest() -> dict[str, Any]:
+        return success(
+            ResearchUpdates(research).latest() or {"display_text": "尚无研究更新记录"},
+            data_quality="WARNING",
+        )
+
+    @app.get("/v1/research-updates/{key}")
+    def research_update_read(key: str) -> dict[str, Any]:
+        return success(ResearchUpdates(research).read(key), data_quality="WARNING")
+
+    @app.get("/v1/research-update-evidence/{key}")
+    def research_update_evidence(key: str) -> dict[str, Any]:
+        return success(ResearchUpdates(research).evidence(key), data_quality="WARNING")
+
+    @app.post("/v1/research-updates")
+    def research_update_run(request: UpdateRequest) -> dict[str, Any]:
+        return success(ResearchUpdates(research).run(request), data_quality="WARNING")
 
     @app.post("/v1/peer-research-runs")
     def peer_archive(request: PeerStudy) -> dict[str, Any]:
