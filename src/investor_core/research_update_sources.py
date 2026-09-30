@@ -166,7 +166,7 @@ def parse(raw: bytes, kind: str, code: str) -> Any:
         ]
         return points(rows, code, "fg")
     if kind == "channel_div":
-        if not re.search(r"<title>[^<]*" + code, text):
+        if not re.search(r"<title>[^<]*\(" + re.escape(code) + r"\)", text):
             raise ValueError("CHANNEL_DIVIDEND_IDENTITY_MISSING")
         match = re.search(
             r'<table[^>]*class=["\'][^"\']*cfxq[^"\']*["\'][^>]*>(.*?)</table>', text, re.S
@@ -174,6 +174,12 @@ def parse(raw: bytes, kind: str, code: str) -> Any:
         if not match or "每10份分红" not in match[1]:
             raise ValueError("CHANNEL_DIVIDEND_TABLE_MISSING")
         table = match[1]
+        headers = [
+            re.sub("<[^>]+>", "", h).strip()
+            for h in re.findall(r"<th[^>]*>(.*?)</th>", table, re.S)
+        ]
+        if headers != ["年份", "权益登记日", "除息日", "每10份分红", "分红发放日"]:
+            raise ValueError("CHANNEL_DIVIDEND_COLUMNS_UNVERIFIED")
         if "暂无分红信息" in table:
             return []
         out = []
@@ -184,8 +190,10 @@ def parse(raw: bytes, kind: str, code: str) -> Any:
             ]
             if not cells:
                 continue
+            if len(cells) != 5:
+                raise ValueError("CHANNEL_DIVIDEND_COLUMNS_UNVERIFIED")
             amount = re.fullmatch(r"每10份派现金([\d.]+)元", cells[3])
-            if len(cells) != 5 or not amount:
+            if not amount:
                 raise ValueError("CHANNEL_DIVIDEND_UNIT_UNKNOWN")
             datetime.strptime(cells[2], "%Y-%m-%d")
             out.append(
