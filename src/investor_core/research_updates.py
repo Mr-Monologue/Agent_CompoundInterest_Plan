@@ -118,6 +118,16 @@ class ResearchUpdates:
             r["status"] = "INTERRUPTED"
             r["next_step"] = "原请求已中断;用原标识显式恢复,已发布案例不重做"
         r["last_successful_result"] = json.loads(previous["result_json"]) if previous else None
+        # Correct the derived view without rewriting immutable run inputs or prior receipts.
+        for result in [r, r["last_successful_result"]]:
+            if result:
+                for case in result.get("cases", []):
+                    case["changes"] = [
+                        d
+                        for d in case.get("changes", [])
+                        if d.get("before") is not None or d.get("after") is not None
+                    ]
+        r["comparison_presentation_version"] = "research-update-v1.1"
         r["display_text"] = present(r)
         return r
 
