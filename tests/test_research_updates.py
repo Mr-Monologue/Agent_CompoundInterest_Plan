@@ -341,3 +341,51 @@ def test_cash_page_decoration_is_not_new_evidence():
     )
     assert fingerprint(first) == fingerprint(second)
     assert first["applicability"] == "UNVERIFIED"
+
+
+@pytest.mark.parametrize("missing_kind", ["channel_nav", "channel_div"])
+def test_validated_study_cannot_mix_old_and_current_inputs(tmp_path, missing_kind):
+    _, peers, _ = services(tmp_path)
+    old = peers.read("003096", details=True)
+    # The incomplete group must stop before parsing or reusing old validation.
+    old["archived_input"]["validation"] = {"checks": [{"code": "003096"}]}
+    original = deepcopy(old)
+    base = source_probe(old)
+
+    def probe(key, url, kind, code):
+        result = base(key, url, kind, code)
+        if code == "003096" and kind == missing_kind:
+            return dict(result, status="FAILED", error="SOURCE_UNAVAILABLE")
+        return result
+
+    result = build(old, date(2024, 1, 10), probe)
+    assert result["candidate"] is None
+    assert result["blockers"] == ["VALIDATION_INPUT_GROUP_INCOMPLETE"]
+    assert old == original
+    assert len(peers.read("003096")["history"]) == 1
+
+
+def test_new_auxiliary_evidence_distinguished_from_unchanged_input(tmp_path, monkeypatch):
+    research, _, clock = services(tmp_path)
+
+    def build_auxiliary(old, today, probe):
+        receipt = probe("cash", "https://www.pbc.gov.cn/sample", "cash", "PUBLIC")
+        return dict(
+            anchor_code="003096",
+            status="PARTIAL",
+            candidate=None,
+            checks=[receipt],
+            changes=[],
+            content_status="NO_NEW_CONTENT",
+        )
+
+    raw = b"<table><tr><td>2012.07.06</td><td>0.35</td></tr></table>"
+    monkeypatch.setattr("investor_core.research_updates.build", build_auxiliary)
+    service = ResearchUpdates(research, fetch_factory=lambda: lambda _: raw)
+    first = service.run(UpdateRequest(scope="003096", idempotency_key="aux-new"))
+    assert first["cases"][0]["checks"][0]["archive_new"]
+    assert "不等于没有新证据" in first["display_text"]
+    clock[0] += timedelta(minutes=1)
+    second = service.run(UpdateRequest(scope="003096", idempotency_key="aux-repeat"))
+    assert not second["cases"][0]["checks"][0]["archive_new"]
+    assert "新归档资料 0项" in second["display_text"]

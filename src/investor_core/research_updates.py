@@ -240,7 +240,7 @@ class ResearchUpdates:
                         with self.research._connect() as c:
                             c.execute("BEGIN IMMEDIATE")
                             self._fence(c, key, owner)
-                            c.execute(
+                            inserted = c.execute(
                                 (
                                     "INSERT OR IGNORE INTO research_update_evidence "
                                     "VALUES (?,?,?,?,?,"
@@ -257,7 +257,8 @@ class ResearchUpdates:
                                     base64.b64encode(raw).decode(),
                                     canonical(parsed),
                                 ),
-                            )
+                            ).rowcount
+                        receipt["archive_new"] = inserted == 1
                         receipt.update(
                             status="FAILED" if parse_error else "SUCCESS",
                             evidence_id=eid,
@@ -370,7 +371,7 @@ def present(r: Json) -> str:
         "RUNNING": "正在更新",
         "INTERRUPTED": "中断待恢复",
     }
-    kinds = {"NEW_EVIDENCE": "取得新证据", "NO_NEW_CONTENT": "检查成功,内容未变"}
+    kinds = {"NEW_EVIDENCE": "取得新证据", "NO_NEW_CONTENT": "检查成功,计算输入未变"}
     metrics = {
         "return_pct": "收益",
         "max_drawdown_pct": "基金最大回撤(共同交易日)",
@@ -407,9 +408,13 @@ def present(r: Json) -> str:
             f"失败{len(failed)}项。披露目录完整性仍待核验。"
         )
         visible = [x for x in c.get("changes", []) if x["materiality"] == "VISIBLE"]
+        new_evidence = sum(x.get("archive_new", False) for x in c.get("checks", []))
         lines.append(
-            f"新增/修订证据 {len(c.get('evidence_changes', []))}项;可见数值变化 {len(visible)}项。"
+            f"新归档资料 {new_evidence}项;计算输入新增/修订 "
+            f"{len(c.get('evidence_changes', []))}项;可见数值变化 {len(visible)}项。"
         )
+        if new_evidence and not c.get("evidence_changes"):
+            lines.append("取得新资料但尚未改变可发布计算输入;不等于没有新证据。")
         for d in visible[:6]:
 
             def show(v: Any) -> str:
