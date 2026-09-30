@@ -277,8 +277,8 @@ def test_peer_migration_preserves_every_existing_table(tmp_path):
     migrate_to(db, "0042_holding_review")
     with sqlite3.connect(db) as c:
         before = list(c.iterdump())
-    migrate_database(db)
-    migrate_database(db)
+    migrate_to(db, "0043_peer_research")
+    migrate_to(db, "0043_peer_research")
     with sqlite3.connect(db) as c:
         after = list(c.iterdump())
         assert c.execute("SELECT COUNT(*) FROM peer_research_runs").fetchone() == (0,)
