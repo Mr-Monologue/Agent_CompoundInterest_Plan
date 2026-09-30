@@ -47,7 +47,7 @@ def diffs(old: Json, new: Json) -> list[Json]:
                     )
 
                 a, z = value(b), value(w)
-                if a == z and not moved:
+                if (a is None and z is None) or (a == z and not moved):
                     continue
                 visible = a is None or z is None or f"{a:.2f}" != f"{z:.2f}"
                 changes.append(

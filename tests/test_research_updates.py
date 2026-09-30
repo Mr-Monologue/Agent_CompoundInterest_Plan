@@ -389,3 +389,39 @@ def test_new_auxiliary_evidence_distinguished_from_unchanged_input(tmp_path, mon
     second = service.run(UpdateRequest(scope="003096", idempotency_key="aux-repeat"))
     assert not second["cases"][0]["checks"][0]["archive_new"]
     assert "新归档资料 0项" in second["display_text"]
+
+
+def test_missing_to_missing_is_not_numeric_change(tmp_path, monkeypatch):
+    old = evaluate(PeerStudy.model_validate(study()))
+    for row in old["rows"]:
+        for window in row["windows"]:
+            window["calculated"] = None
+            window["peer_difference_pp"] = None
+    new = deepcopy(old)
+    for row in new["rows"]:
+        for window in row["windows"]:
+            window["end"] = "2024-01-09"
+    assert diffs(old, new) == []
+    research, _, _ = services(tmp_path)
+
+    def legacy(*args):
+        return dict(
+            anchor_code="003096",
+            status="PARTIAL",
+            candidate=None,
+            changes=[dict(before=None, after=None, materiality="VISIBLE")],
+        )
+
+    monkeypatch.setattr("investor_core.research_updates.build", legacy)
+    service = ResearchUpdates(research, fetch_factory=lambda: None)
+    request = UpdateRequest(scope="003096", idempotency_key="old-receipt")
+    current = service.run(request)
+    assert current["cases"][0]["changes"] == []
+    assert "可见数值变化 0项" in current["display_text"]
+    with sqlite3.connect(research.settings.db_path) as c:
+        raw = c.execute("SELECT result_json FROM research_update_runs").fetchone()[0]
+        before = list(c.iterdump())
+    assert len(json.loads(raw)["cases"][0]["changes"]) == 1
+    assert service.run(request) == current
+    with sqlite3.connect(research.settings.db_path) as c:
+        assert list(c.iterdump()) == before
