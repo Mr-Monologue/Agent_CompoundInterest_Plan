@@ -1398,6 +1398,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def benchmark_confirm(mapping_id: str, request: MappingApproval) -> dict[str, Any]:
         return success(benchmarks.approve(mapping_id, request), data_quality="WARNING")
 
+    def current_research_notices(
+        data: dict[str, Any], portfolio_id: str, account_id: str, code: str | None = None
+    ) -> dict[str, Any]:
+        from investor_core.research_read_notices import attach_peer_limitations
+
+        brief = market_data.portfolio_brief(portfolio_id=portfolio_id, account_id=account_id)
+        codes = {p["holding"]["instrument_code"] for p in brief["valuation"]["positions"]}
+        return attach_peer_limitations(research, data, codes & {code} if code else codes)
+
     @app.get("/v1/holding-review")
     def holding_review_get(
         portfolio_id: str, account_id: str, view: Literal["SUMMARY", "DETAIL"] = "SUMMARY"
@@ -1405,7 +1414,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         data = holding_reviews.preview(portfolio_id, account_id)
         if view == "DETAIL":
             data["display_text"] = data["detail_text"]
-        return success(data, data_quality="WARNING")
+        return success(
+            current_research_notices(data, portfolio_id, account_id), data_quality="WARNING"
+        )
 
     @app.get("/v1/holding-review-delta")
     def holding_review_delta(
@@ -1417,12 +1428,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         view: Literal["SUMMARY", "DETAIL"] = "SUMMARY",
     ) -> dict[str, Any]:
         return success(
-            ReviewService(holding_reviews).read(
+            current_research_notices(
+                ReviewService(holding_reviews).read(
+                    portfolio_id,
+                    account_id,
+                    status=status,
+                    code=instrument_code,
+                    details=view == "DETAIL",
+                ),
                 portfolio_id,
                 account_id,
-                status=status,
-                code=instrument_code,
-                details=view == "DETAIL",
+                instrument_code,
             ),
             data_quality="WARNING",
         )
@@ -1468,8 +1484,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         from investor_core.research_coverage import CoverageService
 
         return success(
-            CoverageService(holding_reviews).read(
-                portfolio_id, account_id, code=instrument_code, details=view == "DETAIL"
+            current_research_notices(
+                CoverageService(holding_reviews).read(
+                    portfolio_id, account_id, code=instrument_code, details=view == "DETAIL"
+                ),
+                portfolio_id,
+                account_id,
+                instrument_code,
             ),
             data_quality="WARNING",
         )
@@ -1492,7 +1513,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             records,
             today=research._now().astimezone(ZoneInfo(runtime_settings.timezone)).date(),
         )
-        return success(result, data_quality="WARNING")
+        return success(
+            current_research_notices(result, portfolio_id, account_id), data_quality="WARNING"
+        )
 
     @app.get("/v1/notification-status")
     def notification_status_get() -> dict[str, Any]:
