@@ -88,3 +88,11 @@ D1使用补充：`holdings-review` 默认逐基金一行，`holdings-review --de
 ## 组合研究覆盖
 
 “复核我的组合，哪些最值得进一步研究？”执行 `investor-assistant portfolio-research`；“查看某基金研究覆盖详情”增加 `--code <代码> --details`。该入口动态读取当前持仓，不替代原“复核我的持仓”的基线差异语义。先使用Core `display_text`，不在客户端重算结论。医疗继续 `peers --anchor 003096` / `peer-validation --anchor 003096`；A500联接比较使用 `peers --anchor 022463`。所有查询仅复用归档，明确说明没有取得新资料。完整口径见 PORTFOLIO_RESEARCH_COVERAGE.md。
+
+## 主动研究更新（v0.44.0）
+
+“检查哪些研究需要更新”调用 `research-update-check`，只读不联网。
+“更新研究，告诉我有什么变化”调用 `research-update`，执行公开资料更新，仅两既有案例；这是公开研究写入意图，不是投资配置批准。
+“查看上次研究更新结果”调用 `research-update-last`，只读回看成功范围与失败。
+
+研究更新发生响应丢失时先回读原请求，客户端保留标识；不换键重发。需要恢复中断时沿原意图 `--resume`，不要求Ryan处理标识。新研究不自动审批或处理D1。范围、部分完成、来源限制和恢复方式见[RESEARCH_UPDATES](RESEARCH_UPDATES.md)。

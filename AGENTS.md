@@ -73,3 +73,5 @@
 - “组合研究覆盖与第二类产品验证”已以v0.43.1结项，阶段部署授权终止；当前证据见docs/PORTFOLIO_RESEARCH_COVERAGE_LIVE_ACCEPTANCE.md和LAUNCH_CHECKLIST末尾。查询动态读取持仓，研究类型与角色/批准分开，保留原D1/D2历史。
 
 - 组合研究覆盖与指数联接方法见docs/PORTFOLIO_RESEARCH_COVERAGE.md；动态持仓、正式类型、研究角色/批准独立，查询不采集和保存。阶段当前进度与授权结束条件仅以LAUNCH_CHECKLIST末尾为准。
+
+- 当前“研究更新与变化复核闭环”获明确阶段开发/公开采集/发布部署授权；范围及结束条件见LAUNCH_CHECKLIST末尾，操作见docs/RESEARCH_UPDATES.md。仅主动更新两个既有案例，状态检查和结果回读不联网；失败不刷新旧研究，不改D1/批准/投资事实或调度。结项后授权终止。

@@ -119,9 +119,10 @@ class PeerStudy(StrictModel):
         if self.scope_defined_at > self.knowledge_date:
             raise ValueError("Scope is not yet known")
         for source in self.sources.values():
-            if not source.original_sha256 or (not self.validation and source.quality != "OFFICIAL"):
+            if not source.original_sha256:
                 raise ValueError(
-                    "Evidence fingerprints required; legacy inputs require official sources"
+                    "Evidence fingerprints required; primary series/admission still re"
+                    "quire official sources"
                 )
             if source.retrieved_at.date() > self.knowledge_date:
                 raise ValueError("Evidence not available at historical knowledge date")
