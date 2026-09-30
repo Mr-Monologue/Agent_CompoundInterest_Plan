@@ -14,6 +14,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -357,6 +358,68 @@ class DailyClient:
     def research(self, topic: str) -> Json:
         return self.get("/v1/research-diagnosis", **self.scope(), topic=topic)
 
+    def update_research(self, scope: str, *, resume: bool = False) -> Json:
+        """Persist intent before POST; uncertain response is recovered by original key."""
+        self.journal.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.journal) as db:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS research_requests (id TEXT PRIMARY KEY"
+                ", scope TEXT NOT NULL, state TEXT NOT NULL)"
+            )
+            db.execute("BEGIN IMMEDIATE")
+            pending = db.execute(
+                "SELECT id,scope FROM research_requests WHERE state='UNKNOWN' LIMIT 1"
+            ).fetchone()
+            if pending:
+                key, original_scope = pending
+            else:
+                key, original_scope = str(uuid4()), scope
+                db.execute("INSERT INTO research_requests VALUES (?,?,'UNKNOWN')", (key, scope))
+            db.commit()
+        if pending:
+            response = self.http.get("/v1/research-updates/" + quote(key, safe=""))
+            if response.status_code != 404:
+                response.raise_for_status()
+                result: Json = response.json()
+                state = result["data"]["status"]
+                if state not in {"RUNNING", "INTERRUPTED"}:
+                    with sqlite3.connect(self.journal) as db:
+                        db.execute(
+                            "UPDATE research_requests SET state='RECEIVED' WHERE id=?", (key,)
+                        )
+                    return dict(result["data"])
+                if not resume or state != "INTERRUPTED":
+                    return dict(result["data"])
+            elif not resume:
+                raise AssistantError(
+                    "原请求尚未查到,可能尚在途;明确恢复时仍使用原标识,不生成新请求。"
+                )
+        try:
+            response = self.http.post(
+                "/v1/research-updates",
+                json=dict(scope=original_scope, idempotency_key=key, resume=resume),
+                timeout=1100,
+            )
+            response.raise_for_status()
+            result = response.json()
+        except (httpx.HTTPError, ValueError):
+            raise AssistantError(
+                "研究更新响应未确认;保留原请求,下次先回读,禁止换标识重发。"
+            ) from None
+        active_key = result["data"].get("idempotency_key", key)
+        if active_key != key:
+            with sqlite3.connect(self.journal) as db:
+                db.execute("UPDATE research_requests SET state='COALESCED' WHERE id=?", (key,))
+                db.execute(
+                    "INSERT OR IGNORE INTO research_requests VALUES (?,?,'UNKNOWN')",
+                    (active_key, result["data"]["scope"]),
+                )
+            key = active_key
+        if result["data"]["status"] not in {"RUNNING", "INTERRUPTED"}:
+            with sqlite3.connect(self.journal) as db:
+                db.execute("UPDATE research_requests SET state='RECEIVED' WHERE id=?", (key,))
+        return dict(result["data"])
+
     def workflow(
         self,
         operation: str,
@@ -451,6 +514,11 @@ def main() -> None:
     peers.add_argument("--cohort")
     peers.add_argument("--as-of")
     peers.add_argument("--details", action="store_true")
+    sub.add_parser("research-update-check")
+    sub.add_parser("research-update-last")
+    refresh = sub.add_parser("research-update")
+    refresh.add_argument("--scope", choices=["ALL", "022463", "003096"], default="ALL")
+    refresh.add_argument("--resume", action="store_true")
     sub.add_parser("investment")
     sub.add_parser("context")
     sub.add_parser("week")
@@ -491,7 +559,13 @@ def main() -> None:
     args = parser.parse_args()
     client = DailyClient(args.core_url, portfolio_id=args.portfolio, account_id=args.account)
     try:
-        if args.command == "peer-validation":
+        if args.command == "research-update-check":
+            result = client.get("/v1/research-update-check")
+        elif args.command == "research-update-last":
+            result = client.get("/v1/research-updates/latest")
+        elif args.command == "research-update":
+            result = client.update_research(args.scope, resume=args.resume)
+        elif args.command == "peer-validation":
             result = client.get(
                 "/v1/peer-comparison-validation",
                 anchor_code=args.anchor,
