@@ -209,12 +209,29 @@ def parse(raw: bytes, kind: str, code: str) -> Any:
             limitation="实际检查产品页;不能由静态页面证明全部新公告已列出,新文件须内容核验",
         )
     if kind == "cash":
-        clean = re.sub(r"\s+", " ", re.sub("<[^>]+>", " ", text)).strip()
-        if "活期" not in clean:
+        rows = []
+        if "活期存款" not in text or "调整时间" not in text:
             raise ValueError("CASH_RULE_NOT_IDENTIFIED")
+        for row in re.findall(r"<tr[^>]*>(.*?)</tr>", text, re.S | re.I):
+            cells = [
+                re.sub(r"\s+", "", re.sub("<[^>]+>", "", cell))
+                for cell in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S | re.I)
+            ]
+            if cells and re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", cells[0]):
+                rate = Decimal(cells[1])
+                if not rate.is_finite() or rate < 0:
+                    raise ValueError("CASH_RATE_INVALID")
+                rows.append(
+                    dict(
+                        adjustment_date=cells[0].replace(".", "-"),
+                        demand_rate_annual_pct=format(rate.normalize(), "f"),
+                    )
+                )
+        if not rows:
+            raise ValueError("CASH_RATE_TABLE_UNRECOGNIZED")
         return dict(
-            excerpt=clean[:16000],
+            rows=sorted(rows, key=lambda r: r["adjustment_date"]),
             applicability="UNVERIFIED",
-            limitation="一般存款基准资料不能证明本基金现金腿税后、日计息及假日规则",
+            limitation="一般存款基准不能证明基金现金腿税后、日计息及假日规则",
         )
     raise ValueError("UNSUPPORTED_SOURCE")

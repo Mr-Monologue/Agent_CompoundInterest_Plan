@@ -326,3 +326,18 @@ def test_failure_of_one_case_continues_other(tmp_path, monkeypatch):
     result = svc.run(UpdateRequest(idempotency_key="two"))
     assert result["status"] == "PARTIAL"
     assert [r["status"] for r in result["cases"]] == ["FAILED", "SUCCESS"]
+
+
+def test_cash_page_decoration_is_not_new_evidence():
+    table = (
+        "<table><tr><th>调整时间</th><th>活期存款</th></tr>"
+        "<tr><td>2012.07.06</td><td>0.35</td></tr></table>"
+    )
+    first = parse(("<script>clock=1</script>" + table).encode(), "cash", "PUBLIC")
+    second = parse(
+        ("<style>new-style</style>" + table + "<footer>new decoration</footer>").encode(),
+        "cash",
+        "PUBLIC",
+    )
+    assert fingerprint(first) == fingerprint(second)
+    assert first["applicability"] == "UNVERIFIED"
