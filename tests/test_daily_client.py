@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
@@ -9,6 +10,7 @@ from pathlib import Path
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from http_process_support import wait_for_ready
 from test_ledger import build_service
 from test_weekly_reports import terminal_plan
 
@@ -164,7 +166,6 @@ def test_real_http_entry_queries_and_preview(tmp_path: Path) -> None:
     import socket
     import subprocess
     import sys
-    import time
 
     settings, _pid, _aid, _plan = terminal_plan(tmp_path / "real-http.db", outcome="SKIPPED")
     with socket.socket() as sock:
@@ -179,57 +180,59 @@ def test_real_http_entry_queries_and_preview(tmp_path: Path) -> None:
         INVESTOR_CORE_WINDOWS_TASK_NAME="",
         PYTHONUTF8="1",
     )
-    process = subprocess.Popen(
-        [sys.executable, "-c", "from investor_core.api.app import main; main()"],
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    client = DailyClient(f"http://127.0.0.1:{port}")
-    try:
-        for _ in range(60):
-            if process.poll() is not None:
-                pytest.fail("isolated server exited before readiness")
-            try:
-                if client.get("/health")["status"] == "ok":
-                    break
-            except AssistantError:
-                time.sleep(0.2)
-        else:
-            pytest.fail("isolated HTTP server did not start")
-        # Actual socket HTTP evidence chain; all writes stay in this isolated database.
-        from datetime import UTC, datetime
-
-        source = {
-            "instrument_code": "CORE01",
-            "source_name": "Isolated source",
-            "source_ref": "https://example.com/execution-test",
-            "source_lineage": "TEST",
-            "retrieved_at": datetime.now(UTC).isoformat(),
-            "published_date": None,
-            "data_date": "2026-09-23",
-            "excerpt": "Isolated quote",
-            "quality": "UNVERIFIED",
-        }
-        archived = client.http.post("/v1/execution-evidence", json=source)
-        assert archived.status_code == 200
-        first_id = archived.json()["data"]["id"]
-        assert (
-            client.http.post("/v1/execution-evidence", json=source).json()["data"]["id"] == first_id
+    log_path = tmp_path / "core-process.log"
+    with log_path.open("w", encoding="utf-8") as log:
+        process = subprocess.Popen(
+            [sys.executable, "-c", "from investor_core.api.app import main; main()"],
+            env=env,
+            stdout=log,
+            stderr=log,
         )
-        saved = client.get("/v1/execution-evidence", instrument_code="CORE01")["items"]
-        assert saved[0]["facts"]["excerpt"] == "Isolated quote"
-        assert not client.get("/v1/execution-constraints", account_id=_aid)["items"]
-        before = dump(settings.db_path)
-        assert client.investment()["brief"]["valuation"]["data_quality"] != "PASS"
-        assert client.plan("200")["display_text"]
-        assert client.week()["plans"]
-        assert client.schema("transaction-commit")["schema"]["required"]
-        assert dump(settings.db_path) == before
-    finally:
-        client.close()
-        process.terminate()
-        process.wait(timeout=10)
+        client = DailyClient(f"http://127.0.0.1:{port}")
+        try:
+
+            async def startup():
+                async with httpx.AsyncClient(
+                    base_url=f"http://127.0.0.1:{port}", trust_env=False
+                ) as startup_client:
+                    await wait_for_ready(startup_client, process, log_path)
+
+            asyncio.run(startup())
+            assert client.get("/health")["status"] == "ok"
+            # Actual socket HTTP evidence chain; all writes stay in this isolated database.
+            from datetime import UTC, datetime
+
+            source = {
+                "instrument_code": "CORE01",
+                "source_name": "Isolated source",
+                "source_ref": "https://example.com/execution-test",
+                "source_lineage": "TEST",
+                "retrieved_at": datetime.now(UTC).isoformat(),
+                "published_date": None,
+                "data_date": "2026-09-23",
+                "excerpt": "Isolated quote",
+                "quality": "UNVERIFIED",
+            }
+            archived = client.http.post("/v1/execution-evidence", json=source)
+            assert archived.status_code == 200
+            first_id = archived.json()["data"]["id"]
+            assert (
+                client.http.post("/v1/execution-evidence", json=source).json()["data"]["id"]
+                == first_id
+            )
+            saved = client.get("/v1/execution-evidence", instrument_code="CORE01")["items"]
+            assert saved[0]["facts"]["excerpt"] == "Isolated quote"
+            assert not client.get("/v1/execution-constraints", account_id=_aid)["items"]
+            before = dump(settings.db_path)
+            assert client.investment()["brief"]["valuation"]["data_quality"] != "PASS"
+            assert client.plan("200")["display_text"]
+            assert client.week()["plans"]
+            assert client.schema("transaction-commit")["schema"]["required"]
+            assert dump(settings.db_path) == before
+        finally:
+            client.close()
+            process.terminate()
+            process.wait(timeout=10)
 
 
 def test_system_preserves_failure_history_dates_and_duplicates(monkeypatch) -> None:

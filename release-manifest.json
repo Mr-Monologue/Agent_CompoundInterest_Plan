@@ -6,5 +6,5 @@
   "requires_manual_approval": true,
   "database_revision": "0045_shadow_models",
   "minimum_current_version": "0.5.3",
-  "notes": "Shadow evidence registry, deterministic snapshot replay, research-only hard filters and blocked promotion checks. Numerical seasons/ranking and activation remain unavailable; no strategy, money or scheduler changes. Additive shadow-only schema 0045."
+  "notes": "Research-only R1.1 C/D calculations, source-bound snapshot replay and guarded E evidence workflows. Actual model promotion and ACTIVE remain unauthorized; production strategy stays v1.6 with no money or scheduler changes. Additive shadow-only schema 0045."
 }

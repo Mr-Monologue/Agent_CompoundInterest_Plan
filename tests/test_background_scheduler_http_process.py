@@ -13,34 +13,11 @@ from pathlib import Path
 
 import httpx
 from conftest import PROJECT_ROOT, migrate_database
+from http_process_support import wait_for_ready
 
 from investor_core.config import Environment, Settings
 from investor_core.operations import OperationsService
 from investor_core.scheduler import SchedulerService
-
-
-async def wait_for_ready(client, process, log_path, startup_seconds=30):
-    """One cancellable deadline spans connect, headers and every body chunk."""
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + startup_seconds
-    try:
-        async with asyncio.timeout_at(deadline):
-            while True:
-                if process.poll() is not None:
-                    raise AssertionError(log_path.read_text(encoding="utf-8"))
-                try:
-                    response = await client.get("/ready", timeout=None)
-                    # Also reject a late response from an operation that delayed
-                    # cancellation or completed without yielding to the timer.
-                    if response.status_code == 200 and loop.time() < deadline:
-                        return
-                except httpx.HTTPError:
-                    pass
-                await asyncio.sleep(0.1)
-    except TimeoutError as exc:
-        raise AssertionError(
-            "isolated Core did not become ready: " + log_path.read_text(encoding="utf-8")
-        ) from exc
 
 
 def test_separate_worker_http_process_and_offline_restart(tmp_path: Path) -> None:
@@ -100,6 +77,7 @@ def test_separate_worker_http_process_and_offline_restart(tmp_path: Path) -> Non
         str(tmp_path / "worker.db"),
     ]
     try:
+
         async def startup():
             async with httpx.AsyncClient(base_url=url, trust_env=False) as startup_client:
                 await wait_for_ready(startup_client, process, log_path)

@@ -1307,3 +1307,18 @@ session19483/PID26298继续，无停止/重启/主树换代码。只读检查临
 2026-10-08 17:09:19 UTC实查：session19483仍running，PID26298累计墙钟1:36:05、CPU时间1:32:49、CPU96.6%、RSS437912KB。连续只读采样5.61秒墙钟内CPU增加5.55秒，证明仍实际计算；不是只凭进程存在推断正常。日志已打印77%整行并继续54个用例标记，仍仅首行1个F；尚未输出失败stack或终态，因此具体失败原因仍UNKNOWN。
 
 临时SYNTHETIC E库当前71观察、2验证、4回执、6健康评估、5复核草稿、7确认、1预注册；后续用例日志继续增长，不能把这些合成记录当真实资格。主工作树仍`3b50698edb0cf4a1ea9804009ee3bc93bc827d72`且干净，**未同步08e20候选**，未停止、重启或改变原轮代码/参数。候选及独审结论保存在detached工作树和远端feature；沿原session收终态后才快进。无新增用户决定。
+
+
+### 第四轮终态与日常HTTP启动门禁修复，已合流集合候选
+
+session19483退出1，PID26298已结束，**不可再轮询或重启该会话**。原完整[第四轮日志](R11_FINAL_FULL_ATTEMPT_4.txt)：**645通过、1失败、4项Windows跳过、1条既有Starlette警告，6149.28秒（1:42:29）**。完整E场景通过，耗时1388.30秒；MCP用例均通过。四项跳过均为test_update_safety.py的Windows executable updater test，没有手动筛选/跳过。不得把本轮记成全绿。
+
+唯一失败为`tests/test_daily_client.py::test_real_http_entry_queries_and_preview`，原第199行`pytest.fail("isolated HTTP server did not start")`。不是先前猜测过的MCP初始化失败。旧用例以60次轮询及每次错误后0.2秒sleep等待/health，没有统一整体期限；stdout/stderr均DEVNULL，原子进程底层启动原因不能追溯，不能据此宣布CPU调度或API性能根因已证明。
+
+终态后才检查差异并正常fetch、ff-only从3b50698推进到9a7bad7，已合流独审通过的08e20完整集合修复；主src与08e20逐文件无差异。随后仅修测试启动设施：把f9a3db已审的30秒绝对期限wait_for_ready函数原样移到tests/http_process_support.py，两个真实HTTP进程测试共享；日常测试先通过/ready，再显式保留原/health状态及全部原HTTP归档、幂等、预览、业务表不变断言。保存子进程stdout/stderr到临时日志供失败诊断，保留terminate/wait及日志关闭。未改生产DailyClient请求超时、MCP20/45秒期限或业务实现。30秒是既有独立HTTP进程测试的统一启动门禁，替换的是次数驱动且总耗时不确定的轮询。
+
+[针对性回归](R11_DAILY_HTTP_READINESS_REGRESSION.txt)**6通过、1条既有警告，51.37秒**：真实日常HTTP链、后台独立HTTP/worker链，以及拆分响应/晚到200/期限取消关闭/子进程退出日志四项契约测试。AST核对共享helper与已审原函数完全一致，原日常HTTP业务断言全部保留；Ruff全库通过、mypy96源文件通过。成功测试的子进程日志为空（没有错误输出），未伪造其为原失败原因证据。
+
+release-manifest.json只修正notes中“数值计算尚不存在”的过时说明；逐字段确认版本、channel、auto_update、requires_manual_approval、迁移版本和最低版本均未改变。声明仍为研究/未授权实际晋级，策略v1.6、财务与调度不变；这不是发布或部署。
+
+下一轮将从本整合提交执行不带maxfail/过滤的完整pytest，日志/tmp/r11-final-full-regression-5.log。需要新源码全量是因为已合流v4集合约束；不能以f9第四轮或旧a2第三轮替代。当前仅feature源码推进，新增测试复用改动待独审；双平台CI仍UNKNOWN、API Forbidden不重试/绕过、无合并/Tag/Release/生产动作。没有新增用户决定。

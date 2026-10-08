@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from test_background_scheduler_http_process import wait_for_ready
+from http_process_support import wait_for_ready
 
 
 @pytest.mark.parametrize("late", [False, True])
