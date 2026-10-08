@@ -1250,3 +1250,11 @@ HTTP测试现在使用asyncio.timeout_at覆盖连接、响应头与每个正文�
 取得退出0并核验无pytest进程后，才fetch核对远端5个已知提交、确认主工作树干净，以git merge --ff-only origin/feature同步到**e204d4fdd8028cdda25df971755991d09838df1c**。最终业务/测试修复仍是已独审**f9a3db470db946510ac07061a6779f81cca4e62c**，其他提交只有文档证据。无强制同步、历史重写或分支合并到develop/release/main。
 
 a2d267a的全量不能替代f9a3db新代码全量；接下来在快进后的固定源码执行`.venv/bin/pytest -o addopts='' -q -ra --tb=short --durations=20 > /tmp/r11-final-full-regression-4.log 2>&1`，包含新增17项错误传播/整体期限测试及完整E，不额外重试或改预算。准确进程随后记录。MCP冷启动原失败及主机耗时波动原因未明的范围继续保留，不因第三轮通过宣称性能问题已修复。
+
+### 已审最终代码完整复验启动（第四轮）
+
+第三轮证据提交**0afa8b217ac82deac8bf9d9431a91915378c76c6**已推送；src/tests与独审通过的f9a3db完全无差异。Ruff全仓通过、mypy全部86源文件通过、离线wheel成功，并逐字节核对包内MCP检查器、Core映射绑定及冻结定义等于当前源码。R1.1方案blob仍7fdbfdd55d72837197f3e07f042f8e27ed26fce5，没有改规则/参数。
+
+**session19483，PID26298**，目录/workspace/Agent_CompoundInterest_Plan，命令`.venv/bin/pytest -o addopts='' -q -ra --tb=short --durations=20 > /tmp/r11-final-full-regression-4.log 2>&1`。起点0afa8b2（业务/测试f9a3db）；启动41秒进程正常，尚无终态。该轮覆盖最终代码、新增17项测试及完整E；-ra/--durations仅增加跳过原因和耗时输出，不改变执行范围，没有maxfail/重试/跳过/诊断插件。
+
+恢复先轮询**session19483**、核对**PID26298**和新日志；旧session44431已退出0，不能再轮询旧进程或重复启动新全量。运行期间源码/测试冻结，结束后归档准确终态。若失败继续处理且保留原证据；若通过仍须区分Linux跳过、真实MCP冷启动观测限制、GitHub双平台CI未知和离线Windows生产缺口，不能自行宣布K3待验收或结项。无部署/实际晋级/真实财务写入，开发授权持续。
