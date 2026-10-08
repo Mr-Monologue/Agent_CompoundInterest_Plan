@@ -62,10 +62,11 @@ def test_engineering_requires_originals_for_every_declared_check():
     )
     assert result == artifacts
     # This is contract acceptance of fixtures, not CI execution or actual qualification.
-    corrupt = dict(
-        artifacts["ubuntu_ci"],
-        facts_json=artifacts["ubuntu_ci"]["facts_json"].replace('"PASS"', '"FAIL"'),
-    )
+    stored = json.loads(artifacts["ubuntu_ci"]["facts_json"])
+    original = json.loads(stored["excerpt"])
+    original["result"] = "FAIL"
+    stored["excerpt"] = json.dumps(original)
+    corrupt = dict(artifacts["ubuntu_ci"], facts_json=json.dumps(stored))
     with pytest.raises(LedgerError):
         original_json(corrupt)
 
