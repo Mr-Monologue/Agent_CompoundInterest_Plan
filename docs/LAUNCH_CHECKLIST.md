@@ -1204,3 +1204,15 @@ session91726已终态退出1，[阶段计时/堆栈原日志](R11_MCP_PHASE_PROB
 下一次完整回归采用`.venv/bin/pytest -o addopts='' -q --tb=short > /tmp/r11-final-full-regression-3.log 2>&1`，不再maxfail提前停止，且不加载诊断插件。理由是HTTP同步已有必要改动，同时即使MCP仍失败，也必须完整验证其他R1.1/既有功能；不是跳过MCP、增加重试或将子集结果替代全量通过。精确进程随后记录，运行中不修改源码/测试。全量只有退出0且完整终态才能称通过；否则保留全部失败并继续处理/报告可证明的环境限制。
 
 第三轮必要完整回归已启动：**session44431，PID21900**，工作目录/workspace/Agent_CompoundInterest_Plan，日志/tmp/r11-final-full-regression-3.log，命令与上段一致。运行基点baf4f95051cb7b941424d0514f0e5f04f2f5038f（生产源码2e2328c、测试同步5c0a72b）；启动10秒进程正常，尚无终态。恢复先轮询session44431并核验PID/日志，禁止重复启动；本轮没有maxfail，必须采集终态及全部失败。此检查点仅供父对话接收诊断和准确源码，不是验收、授权结束或要求用户决定。
+
+### 第三轮全量保持原SHA；隔离准备整体期限和原异常保留修复
+
+父对话对5c0a72b独审新增P2：HTTPX timeout=remaining按阶段计时，分段响应可在30秒后被接受。接受该问题，不调整预算。临时detached检出/tmp/r11-mcp-cleanup-review基于a2d267a准备修复，**/workspace/Agent_CompoundInterest_Plan的session44431/PID21900仍验证原a2d267a源码，未更改所读源码/测试**。
+
+HTTP测试现在使用asyncio.timeout_at覆盖连接、响应头与每个正文分段的同一个30秒总期限，超时取消请求；接受200前再次核对期限，防止阻塞依赖延迟定时回调后迟到成功。进程退出检查、HTTP/worker全部业务断言与finally进程清理保留，未修改生产服务或30秒值。新增分段慢响应超期失败及流关闭、期限内200成功、非协作依赖迟到200拒绝、进程退出原日志四项测试。
+
+另独立复现MCP transport清理覆盖原错误：[修复前](R11_CLEANUP_ERROR_BEFORE.txt)4失败/6通过，包括原timeout、异常组、取消和readiness语义错误被清理BrokenResourceError覆盖。最小产品修复包装stdio上下文：仅当关闭错误不再包含原错误时恢复原错误，并将关闭错误保留为cause；已含原错误的异常组原样保留，仅关闭失败不能返回PASS。初始化/请求20秒、CLI45秒和测试35秒完全不变，不重试握手、不吞掉超时。此修复改善错误传播，**不修复SDK冷导入耗时或证明环境根因**。
+
+隔离自验：[14项](R11_CLEANUP_DEADLINE_REGRESSION.txt)通过7.61秒；[嵌套原错误+清理错误保留](R11_CLEANUP_GROUP_REGRESSION.txt)1通过3.11秒；[真实HTTP/独立worker/离线进程](R11_DEADLINE_REAL_PROCESS.txt)1通过29.94秒。Ruff、mypy check.py和diff检查通过；测试全为临时合成数据。最新候选修复需独审及最终源码必要全量，不能用仍在跑的a2d267a结果代替。
+
+为尽早提供独审源码，将临时detached提交以快进方式推送到既有远端feature，不创建分支、不强推；本机feature工作树在原全量终态前保持a2d267a，终态归档后再用git merge --ff-only同步。精确新SHA提交后回传。不能将远端候选修复与当前运行SHA混淆。

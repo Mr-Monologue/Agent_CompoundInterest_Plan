@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import socket
 import subprocess
 import sys
-import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -17,6 +17,30 @@ from conftest import PROJECT_ROOT, migrate_database
 from investor_core.config import Environment, Settings
 from investor_core.operations import OperationsService
 from investor_core.scheduler import SchedulerService
+
+
+async def wait_for_ready(client, process, log_path, startup_seconds=30):
+    """One cancellable deadline spans connect, headers and every body chunk."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + startup_seconds
+    try:
+        async with asyncio.timeout_at(deadline):
+            while True:
+                if process.poll() is not None:
+                    raise AssertionError(log_path.read_text(encoding="utf-8"))
+                try:
+                    response = await client.get("/ready", timeout=None)
+                    # Also reject a late response from an operation that delayed
+                    # cancellation or completed without yielding to the timer.
+                    if response.status_code == 200 and loop.time() < deadline:
+                        return
+                except httpx.HTTPError:
+                    pass
+                await asyncio.sleep(0.1)
+    except TimeoutError as exc:
+        raise AssertionError(
+            "isolated Core did not become ready: " + log_path.read_text(encoding="utf-8")
+        ) from exc
 
 
 def test_separate_worker_http_process_and_offline_restart(tmp_path: Path) -> None:
@@ -76,25 +100,12 @@ def test_separate_worker_http_process_and_offline_restart(tmp_path: Path) -> Non
         str(tmp_path / "worker.db"),
     ]
     try:
+        async def startup():
+            async with httpx.AsyncClient(base_url=url, trust_env=False) as startup_client:
+                await wait_for_ready(startup_client, process, log_path)
+
+        asyncio.run(startup())
         with httpx.Client(base_url=url, trust_env=False, timeout=0.3) as client:
-            # Health only proves that HTTP is listening, not that the first DB
-            # readiness check has completed. Bound that check by the existing
-            # startup deadline, not the 0.3s connect/poll budget used below.
-            deadline = time.monotonic() + 30
-            while time.monotonic() < deadline:
-                if process.poll() is not None:
-                    raise AssertionError(log_path.read_text(encoding="utf-8"))
-                try:
-                    remaining = max(0.001, deadline - time.monotonic())
-                    if client.get("/ready", timeout=remaining).status_code == 200:
-                        break
-                except httpx.HTTPError:
-                    pass
-                time.sleep(0.1)
-            else:
-                raise AssertionError(
-                    "isolated Core did not start: " + log_path.read_text(encoding="utf-8")
-                )
             assert client.get("/health").status_code == 200
             first = subprocess.run(
                 worker,
