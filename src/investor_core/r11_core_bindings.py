@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from investor_core.r11_candidates import CandidateInput
 from investor_core.scheduler import instant
@@ -96,7 +97,14 @@ def capture(
                     break
         else:
             blockers.append("APPROVED_CORE_MAPPING_REQUIRED")
+        source = data.context.sources.get(product.benchmark_mapping_source or "")
         mappings[product.code] = dict(
+            source_timezone=source.publication_timezone if source else None,
+            expected_path=dict(
+                code=product.benchmark_identity,
+                currency=product.benchmark_currency,
+                return_basis=product.benchmark_return_basis,
+            ),
             snapshot=value,
             blockers=sorted(set(blockers)),
             retrospective_h_only=bool(
@@ -140,6 +148,32 @@ def apply(output: dict[str, Any], bindings: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def currently_effective(mapping: dict[str, Any], binding: dict[str, Any], now: datetime) -> bool:
+    """Inclusive calendar dates in the archived source timezone, never host time."""
+    try:
+        day = now.astimezone(ZoneInfo(binding["source_timezone"])).date().isoformat()
+        expected = binding["expected_path"]
+    except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError):
+        return False
+    periods = [
+        p
+        for p in mapping["diagnostic_mapping"]
+        if p.get("effective_from")
+        and p["effective_from"] <= day
+        and (not p.get("effective_to") or day <= p["effective_to"])
+    ]
+    if len(periods) != 1:
+        return False
+    period = periods[0]
+    parts = period["components"]
+    return (
+        period["method"] != "UNKNOWN"
+        and len(parts) == 1
+        and parts[0]["weight_bps"] == 10000
+        and all(parts[0].get(key) == value for key, value in expected.items())
+    )
+
+
 def changed(c: Any, bindings: dict[str, Any], now: datetime) -> bool:
     """Current approval/entity drift blocks new advice without rewriting saved runs."""
     for mapping in bindings["mappings"].values():
@@ -152,7 +186,12 @@ def changed(c: Any, bindings: dict[str, Any], now: datetime) -> bool:
         current = json.loads(row[0]) if row else {}
         current.pop("confirmation_digest", None)
         current.pop("confirmation_token", None)
-        if current != old or newer_approval(c, old, now):
+        if (
+            current != old
+            or current.get("status") != "APPROVED_RESEARCH"
+            or newer_approval(c, old, now)
+            or not currently_effective(current, mapping, now)
+        ):
             return True
     account = bindings.get("account")
     if account:
