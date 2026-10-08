@@ -77,14 +77,16 @@ def test_separate_worker_http_process_and_offline_restart(tmp_path: Path) -> Non
     ]
     try:
         with httpx.Client(base_url=url, trust_env=False, timeout=0.3) as client:
-            # Cold Core import can exceed four seconds on shared CI/cloud CPUs.
-            # Keep a bounded readiness deadline and fail immediately on process exit.
+            # Health only proves that HTTP is listening, not that the first DB
+            # readiness check has completed. Bound that check by the existing
+            # startup deadline, not the 0.3s connect/poll budget used below.
             deadline = time.monotonic() + 30
             while time.monotonic() < deadline:
                 if process.poll() is not None:
                     raise AssertionError(log_path.read_text(encoding="utf-8"))
                 try:
-                    if client.get("/health").status_code == 200:
+                    remaining = max(0.001, deadline - time.monotonic())
+                    if client.get("/ready", timeout=remaining).status_code == 200:
                         break
                 except httpx.HTTPError:
                     pass
@@ -93,7 +95,7 @@ def test_separate_worker_http_process_and_offline_restart(tmp_path: Path) -> Non
                 raise AssertionError(
                     "isolated Core did not start: " + log_path.read_text(encoding="utf-8")
                 )
-            assert client.get("/ready").status_code == 200
+            assert client.get("/health").status_code == 200
             first = subprocess.run(
                 worker,
                 cwd=PROJECT_ROOT,

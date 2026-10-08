@@ -1,0 +1,101 @@
+....F..                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.45.0-] _
+  + Exception Group Traceback (most recent call last):
+  |   File "/workspace/Agent_CompoundInterest_Plan/tests/test_codex_mcp.py", line 144, in test_real_stdio_handshake_checks_health_without_business_writes
+  |     result = asyncio.run(run())
+  |              ^^^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+  |     return runner.run(main)
+  |            ^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+  |     return self._loop.run_until_complete(task)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+  |     return future.result()
+  |            ^^^^^^^^^^^^^^^
+  |   File "/workspace/Agent_CompoundInterest_Plan/tests/test_codex_mcp.py", line 129, in run
+  |     return await asyncio.wait_for(
+  |            ^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/tasks.py", line 489, in wait_for
+  |     return fut.result()
+  |            ^^^^^^^^^^^^
+  |   File "/workspace/Agent_CompoundInterest_Plan/src/investor_mcp/check.py", line 51, in check_connection
+  |     async with stdio_client(parameters) as (reader, writer), ClientSession(
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py", line 231, in __aexit__
+  |     await self.gen.athrow(typ, value, traceback)
+  |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/mcp/client/stdio/__init__.py", line 182, in stdio_client
+  |     async with (
+  |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 815, in __aexit__
+  |     raise BaseExceptionGroup(
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Exception Group Traceback (most recent call last):
+    |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/mcp/client/stdio/__init__.py", line 189, in stdio_client
+    |     yield read_stream, write_stream
+    |   File "/workspace/Agent_CompoundInterest_Plan/src/investor_mcp/check.py", line 51, in check_connection
+    |     async with stdio_client(parameters) as (reader, writer), ClientSession(
+    |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/anyio/_backends/_asyncio.py", line 815, in __aexit__
+    |     raise BaseExceptionGroup(
+    | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+    +-+---------------- 1 ----------------
+      | Traceback (most recent call last):
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/anyio/streams/memory.py", line 118, in receive
+      |     return self.receive_nowait()
+      |            ^^^^^^^^^^^^^^^^^^^^^
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/anyio/streams/memory.py", line 113, in receive_nowait
+      |     raise WouldBlock
+      | anyio.WouldBlock
+      | 
+      | During handling of the above exception, another exception occurred:
+      | 
+      | Traceback (most recent call last):
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/anyio/_core/_tasks.py", line 151, in fail_after
+      |     yield cancel_scope
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/mcp/shared/session.py", line 292, in send_request
+      |     response_or_error = await response_stream_reader.receive()
+      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/anyio/streams/memory.py", line 126, in receive
+      |     await receive_event.wait()
+      |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/locks.py", line 213, in wait
+      |     await fut
+      | asyncio.exceptions.CancelledError: Cancelled via cancel scope 7f07faaca200; reason: deadline exceeded
+      | 
+      | During handling of the above exception, another exception occurred:
+      | 
+      | Traceback (most recent call last):
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/mcp/shared/session.py", line 291, in send_request
+      |     with anyio.fail_after(timeout):
+      |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py", line 158, in __exit__
+      |     self.gen.throw(typ, value, traceback)
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/anyio/_core/_tasks.py", line 154, in fail_after
+      |     raise TimeoutError
+      | TimeoutError
+      | 
+      | During handling of the above exception, another exception occurred:
+      | 
+      | Traceback (most recent call last):
+      |   File "/workspace/Agent_CompoundInterest_Plan/src/investor_mcp/check.py", line 54, in check_connection
+      |     initialized = await session.initialize()
+      |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/mcp/client/session.py", line 183, in initialize
+      |     result = await self.send_request(
+      |              ^^^^^^^^^^^^^^^^^^^^^^^^
+      |   File "/workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/mcp/shared/session.py", line 294, in send_request
+      |     raise McpError(
+      | mcp.shared.exceptions.McpError: Timed out while waiting for response to ClientRequest. Waited 20.0 seconds.
+      +------------------------------------
+============================= slowest 10 durations =============================
+57.24s call     tests/test_background_scheduler_http_process.py::test_separate_worker_http_process_and_offline_restart
+23.26s call     tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.45.0-]
+16.28s call     tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[FAIL-0.45.0-readiness failed]
+14.36s call     tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.0.0-versions differ]
+0.05s setup    tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[FAIL-0.45.0-readiness failed]
+0.04s call     tests/test_codex_mcp.py::test_client_identity_preserves_draft_payload_and_confirmation[hermes]
+0.04s call     tests/test_codex_mcp.py::test_client_identity_preserves_draft_payload_and_confirmation[codex]
+0.03s setup    tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.0.0-versions differ]
+0.01s teardown tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[FAIL-0.45.0-readiness failed]
+0.01s setup    tests/test_codex_mcp.py::test_client_identity_preserves_draft_payload_and_confirmation[codex]
+=========================== short test summary info ============================
+FAILED tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.45.0-]
+1 failed, 6 passed in 131.59s (0:02:11)

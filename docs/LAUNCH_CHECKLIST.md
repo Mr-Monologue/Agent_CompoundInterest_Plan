@@ -1176,3 +1176,19 @@ session20654/PID21017已结束，退出1；[第二轮全量原日志](R11_FINAL_
 已启动两个进程模块定向诊断**session76860，PID21401**，命令`.venv/bin/pytest -o addopts='' tests/test_background_scheduler_http_process.py tests/test_codex_mcp.py -q --tb=short --durations=10 > /tmp/r11-process-timeout-diagnosis.log 2>&1`；尚无终态。没有重跑全量，没有修改超时或跳过测试；先取诊断结果，明确区分测试启动/探测预算与实际服务性能，再作有证据的必要修复。
 
 自然到期修复2e2328c的独审仍待回传；其当前wheel已离线构建，并逐字节核对包内r11_core_bindings.py与当前源码一致、冻结定义包含在包内。无发布/安装。工程未完成，真实资料、自然F、双平台CI未知及Windows离线缺口不变。
+
+### 自然到期独审关闭；两类进程超时定位
+
+父对话独审精确2e2328cfe243a571efa9d794ce35d5b03afd77e3：自然到期P2关闭，无新增阻断；6项目标测试和13项额外时区/端点/重叠/身份币种口径/缺时区断言通过，原独立复现现在changed=True、critical=CORE_MAPPING_OR_ACCOUNT_CHANGED，模拟ADVISORY降SHADOW，旧replay=PASS。Ruff、模块mypy、diff通过。不等于最终全量或工程阶段通过。
+
+session76860/PID21401已结束，退出1；[定向诊断原日志](R11_PROCESS_TIMEOUT_DIAGNOSIS.txt)**6通过、1失败、131.59秒**。HTTP进程用例本次通过（57.24秒，含启动/两次worker/离线worker），MCP成功握手在initialize阶段超时（23.26秒），尚未请求健康端点；其失败/版本不匹配负例通过。进程检查没有残留pytest、Core、worker或MCP子进程。不是仅全量执行顺序触发。
+
+[不带分析工具的独立导入与直接就绪测量](R11_STARTUP_MEASUREMENTS.txt)：MCP服务导入28.21/17.59/15.14秒，子进程含解释器启动总耗时31.97/21.64/17.75秒，CPU消耗约28.14/20.10/15.33秒；带importtime的独立样本25.50秒、CPU25.34秒，主要包括SDK类型与工具声明构建。可确认启动工作可能先耗尽20秒初始化响应预算，不能归因于HTTP请求或并行残留；耗时变化的主机根因尚不能确定，不声称已证明或修复CPU调度问题。生产MCP20秒/CLI45秒和测试35秒上限均未改变。
+
+HTTP直接build_doctor_report均PASS，耗时0.280/0.115/0.261秒（尚不含HTTP开销）。现有进程测试错误地在/health成功后，用0.3秒单次请求断言/ready，而未用已有30秒启动期限等待真正就绪。仅修正测试同步：在原30秒deadline内轮询/ready、请求使用剩余启动预算；成功后仍断言/health和全部worker幂等/离线行为。没有修改服务、跳过断言、增加启动总期限或更改投资参数。
+
+该测试同步改动的两个进程模块回归**session2502**，日志/tmp/r11-process-readiness-regression.log，尚待终态。先收结果再决定必要全量；MCP启动问题仍未关闭，不靠重复全量碰运气。此前两次全量原失败证据保留，阶段尚未待验收。
+
+测试同步修复回归session2502退出1：[原日志](R11_PROCESS_READINESS_REGRESSION.txt)**6通过、1失败、122.86秒**。HTTP完整用例通过（59.48秒）；MCP成功/就绪失败两例通过，版本不匹配例约20秒出现BrokenResourceError，未得到预期语义错误。该测试修复只关闭HTTP同步问题，不关闭MCP问题或全量门禁。
+
+为定位新的管道异常，在/tmp/r11_probe_plugin.py增加仅诊断进程使用的pytest插件：记录initialize/list_tools/call_tool起止，并在子进程每10秒打印堆栈；不改变响应/总体超时、断言、业务调用或仓库源码。诊断session91726，日志/tmp/r11-mcp-phase-probe.log，三项原握手用例，尚待终态。它不是最终回归，最终全量不得加载诊断插件。下一步先取终态及子进程堆栈，区分冷导入/工具构建与协议执行后失败；不立即重跑全量。
