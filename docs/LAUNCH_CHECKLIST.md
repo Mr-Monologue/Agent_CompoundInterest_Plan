@@ -1322,3 +1322,9 @@ session19483退出1，PID26298已结束，**不可再轮询或重启该会话**�
 release-manifest.json只修正notes中“数值计算尚不存在”的过时说明；逐字段确认版本、channel、auto_update、requires_manual_approval、迁移版本和最低版本均未改变。声明仍为研究/未授权实际晋级，策略v1.6、财务与调度不变；这不是发布或部署。
 
 下一轮将从本整合提交执行不带maxfail/过滤的完整pytest，日志/tmp/r11-final-full-regression-5.log。需要新源码全量是因为已合流v4集合约束；不能以f9第四轮或旧a2第三轮替代。当前仅feature源码推进，新增测试复用改动待独审；双平台CI仍UNKNOWN、API Forbidden不重试/绕过、无合并/Tag/Release/生产动作。没有新增用户决定。
+
+### 最终整合全量第五轮已启动（当前唯一运行入口）
+
+已推送并核对远端源码`9c88d1d7dd995204d6f6225d0531428ece23352f`；其中src与已独审08e20完全相同，增量仅测试启动门禁复用、原日志/文档与manifest说明。2026-10-08 17:22 UTC在主工作树启动**session6921 / PID30981**：`.venv/bin/pytest -o addopts='' -q -ra --tb=short --durations=20 > /tmp/r11-final-full-regression-5.log 2>&1`。无maxfail、过滤、人工跳过或诊断插件；目前未终态，不声称通过。
+
+主工作树固定9c88d1d且干净，本恢复记录只在detached文档工作树提交；整轮执行期间不修改主树源码/测试。旧session19483/PID26298已退出1并已完整归档，不可再轮询旧会话或因此重复启动。下一步持续跟踪**6921/30981**到终态，若失败依新保留日志处理；新增测试复用可由父对话增量审查，不重复已关闭C缺陷。CI/正式发布/离线Windows生产状态仍独立UNKNOWN，无部署或实际模型/财务操作。
