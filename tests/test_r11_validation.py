@@ -63,7 +63,7 @@ def test_complete_statistics_never_promote_without_missing_adapters():
     assert all(result["computed_checks"].values())
     assert result["forward"]["valid_weeks"] == 13
     assert result["robustness_eligible"] == {"H": 52, "F": 13}
-    assert result["incomplete_adapters"]
+    assert result["not_assessed_by_this_preview"]
     assert not result["promotion_eligible"]
     assert not result["actual_promotion_authorized"]
     assert not result["active_reachable"]

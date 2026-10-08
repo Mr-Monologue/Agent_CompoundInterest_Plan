@@ -179,7 +179,7 @@ class R11Service:
             ).fetchone()
             if key:
                 raise LedgerError("SHADOW_KEY_CONFLICT", "Same key has different immutable input")
-            if not self.shadow._gate(c, model["id"], "SHADOW")["current"] == "SHADOW":
+            if self.shadow._gate(c, model["id"], "SHADOW")["current"] not in {"SHADOW", "ADVISORY"}:
                 raise LedgerError("SHADOW_PAUSED", "New observations paused")
             try:
                 data, evidence = self._load(c, request)
@@ -213,7 +213,9 @@ class R11Service:
                 else calculate_candidates(data, history)
             )
             output = self._apply_extraction(output, evidence["extraction"])
-            return self.shadow._append(
+            from investor_core.r11_governance import engine_hash
+
+            saved = self.shadow._append(
                 c,
                 model["id"],
                 "R11_OBSERVATION",
@@ -224,6 +226,7 @@ class R11Service:
                     request=body,
                     frozen_definition=DEFINITION,
                     definition_hash=digest(DEFINITION),
+                    engine_hash=engine_hash(),
                     input=data.model_dump(mode="json"),
                     evidence=evidence,
                     evidence_hash=digest(evidence),
@@ -235,6 +238,12 @@ class R11Service:
                     definition_id=VERSION,
                 ),
             )
+
+        if data.context.dataset_kind == "REAL" and data.context.evidence_class == "F":
+            from investor_core.r11_governance import R11Governance
+
+            R11Governance(self).assess(request.method, "observation:" + saved["id"])
+        return saved
 
     @staticmethod
     def _apply_extraction(output: dict[str, Any], extraction: dict[str, Any]) -> dict[str, Any]:

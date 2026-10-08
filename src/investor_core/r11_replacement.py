@@ -143,6 +143,15 @@ def replacement_result(
         blockers += ctx.source_gaps(evidence.holding_source) + ctx.source_gaps(
             evidence.thesis_source
         )
+        if ctx.dataset_kind == "REAL":
+            for key in (evidence.holding_source, evidence.thesis_source):
+                source = ctx.sources.get(key)
+                if (
+                    not source
+                    or source.quality != "ACCOUNT_OBSERVATION"
+                    or source.account_ref != evidence.account_ref
+                ):
+                    blockers.append("EXACT_ACCOUNT_HOLDING_AND_THESIS_EVIDENCE_REQUIRED")
         codes = {r["code"] for r in rows}
         if evidence.reference_code not in codes or evidence.reference_code == leader:
             blockers.append("REFERENCE_MUST_BE_OTHER_PRODUCT_IN_SAME_POOL")

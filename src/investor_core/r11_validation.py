@@ -176,7 +176,7 @@ def evidence_summary(
         robustness_eligible=eligible_counts,
         computed_checks=checks,
         computed_blockers=[k for k, v in checks.items() if not v],
-        incomplete_adapters=[
+        not_assessed_by_this_preview=[
             "PRE_REGISTERED_WINDOW_RECEIPT",
             "PER_SCENARIO_SENSITIVITY",
             "INDEPENDENT_SOURCE_RECONCILIATION",

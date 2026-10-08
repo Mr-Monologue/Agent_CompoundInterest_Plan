@@ -27,6 +27,7 @@ from investor_core.r11_replacement import (
     platform_gaps,
     replacement_result,
 )
+from investor_core.r11_rules import rules
 from investor_core.scheduler import digest
 
 COHORTS = {"MEDICAL": ("003096", "009163"), "A500": ("022463", "022424")}
@@ -244,15 +245,21 @@ def path_stats(returns: list[Decimal]) -> tuple[Decimal, Decimal, Decimal]:
 
 
 def calculate_candidates(
-    data: CandidateInput, history: list[dict[str, Any]] | None = None
+    data: CandidateInput,
+    history: list[dict[str, Any]] | None = None,
+    *,
+    diagnostic_rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with localcontext() as context:
         context.prec = 34
-        return _calculate(data, history or [])
+        return _calculate(data, history or [], diagnostic_rules or rules(data.cohort))
 
 
-def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str, Any]:
+def _calculate(
+    data: CandidateInput, history: list[dict[str, Any]], params: dict[str, Any]
+) -> dict[str, Any]:
     ctx = data.context
+    points_required = params["return_window"] + 1
     output = base_output(ctx, data, data.cohort)
     grids = []
     gaps = []
@@ -262,7 +269,7 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
         grid, missing = product.calendar.grid(ctx)
         grids.append(set(grid))
         _, days, series_gaps = product.nav.window(
-            ctx, product.calendar, 253, 2, "NAV_CNY_NET_INTERNAL_FEES"
+            ctx, product.calendar, points_required, 2, "NAV_CNY_NET_INTERNAL_FEES"
         )
         gaps += [product.code + ":" + g for g in missing]
         own_gaps[product.code] = series_gaps
@@ -278,15 +285,15 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
             grid, missing = data.benchmark_calendar.grid(ctx)
             grids.append(set(grid))
             _, days, series_gaps = data.benchmark.window(
-                ctx, data.benchmark_calendar, 253, 2, "TOTAL_RETURN_INDEX_POINT"
+                ctx, data.benchmark_calendar, points_required, 2, "TOTAL_RETURN_INDEX_POINT"
             )
             gaps += missing + series_gaps
             if days:
                 endpoints.append(days[-1])
     common = sorted(set.intersection(*grids)) if grids else []
     end = min(endpoints) if endpoints else None
-    days = [d for d in common if end is not None and d <= end][-253:]
-    if len(days) != 253:
+    days = [d for d in common if end is not None and d <= end][-points_required:]
+    if len(days) != points_required:
         gaps.append("COMMON_252_RETURNS_MISSING")
     if days and len([d for d in common if d > days[-1]]) > 2:
         gaps.append("COMMON_WINDOW_STALE")
@@ -295,7 +302,7 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
         gaps += missing
         if any(v <= 0 for v in points):
             gaps.append("BENCHMARK_NONPOSITIVE")
-        elif not missing and len(points) == 253:
+        elif not missing and len(points) == points_required:
             benchmark_returns = [points[i] / points[i - 1] - 1 for i in range(1, len(points))]
     prior = [
         row
@@ -327,7 +334,7 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
         missing += path_gaps
         parts: dict[str, Decimal] = {}
         raw: dict[str, str] = {}
-        if len(returns) == 252:
+        if len(returns) == params["return_window"]:
             total, drawdown, volatility = path_stats(returns)
             raw.update(
                 return_pct=str(total),
@@ -335,28 +342,36 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
                 volatility_pct=str(volatility),
             )
             if data.cohort == "MEDICAL":
-                parts["return"] = up(total, "-20", "20")
-                parts["risk"] = D(".5") * down(drawdown, "5", "40") + D(".5") * down(
-                    volatility, "10", "50"
+                parts["return"] = up(total, str(params["return_low"]), str(params["return_high"]))
+                parts["risk"] = params["risk_weights"][0] * down(
+                    drawdown, str(params["drawdown_low"]), str(params["drawdown_high"])
+                ) + params["risk_weights"][1] * down(
+                    volatility, str(params["volatility_low"]), str(params["volatility_high"])
                 )
                 missing += ctx.source_gaps(p.manager_source)
                 if p.manager_team_since is None or p.manager_team_since > ctx.day:
                     missing.append("MANAGER_CONTINUITY_UNKNOWN")
                 else:
                     parts["management"] = up(
-                        D((ctx.day - p.manager_team_since).days) / 365 * 12, "0", "36"
+                        D((ctx.day - p.manager_team_since).days) / 365 * 12,
+                        "0",
+                        str(params["management_scale"]),
                     )
             else:
-                parts["risk"] = down(drawdown, "5", "40")
-                if len(benchmark_returns) == 252:
+                parts["risk"] = down(
+                    drawdown, str(params["drawdown_low"]), str(params["drawdown_high"])
+                )
+                if len(benchmark_returns) == params["return_window"]:
                     benchmark_total = path_stats(benchmark_returns)[0]
                     error = sample_sd(
                         [a - b for a, b in zip(returns, benchmark_returns, strict=True)]
                     )
                     error *= D(252).sqrt() * 100
                     difference = abs(total - benchmark_total)
-                    parts["tracking"] = D(".5") * down(error, "0", "5") + D(".5") * down(
-                        difference, "0", "5"
+                    parts["tracking"] = params["tracking_weights"][0] * down(
+                        error, "0", str(params["tracking_scale"])
+                    ) + params["tracking_weights"][1] * down(
+                        difference, "0", str(params["tracking_scale"])
                     )
                     raw.update(
                         tracking_error_pct=str(error),
@@ -367,24 +382,22 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
                     p.redemption_arrival_max_trading_days,
                 )
                 if a is not None and b is not None:
-                    parts["confirmation"] = down(D(a + b), "2", "10")
+                    parts["confirmation"] = down(
+                        D(a + b), str(params["confirmation_low"]), str(params["confirmation_high"])
+                    )
         if p.fees:
             try:
                 fee = p.fees.loss_pct()
-                parts["cost"] = down(fee, "0", "2")
+                parts["cost"] = down(fee, "0", str(params["fee_scale"]))
                 raw["standard_external_cost_pct"] = str(fee)
             except ValueError:
                 missing.append("FEE_FORMULA_INVALID")
-        weights = (
-            {"return": D(".25"), "risk": D(".35"), "cost": D(".20"), "management": D(".20")}
+        names = (
+            ["return", "risk", "cost", "management"]
             if data.cohort == "MEDICAL"
-            else {
-                "tracking": D(".50"),
-                "risk": D(".20"),
-                "cost": D(".20"),
-                "confirmation": D(".10"),
-            }
+            else ["tracking", "risk", "cost", "confirmation"]
         )
+        weights = dict(zip(names, params["score_weights"], strict=True))
         if set(parts) != set(weights):
             missing.append("REQUIRED_SCORE_DIMENSION_MISSING")
         total_score = None if missing or exclusions else sum(parts[k] * weights[k] for k in weights)
@@ -426,13 +439,18 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
     tied = False
     if comparable:
         delta = D(rows[0]["total_score"]) - D(rows[1]["total_score"])
-        spread, tied = abs(delta), abs(delta) <= 2
+        spread, tied = abs(delta), abs(delta) <= params["tie_threshold"]
         if not tied:
             leader = rows[0 if delta > 0 else 1]["code"]
             for row in rows:
                 row["rank"] = 1 if row["code"] == leader else 2
     leading_weeks = 0
-    if leader and spread is not None and spread >= 10 and not any(r["warnings"] for r in rows):
+    if (
+        leader
+        and spread is not None
+        and spread >= params["lead_threshold"]
+        and not any(r["warnings"] for r in rows)
+    ):
         leading_weeks = 1 + (
             previous.get("leading_weeks", 0) if previous and previous.get("leader") == leader else 0
         )
@@ -456,5 +474,9 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
         ),
         display_text="既有两产品研究比较;未验证影子试算,不是可投资资格或交易安排。",
     )
-    output.update(replacement_result(ctx, rows, leader, leading_weeks, data.replacement_evidence))
+    output.update(
+        replacement_result(
+            ctx, rows, leader, leading_weeks, data.replacement_evidence, params["lead_weeks"]
+        )
+    )
     return output

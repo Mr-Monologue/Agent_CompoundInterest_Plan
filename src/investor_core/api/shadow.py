@@ -4,6 +4,14 @@ from typing import Any, Literal
 
 from fastapi import FastAPI
 
+from investor_core.r11_governance import (
+    GovernanceConfirmation,
+    GovernanceDraft,
+    R11Governance,
+    ReceiptRequest,
+    RegistrationRequest,
+    ValidationRequest,
+)
 from investor_core.r11_service import R11Request, R11Service
 from investor_core.r11_validation import ValidationWindow, evidence_summary
 from investor_core.research import ResearchService
@@ -19,6 +27,7 @@ from investor_core.shadow_models import (
 def register_shadow_routes(app: FastAPI, research: ResearchService) -> None:
     service = ShadowService(research)
     r11 = R11Service(research)
+    governance = R11Governance(r11)
 
     def response(data: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -79,3 +88,35 @@ def register_shadow_routes(app: FastAPI, research: ResearchService) -> None:
         records = r11.runs(window.method)
         replays = {r["id"]: r11.replay(window.method, r["id"])["result"] == "PASS" for r in records}
         return response(evidence_summary(window, records, replays))
+
+    @app.post("/v1/r11/registrations")
+    def r11_registration(request: RegistrationRequest) -> dict[str, Any]:
+        return response(governance.register(request))
+
+    @app.post("/v1/r11/validations")
+    def r11_validate(request: ValidationRequest) -> dict[str, Any]:
+        return response(governance.validate(request))
+
+    @app.post("/v1/r11/receipts")
+    def r11_receipt(request: ReceiptRequest) -> dict[str, Any]:
+        return response(governance.attach(request))
+
+    @app.post("/v1/r11/reviews")
+    def r11_review(request: GovernanceDraft) -> dict[str, Any]:
+        return response(governance.draft(request))
+
+    @app.post("/v1/r11/reviews/{draft_id}/confirm")
+    def r11_confirm(draft_id: str, request: GovernanceConfirmation) -> dict[str, Any]:
+        return response(governance.confirm(draft_id, request))
+
+    @app.get("/v1/r11/{method}/promotion-check")
+    def r11_promotion_check(
+        method: Literal["C", "MEDICAL", "A500"],
+        target: Literal["OFF", "SHADOW", "ADVISORY", "ACTIVE"] = "ADVISORY",
+        validation_id: str | None = None,
+    ) -> dict[str, Any]:
+        return response(governance.gate(method, target, validation_id))
+
+    @app.post("/v1/r11/{method}/assess")
+    def r11_assess(method: Literal["C", "MEDICAL", "A500"], idempotency_key: str) -> dict[str, Any]:
+        return response(governance.assess(method, idempotency_key))

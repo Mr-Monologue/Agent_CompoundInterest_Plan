@@ -19,6 +19,7 @@ from investor_core.r11_inputs import (
     clip,
     monthly,
 )
+from investor_core.r11_rules import rules
 
 
 class Member(StrictModel):
@@ -52,7 +53,9 @@ class MacroInput(StrictModel):
         return self
 
 
-def stable_state(output: dict[str, Any], history: list[dict[str, Any]]) -> dict[str, Any]:
+def stable_state(
+    output: dict[str, Any], history: list[dict[str, Any]], params: dict[str, Any]
+) -> dict[str, Any]:
     # Callers of the persistence adapter cannot submit their own history.
     current_day = date.fromisoformat(output["as_of"][:10])
     by_day = {
@@ -85,17 +88,24 @@ def stable_state(output: dict[str, Any], history: list[dict[str, Any]]) -> dict[
         weeks = 1
         if previous and previous.get("pending_season") == candidate:
             weeks += previous.get("pending_weeks", 0)
-    held = established is None or (current_day - date.fromisoformat(established)).days >= 28
-    if weeks >= 3 and held and candidate != last:
+    held = (
+        established is None
+        or (current_day - date.fromisoformat(established)).days >= 7 * params["hold_weeks"]
+    )
+    if weeks >= params["entry_weeks"] and held and candidate != last:
         last, established = candidate, current_day.isoformat()
     x, y = D(output["axes"]["X"]), D(output["axes"]["Y"])
     signs = {"SPRING": (-1, 1), "SUMMER": (1, 1), "AUTUMN": (1, -1), "WINTER": (-1, -1)}
-    clear = abs(x) >= D(".35") and abs(y) >= D(".35") and candidate == last
+    clear = (
+        abs(x) >= params["confidence_threshold"]
+        and abs(y) >= params["confidence_threshold"]
+        and candidate == last
+    )
     if last is None:
         dominant = "TRANSITION"
     else:
         sx, sy = signs[last]
-        dominant = "TRANSITION" if min(x * sx, y * sy) < D(".05") else last
+        dominant = "TRANSITION" if min(x * sx, y * sy) < params["exit_threshold"] else last
     return dict(
         dominant_season=dominant,
         last_stable=last,
@@ -109,14 +119,19 @@ def stable_state(output: dict[str, Any], history: list[dict[str, Any]]) -> dict[
 
 
 def calculate_macro(
-    data: MacroInput, history: list[dict[str, Any]] | None = None
+    data: MacroInput,
+    history: list[dict[str, Any]] | None = None,
+    *,
+    diagnostic_rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with localcontext() as context:
         context.prec = 34
-        return _calculate(data, history or [])
+        return _calculate(data, history or [], diagnostic_rules or rules("C"))
 
 
-def _calculate(data: MacroInput, history: list[dict[str, Any]]) -> dict[str, Any]:
+def _calculate(
+    data: MacroInput, history: list[dict[str, Any]], params: dict[str, Any]
+) -> dict[str, Any]:
     ctx = data.context
     output = base_output(ctx, data, "C")
     gaps = ctx.source_gaps(data.identity_source)
@@ -124,59 +139,73 @@ def _calculate(data: MacroInput, history: list[dict[str, Any]]) -> dict[str, Any
         gaps.append("INDEX_IDENTITY_MISMATCH")
     scores: dict[str, Decimal | None] = dict.fromkeys(["V", "F", "L", "B", "P"])
     dimension_gaps: dict[str, list[str]] = {}
-    pb, pb_days, missing = data.pb.window(ctx, data.calendar, 1261, 1, "MULTIPLE")
+    pb, pb_days, missing = data.pb.window(
+        ctx, data.calendar, params["pb_window"] + 1, 1, "MULTIPLE"
+    )
     if any(v <= 0 for v in pb):
         missing.append("PB_NONPOSITIVE")
     if not missing:
-        p = (sum(x < pb[-1] for x in pb[:-1]) + D(".5") * sum(x == pb[-1] for x in pb[:-1])) / 1260
+        p = (
+            sum(x < pb[-1] for x in pb[:-1]) + D(".5") * sum(x == pb[-1] for x in pb[:-1])
+        ) / params["pb_window"]
         scores["V"] = 1 - 2 * p
     dimension_gaps["V"] = missing
-    pmi, missing = monthly(data.pmi, ctx, "PMI_POINTS")
+    pmi, missing = monthly(data.pmi, ctx, "PMI_POINTS", params["monthly_window"])
     if data.pmi.identity != "NBS_MANUFACTURING_PMI":
         missing.append("PMI_IDENTITY_MISMATCH")
     if not missing:
-        scores["F"] = D(".5") * clip((pmi[-1] - 50) / 2) + D(".5") * clip((pmi[-1] - pmi[0]) / 2)
+        scores["F"] = params["pmi_weights"][0] * clip(
+            (pmi[-1] - params["pmi_neutral"]) / params["pmi_level_scale"]
+        ) + params["pmi_weights"][1] * clip((pmi[-1] - pmi[0]) / params["pmi_change_scale"])
     dimension_gaps["F"] = missing
-    financing, missing = monthly(data.social_financing_yoy, ctx, "PERCENT")
+    financing, missing = monthly(
+        data.social_financing_yoy, ctx, "PERCENT", params["monthly_window"]
+    )
     if data.social_financing_yoy.identity != "PBC_TSF_STOCK_YOY_SAME_BASIS":
         missing.append("FINANCING_IDENTITY_OR_BASIS_MISMATCH")
     if not missing:
-        scores["L"] = clip((financing[-1] - financing[0]) / 2)
+        scores["L"] = clip((financing[-1] - financing[0]) / params["liquidity_scale"])
     dimension_gaps["L"] = missing
     grid, missing = data.calendar.grid(ctx)
     missing += ctx.source_gaps(data.constituents_source)
     if not grid or data.constituents_date != grid[-1]:
         missing.append("CURRENT_CONSTITUENTS_REQUIRED")
-    if len(grid) < 60 or not data.members:
+    if len(grid) < params["breadth_window"] or not data.members:
         missing.append("BREADTH_HISTORY_MISSING")
     excluded = []
     above = eligible = 0
-    if len(grid) >= 60:
+    if len(grid) >= params["breadth_window"]:
         for member in data.members:
             missing += ctx.source_gaps(member.listing_source)
             if member.listed_on > grid[-1]:
                 missing.append("FUTURE_LISTING:" + member.code)
-            elif member.listed_on > grid[-60]:
+            elif member.listed_on > grid[-params["breadth_window"]]:
                 excluded.append(member.code)
                 continue
             missing += ctx.source_gaps(member.corporate_action_source)
-            values, member_gaps = member.wealth.values(ctx, grid[-60:], "TOTAL_RETURN_POINT")
+            values, member_gaps = member.wealth.values(
+                ctx, grid[-params["breadth_window"] :], "TOTAL_RETURN_POINT"
+            )
             if member.wealth.identity != member.code or any(v <= 0 for v in values):
                 member_gaps.append("CONSTITUENT_IDENTITY_OR_PATH_INVALID")
             missing += [member.code + ":" + x for x in member_gaps]
             if not member_gaps:
                 eligible += 1
-                above += values[-1] > sum(values) / 60
+                above += values[-1] > sum(values) / params["breadth_window"]
     if eligible < D(".9") * len(data.members):
         missing.append("BREADTH_COVERAGE_BELOW_90_PERCENT")
     if not missing and eligible:
-        scores["B"] = clip((D(above) / eligible - D(".5")) / D(".2"))
+        scores["B"] = clip(
+            (D(above) / eligible - params["breadth_neutral"]) / params["breadth_scale"]
+        )
     dimension_gaps["B"] = sorted(set(missing))
-    prices, price_days, missing = data.price.window(ctx, data.calendar, 64, 1, "PRICE_INDEX_POINT")
+    prices, price_days, missing = data.price.window(
+        ctx, data.calendar, params["price_window"] + 1, 1, "PRICE_INDEX_POINT"
+    )
     if any(v <= 0 for v in prices):
         missing.append("PRICE_NONPOSITIVE")
     if not missing:
-        scores["P"] = clip((prices[-1] / prices[0] - 1) * 100 / 10)
+        scores["P"] = clip((prices[-1] / prices[0] - 1) * 100 / params["price_scale"])
     dimension_gaps["P"] = missing
     gaps += [key + ":" + gap for key, reasons in dimension_gaps.items() for gap in reasons]
     axes: dict[str, str] = {}
@@ -184,8 +213,12 @@ def _calculate(data: MacroInput, history: list[dict[str, Any]]) -> dict[str, Any
     if not gaps:
         v, f, liquidity, breadth, price = [scores[k] for k in ["V", "F", "L", "B", "P"]]
         assert all(x is not None for x in (v, f, liquidity, breadth, price))
-        x = D(".70") * price - D(".30") * v  # type: ignore[operator]
-        y = D(".40") * f + D(".30") * liquidity + D(".30") * breadth  # type: ignore[operator]
+        x = params["x_weights"][0] * price - params["x_weights"][1] * v
+        y = (
+            params["y_weights"][0] * f
+            + params["y_weights"][1] * liquidity
+            + params["y_weights"][2] * breadth
+        )
         axes = {
             "X": str(x),
             "Y": str(y),
@@ -193,7 +226,7 @@ def _calculate(data: MacroInput, history: list[dict[str, Any]]) -> dict[str, Any
             "improvement_score": str(50 * (y + 1)),
         }
         candidate = "TRANSITION"
-        if abs(x) >= D(".20") and abs(y) >= D(".20"):
+        if abs(x) >= params["entry_threshold"] and abs(y) >= params["entry_threshold"]:
             candidate = (
                 ("SUMMER" if y > 0 else "AUTUMN") if x > 0 else ("SPRING" if y > 0 else "WINTER")
             )
@@ -212,5 +245,5 @@ def _calculate(data: MacroInput, history: list[dict[str, Any]]) -> dict[str, Any
         status="INSUFFICIENT_DATA" if gaps else "CALCULATED_SHADOW",
         display_text="A股宽基规则影子研究;非预测概率,不改变金额或投资资格。",
     )
-    output.update(stable_state(output, history))
+    output.update(stable_state(output, history, params))
     return output
