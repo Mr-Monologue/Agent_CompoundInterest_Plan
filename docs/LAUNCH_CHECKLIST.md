@@ -743,3 +743,31 @@ Ryan确认授权本阶段发布、部署及现场验收，限定已提交最小�
 
 - 交付补记：审计文档提交b44239e已推送到长期feature，`git ls-remote`核实远端精确提交为b44239eb630a3ac46b78e370884c2e7617b2c715；develop/release/main未动。对该提交的check-runs查询仍Forbidden；无法核实CI，未创建PR或推进合并、Tag、Release。仅文档交接推送成功，不是软件发布成功。CI工作流只监听PR和main推送，feature单独推送本身不提供双平台通过证据。
 - 下一步由父对话集中返回一个顺序决定；目前建议先日常六步收口。既有权限内的基线核验、完整测试与共通交接修复已完成；阶段特定实现待方向选择，生产仍待本机恢复及具体范围授权。
+
+
+### 云端交接补充：目录、API拒绝与六步剩余（2026-10-08）
+
+- 预置仓库：`Mr-Monologue/CompoundInterest_Plan`，目录 `/workspace/CompoundInterest_Plan`，origin为 `https://github.com/Mr-Monologue/CompoundInterest_Plan.git`。未修改该目录。
+- 正确仓库：`Mr-Monologue/Agent_CompoundInterest_Plan`，后续工作目录 `/workspace/Agent_CompoundInterest_Plan`，origin为 `https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan.git`；长期feature，补充前远端/本地均cd5cc8a，工作区干净。
+- GitHub拒绝通过本机 `gh` CLI 调用遇到，以下为精确请求类型及原错误主体；未读取或输出凭据，未尝试替换认证、代理或绕过限制。错误未提供可确认的拒绝原因及HTTP数字状态码，因此不推断是GitHub权限、环境代理或其他层导致。
+
+|用途与调用|请求|实际错误|
+|---|---|---|
+|工作流：`gh api repos/Mr-Monologue/Agent_CompoundInterest_Plan/actions/runs?per_page=5 --jq '.workflow_runs[] \| [.name,.head_sha,.conclusion,.html_url]'`|GET `https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/actions/runs?per_page=5`|`Get "https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/actions/runs?per_page=5": Forbidden`|
+|PR：`gh pr list --state open --json number,title,baseRefName,headRefName,isDraft`|POST `https://api.github.com/graphql`，gh生成的只读GraphQL查询；未捕获请求体|`Post "https://api.github.com/graphql": Forbidden`|
+|Release：`gh release view v0.44.2 --json tagName,url,targetCommitish`|GET `https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tags/v0.44.2`|`Get "https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tags/v0.44.2": Forbidden`|
+|提交检查：`gh api repos/Mr-Monologue/Agent_CompoundInterest_Plan/commits/b44239e/check-runs --jq '.check_runs[] \| [.name,.status,.conclusion]'`|GET `https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/commits/b44239e/check-runs`|`Get "https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/commits/b44239e/check-runs": Forbidden`|
+
+Git clone/ls-remote/push均成功，不代表API同样可用。没有实际调用创建PR API；“PR受阻”是列表查询已拒绝、无法核实现有PR及正常执行审查流程，不是声称创建请求曾失败。此拒绝不是收到自动审批审查拒绝，不申请升级权限或另找凭据。
+
+**六步收口的云端工程结论：当前没有已证实而尚未修复的六步产品代码缺口。** 基线全量、分段研究/解释/约束/运行测试与预算→申购→份额→记账→周报的三终态真实HTTP链均已通过；不要为了阶段名再造预算、申购、周报或调度引擎。C/D/E是另一阶段的已知工程缺口，不混入六步。
+
+|后续可做事项|性质与是否必须|边界/结束条件|
+|---|---|---|
+|合法恢复目标仓库API可访问后，查询精确提交与既有PR，必要时创建draft PR并取得Ubuntu/Windows结果|剩余发布验证门禁；受API访问阻塞，不是产品功能开发|只沿长期分支治理；文档交接不要求升软件版本，不为触发CI直接推main|
+|在同一个隔离实例把更新/解释/受约束预算/模拟确认事实/周报/异常展示连为一次演示|可选验收证据增强，非已证实缺陷；现有测试为分段覆盖加三终态HTTP链，并未声称六步全在同一数据实例跑过|仅在阶段选定且确需此证据时复用已有接口与测试fixture；不新增业务能力、不用真实账户、不将模拟确认说成真实业务验收|
+|后续测试或现场提出可复现阻断时，云端实现最小修复与针对性回归|条件性工程任务；当前没有已确认待修项|先证明缺陷，再改代码，不因本机离线自行扩展研究或改配置|
+|本机版本/ready/配置/任务/安装文件与真实数据日期核验，Windows实际睡眠重启及运行观察|只能访问本机后验收|当前云端不能完成；旧验收报告、Linux测试或Windows CI均不替代现场运行|
+|账户适用额度、论点/映射内容、真实申购与份额/记账、真实周报和通知收件|需要真实证据与各自明确确认|不得为验收制造投资事实；没有实际投资需求可保留真实业务验收缺口，不转化为反复开发任务|
+
+因此，若用户选择先六步，应将它定位为已有能力的使用/验收收口，云端发布门禁及可选整链证据完成后即可报告工程范围结束；本机/真实业务部分保持待验收。若希望本机离线期间继续较大新增工程，应另选C/D影子方向并明确其最小作用域，而不是无限延长六步开发。
