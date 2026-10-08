@@ -1192,3 +1192,13 @@ HTTP直接build_doctor_report均PASS，耗时0.280/0.115/0.261秒（尚不含HTT
 测试同步修复回归session2502退出1：[原日志](R11_PROCESS_READINESS_REGRESSION.txt)**6通过、1失败、122.86秒**。HTTP完整用例通过（59.48秒）；MCP成功/就绪失败两例通过，版本不匹配例约20秒出现BrokenResourceError，未得到预期语义错误。该测试修复只关闭HTTP同步问题，不关闭MCP问题或全量门禁。
 
 为定位新的管道异常，在/tmp/r11_probe_plugin.py增加仅诊断进程使用的pytest插件：记录initialize/list_tools/call_tool起止，并在子进程每10秒打印堆栈；不改变响应/总体超时、断言、业务调用或仓库源码。诊断session91726，日志/tmp/r11-mcp-phase-probe.log，三项原握手用例，尚待终态。它不是最终回归，最终全量不得加载诊断插件。下一步先取终态及子进程堆栈，区分冷导入/工具构建与协议执行后失败；不立即重跑全量。
+
+### 进程初始化失败路径已定位，保留全套验证覆盖
+
+HTTP测试同步修复及诊断证据已推送**5c0a72b8064c3f40fa3aa7abca8ded554240aae1**，git ls-remote核验一致。产品源码仍为已独审2e2328c；仅测试启动同步改变。
+
+session91726已终态退出1，[阶段计时/堆栈原日志](R11_MCP_PHASE_PROBE.txt)**2通过、1失败、60.53秒**；[临时诊断插件原文](R11_MCP_PHASE_PROBE_PLUGIN.txt)保留复现方式，插件不进入常规测试或产品。失败子进程10秒堆栈仍在SDK的attrs/jsonschema导入，initialize于20.026秒超时；随后SDK stdout_reader向已关闭内存流发送响应，BrokenResourceError掩盖原McpError。另两例初始化10.004/11.772秒，list_tools0.114/0.156秒，call_tool0.481/1.618秒，均到达原语义错误断言。未发现业务调用死锁、残留并行进程或R1.1源码进入MCP导入链的证据；主机冷启动速度波动根因尚未知，不称产品性能已经修复。
+
+不修改SDK、生产握手20秒、CLI45秒或测试35秒预算，不吞掉超时或改变预期错误断言。MCP在当前环境的启动可靠性仍是未闭合验证问题，不能转成“已通过”或只称CI外部阻塞。
+
+下一次完整回归采用`.venv/bin/pytest -o addopts='' -q --tb=short > /tmp/r11-final-full-regression-3.log 2>&1`，不再maxfail提前停止，且不加载诊断插件。理由是HTTP同步已有必要改动，同时即使MCP仍失败，也必须完整验证其他R1.1/既有功能；不是跳过MCP、增加重试或将子集结果替代全量通过。精确进程随后记录，运行中不修改源码/测试。全量只有退出0且完整终态才能称通过；否则保留全部失败并继续处理/报告可证明的环境限制。
