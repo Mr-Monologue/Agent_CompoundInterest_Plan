@@ -1,0 +1,27 @@
+r11-constituent-final-ruff.log
+All checks passed!
+
+r11-constituent-final-mypy.log
+Success: no issues found in 96 source files
+
+r11-constituent-wheel.log
+Building wheel...
+Traceback (most recent call last):
+  File "<string>", line 8, in <module>
+ModuleNotFoundError: No module named 'hatchling'
+error: Failed to build `/tmp/r11-constituent-review`
+  cause: The build backend returned an error
+  cause: Call to `hatchling.build.build_wheel` failed (exit status: 1)
+
+hint: This error likely indicates that `value-dca-agent@0.45.0` depends on `hatchling`, but doesn't declare it as a build dependency. If `value-dca-agent` is a first-party package, consider adding `hatchling` to its `build-system.requires`. Otherwise, either add it to your `pyproject.toml` under:
+
+[tool.uv.extra-build-dependencies]
+value-dca-agent = ["hatchling"]
+
+or `uv pip install hatchling` into the environment and re-run with `--no-build-isolation`.
+
+r11-constituent-wheel-isolated.log
+Building wheel...
+Successfully built /tmp/r11-constituent-wheel/value_dca_agent-0.45.0-py3-none-any.whl
+
+Byte checks: all eight v3 modules exactly match reviewed HEAD source except internal import paths; wheel validator, frozen definition and all v3 modules exactly match source. No package publication or installation.

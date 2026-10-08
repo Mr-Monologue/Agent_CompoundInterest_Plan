@@ -121,11 +121,25 @@ def bundle(service, data, key):
             publication_timezone="Asia/Shanghai",
             publication_precision="INSTANT",
             r11_original_format="JSON_UTF8",
+            **(
+                {
+                    "r11_constituent_collection": {
+                        "pointer": "/input/members",
+                        "code_pointer": "/code",
+                    }
+                }
+                if "members" in data
+                else {}
+            ),
             r11_publication_pointer="/publication",
             r11_source_binding=dict(published_at=publication, first_retrieved_at=publication),
         ),
     )
     bindings = {path: dict(source="official", pointer="/input" + path) for path in leaves(data)}
+    if "members" in data:
+        bindings["/members"] = dict(
+            source="official", pointer="/input/members", code_pointer="/code"
+        )
     return store(
         service,
         {"synthetic_bundle": key},

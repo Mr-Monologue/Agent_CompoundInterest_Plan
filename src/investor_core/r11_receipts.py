@@ -114,6 +114,7 @@ def verify_artifacts(
                     "R11_REVIEW_RECOMPUTATION_MISMATCH", "Independent input/output differs"
                 )
     required: dict[str, set[str]] = {}
+    collections: dict[tuple[str, str], str] = {}
     for run_id in checked:
         run = by_id[run_id]
         extraction = run["output"].get("extraction", {})
@@ -124,6 +125,14 @@ def verify_artifacts(
         for match in extraction["matched"]:
             source = run["evidence"]["sources"][match["source"]]
             required.setdefault(source["id"], set()).add(match["pointer"])
+            if match.get("kind") == "CONSTITUENT_SET":
+                key = (source["id"], match["pointer"])
+                if key in collections and collections[key] != match["code_pointer"]:
+                    raise LedgerError(
+                        "R11_CONSTITUENT_PROJECTION_CONFLICT",
+                        "One complete collection identity projection required",
+                    )
+                collections[key] = match["code_pointer"]
     pairs = values["source_independence"].get("pairs", [])
     if (
         not isinstance(pairs, list)
@@ -160,11 +169,16 @@ def verify_artifacts(
                 "Reconcile every used value, date, unit and identity",
             )
         try:
-            if any(
-                digest(pointer(a, left)) != digest(pointer(b, right))
-                for left, right in fields.items()
-            ):
-                raise ValueError("different values")
+            from investor_core.r11_constituents import codes_from_collection
+
+            for left, right in fields.items():
+                first, second = pointer(a, left), pointer(b, right)
+                projection = collections.get((primary["id"], left))
+                if projection is not None:
+                    first = codes_from_collection(first, projection)
+                    second = codes_from_collection(second, projection)
+                if digest(first) != digest(second):
+                    raise ValueError("different values")
         except (ValueError, TypeError, KeyError, IndexError) as exc:
             raise LedgerError(
                 "R11_INDEPENDENT_VALUES_DIFFER", "Independent original values do not agree"

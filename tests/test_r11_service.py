@@ -52,9 +52,10 @@ def archive_bundle(service, data, key="bundle"):
     src = data["context"]["sources"]["official"]
     archive = ExecutionService(service.research)
     values = leaves(data)
-    original = json.dumps(
-        {"publication": src["published_at"], "values": list(values.values())}, separators=(",", ":")
-    )
+    document = {"publication": src["published_at"], "values": list(values.values())}
+    if "members" in data:
+        document["constituent_codes"] = [member["code"] for member in data["members"]]
+    original = json.dumps(document, separators=(",", ":"))
     src["document_hash"] = hashlib.sha256(original.encode()).hexdigest()
     args = dict(
         instrument_code="CORE01",
@@ -76,6 +77,11 @@ def archive_bundle(service, data, key="bundle"):
             "r11_source_binding": {k: src[k] for k in ["published_at", "first_retrieved_at"]},
         },
     )
+    if "members" in data:
+        args["facts"]["r11_constituent_collection"] = {
+            "pointer": "/constituent_codes",
+            "code_pointer": "",
+        }
     source = archive.archive(SourceArchive.model_validate(args))
     src["archive_id"] = source["id"]
     args.update(
@@ -88,6 +94,12 @@ def archive_bundle(service, data, key="bundle"):
             },
         },
     )
+    if "members" in data:
+        args["facts"]["r11_bindings"]["/members"] = {
+            "source": "official",
+            "pointer": "/constituent_codes",
+            "code_pointer": "",
+        }
     return archive.archive(SourceArchive.model_validate(args))["id"]
 
 

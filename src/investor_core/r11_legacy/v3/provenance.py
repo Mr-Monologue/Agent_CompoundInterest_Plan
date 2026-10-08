@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from investor_core.r11_inputs import Context
+from investor_core.r11_legacy.v3.inputs import Context
 from investor_core.scheduler import digest
 
 
@@ -117,10 +117,7 @@ def reconcile(
     """
     required = leaves(inputs)
     context = Context.model_validate(inputs["context"]) if "context" in inputs else None
-    is_macro = "members" in inputs and "constituents_source" in inputs
-    if is_macro:
-        required.pop("/members", None)
-    declared_paths = set(required) | ({"/members"} if is_macro else set())
+    declared_paths = set(required)
     not_selected = []
     if context is not None and context.evidence_class != "H":
         for name in ("pmi", "social_financing_yoy"):
@@ -137,7 +134,6 @@ def reconcile(
     failures = []
     matched = []
     documents = {}
-    collections = {}
     for key, row in evidence.items():
         try:
             archive = json.loads(row["facts_json"])
@@ -147,7 +143,6 @@ def reconcile(
             if archive.get("facts", {}).get("r11_original_format") != "JSON_UTF8":
                 raise ValueError("unsupported original format")
             documents[key] = json.loads(text, object_pairs_hook=_unique)
-            collections[key] = archive.get("facts", {}).get("r11_constituent_collection")
         except (KeyError, ValueError, TypeError):
             continue
     for path, value in required.items():
@@ -178,27 +173,15 @@ def reconcile(
             failures.append(dict(path=path, reason="ORIGINAL_VALUE_NOT_VERIFIED"))
         else:
             matched.append(dict(path=path, source=source, pointer=binding["pointer"]))
-    constituent_set = None
-    if is_macro:
-        from investor_core.r11_constituents import reconcile_constituents
-
-        constituent_set = reconcile_constituents(
-            inputs, documents, bindings.get("/members"), context, collections
-        )
-        if constituent_set["status"] == "MATCHED":
-            matched.append(dict(path="/members", kind="CONSTITUENT_SET", **bindings["/members"]))
-        else:
-            failures.append(dict(path="/members", reason="|".join(constituent_set["failures"])))
     if set(bindings) - declared_paths:
         failures.append(dict(path="", reason="EXTRACTION_BINDING_OUT_OF_SCOPE"))
     return dict(
         status="MATCHED" if not failures else "UNVERIFIED",
-        expected_count=len(required) + int(is_macro),
+        expected_count=len(required),
         matched_count=len(matched),
         failures=failures,
         matched=matched,
         not_selected=not_selected,
-        **({"constituent_set": constituent_set} if is_macro else {}),
         independent_upstream_pass=False,
         limitations=["EXTRACTION_EQUALITY_IS_NOT_PUBLISHER_OR_INDEPENDENCE_VERIFICATION"],
     )

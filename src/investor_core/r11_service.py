@@ -363,6 +363,21 @@ class R11Service:
                     V2Candidate.model_validate(run["input"]), run["previous_outputs"]
                 )
             )
+        elif run["output"].get("computation_version") == "r11-rules-v3":
+            from investor_core.r11_legacy.v3.candidates import CandidateInput as V3Candidate
+            from investor_core.r11_legacy.v3.candidates import calculate_candidates as v3_candidates
+            from investor_core.r11_legacy.v3.macro import MacroInput as V3Macro
+            from investor_core.r11_legacy.v3.macro import calculate_macro as v3_macro
+
+            replay = (
+                v3_macro(V3Macro.model_validate(run["input"]), run["previous_outputs"])
+                if method == "C"
+                else v3_candidates(
+                    V3Candidate.model_validate(run["input"]),
+                    run["previous_outputs"],
+                    core_bindings=run["evidence"].get("core_bindings"),
+                )
+            )
         elif method == "C":
             replay = calculate_macro(
                 MacroInput.model_validate(run["input"]), run["previous_outputs"]
@@ -376,7 +391,12 @@ class R11Service:
         if "core_bindings" in run["evidence"]:
             from investor_core.r11_core_bindings import apply
 
-            replay = apply(replay, run["evidence"]["core_bindings"])
+            if run["output"].get("computation_version") == "r11-rules-v3":
+                from investor_core.r11_legacy.v3.core_bindings import apply as v3_apply
+
+                replay = v3_apply(replay, run["evidence"]["core_bindings"])
+            else:
+                replay = apply(replay, run["evidence"]["core_bindings"])
         extraction = reconcile(
             run["input"],
             run["evidence"]["sources"],
@@ -403,6 +423,18 @@ class R11Service:
                     replay.update(dominant_season="UNKNOWN", pending_season=None, pending_weeks=0)
                 else:
                     replay.update(leader=None, leading_weeks=0, replacement="BLOCKED")
+        elif version == "r11-rules-v3":
+            from investor_core.r11_legacy.v3.provenance import reconcile as v3_reconcile
+            from investor_core.r11_legacy.v3.quality import apply_extraction as v3_quality
+
+            extraction = v3_reconcile(
+                run["input"],
+                run["evidence"]["sources"],
+                json.loads(run["evidence"]["bundle"]["facts_json"])["facts"].get(
+                    "r11_bindings", {}
+                ),
+            )
+            replay = v3_quality(replay, extraction, run["previous_outputs"])
         elif version != "r11-rules-v1":
             replay = R11Service._apply_extraction(replay, extraction, run["previous_outputs"])
         checks = dict(
@@ -416,7 +448,7 @@ class R11Service:
             checks=checks,
             result="PASS" if all(checks.values()) else "FAIL",
             money_action=False,
-            historical_evaluator=version != "r11-rules-v3",
-            qualifies_current_version=version == "r11-rules-v3",
+            historical_evaluator=version != COMPUTATION_VERSION,
+            qualifies_current_version=version == COMPUTATION_VERSION,
             actual_promotion_authorized=False,
         )

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from investor_core.r11_macro import stable_state
-from investor_core.r11_rules import rules
+from investor_core.r11_legacy.v3.macro import stable_state
+from investor_core.r11_legacy.v3.rules import rules
 
 
 def apply_extraction(
@@ -15,20 +15,6 @@ def apply_extraction(
     diagnostic_rules: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     output["extraction"] = extraction
-    collection = extraction.get("constituent_set")
-    if output["method"] == "C" and collection is not None:
-        verified = collection["status"] == "MATCHED"
-        output["breadth"].update(
-            constituents_verified=verified, submitted_count=collection["input_count"]
-        )
-        if not verified:
-            output["dimension_scores"]["B"] = None
-            output["dimension_gaps"]["B"] = sorted(
-                set(output["dimension_gaps"]["B"] + ["CONSTITUENT_SET_UNVERIFIED"])
-            )
-            output["gaps"].append("B:CONSTITUENT_SET_UNVERIFIED")
-            output["axes"] = {}
-            output["breadth"].update(total=collection["original_count"], eligible=None, above=None)
     if extraction["status"] != "MATCHED":
         output["gaps"] = sorted(set(output["gaps"] + ["SOURCE_VALUE_BINDING_UNVERIFIED"]))
         output["status"] = "INSUFFICIENT_DATA"

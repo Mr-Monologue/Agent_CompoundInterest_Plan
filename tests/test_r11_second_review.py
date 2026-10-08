@@ -43,7 +43,11 @@ def new_bundle(service, eid, key, change):
     ],
 )
 def test_actual_extraction_source_time_quality_and_field_association(
-    isolated, kind, match, quality, expected  # noqa: F811
+    isolated,  # noqa: F811
+    kind,
+    match,
+    quality,
+    expected,
 ):
     _, _, service, _ = isolated
     body = macro()
@@ -184,15 +188,18 @@ def test_all_registered_stress_scenarios_execute_and_omission_is_incomplete(meth
     assert assess_stress_rows(method, ["synthetic"], damaged)["result"] == "INCOMPLETE"
 
 
-@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("version", ["v1", "v2", "v3"])
 def test_frozen_historical_evaluators_replay_without_counting_as_current(isolated, version):  # noqa: F811
     _, _, service, _ = isolated
     if version == "v1":
         from investor_core.r11_legacy.macro import MacroInput as HistoricalInput
         from investor_core.r11_legacy.macro import calculate_macro as historical_calculate
-    else:
+    elif version == "v2":
         from investor_core.r11_legacy.v2.macro import MacroInput as HistoricalInput
         from investor_core.r11_legacy.v2.macro import calculate_macro as historical_calculate
+    else:
+        from investor_core.r11_legacy.v3.macro import MacroInput as HistoricalInput
+        from investor_core.r11_legacy.v3.macro import calculate_macro as historical_calculate
     data = HistoricalInput.model_validate(macro())
     inputs = data.model_dump(mode="json")
     output = historical_calculate(data)
@@ -201,6 +208,11 @@ def test_frozen_historical_evaluators_replay_without_counting_as_current(isolate
         from investor_core.r11_legacy.v2.provenance import reconcile as old_reconcile
 
         output["extraction"] = old_reconcile(inputs, {}, {})
+    if version == "v3":
+        from investor_core.r11_legacy.v3.provenance import reconcile as v3_reconcile
+        from investor_core.r11_legacy.v3.quality import apply_extraction as v3_quality
+
+        output = v3_quality(output, v3_reconcile(inputs, {}, {}), [])
     model = service.shadow.register(
         service.definition("C", "SYNTHETIC").model_copy(update={"version": "1.0.0"})
     )

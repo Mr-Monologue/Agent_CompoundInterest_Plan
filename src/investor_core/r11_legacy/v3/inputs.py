@@ -18,8 +18,8 @@ from investor_core.scheduler import digest
 
 DEFINITION = json.loads(files("investor_core").joinpath("r11_definition.json").read_text())
 VERSION = DEFINITION["definition_id"]
-MODEL_VERSION = "1.0.2"
-COMPUTATION_VERSION = "r11-rules-v4"
+MODEL_VERSION = "1.0.1"
+COMPUTATION_VERSION = "r11-rules-v3"
 TZ = ZoneInfo("Asia/Shanghai")
 D = Decimal
 Json = dict[str, Any]

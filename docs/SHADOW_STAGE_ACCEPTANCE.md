@@ -6,7 +6,7 @@
 
 ## 1. 结论
 
-R1.1隔离实现及此前已发现功能缺陷的修复已保存；本轮新证实C成分集合完整性缺口，尚须修复；第三轮a2d267a完整回归为629通过、4项Windows跳过、1条既有警告，耗时5800.78秒。完整E模拟通过，真实域未晋级。其后主工作树才快进同步已独审f9a3db的HTTP整体期限与MCP原异常保留修复；最终候选同一代码上的完整复验已启动（session19483/PID26298），尚无终态，不能用第三轮结果替代。准确进程和恢复入口只读[原清单末尾](LAUNCH_CHECKLIST.md#shadow-current-stage)。
+R1.1隔离实现及此前已发现功能缺陷的修复已保存；本轮新证实的C成分集合完整性缺口已有修复候选，53项定向测试通过，尚待独审及最终候选全量；第三轮a2d267a完整回归为629通过、4项Windows跳过、1条既有警告，耗时5800.78秒。完整E模拟通过，真实域未晋级。其后主工作树才快进同步已独审f9a3db的HTTP整体期限与MCP原异常保留修复；最终候选同一代码上的完整复验已启动（session19483/PID26298），尚无终态，不能用第三轮结果替代。准确进程和恢复入口只读[原清单末尾](LAUNCH_CHECKLIST.md#shadow-current-stage)。
 
 当前不需要用户行动或新增授权。此前C/D/E、自然到期及HTTP整体期限独审问题均已关闭，f9a3db独审18项相关测试通过，该轮无新增阻断；其后新发现的C集合遗漏复现未被该审查覆盖。MCP冷导入可能耗尽20秒初始化预算的已观测事实、主机耗时波动根因未明及真实性能验收缺口仍保留；此次修复只保证原错误/清理错误和取消信号正确传播，不延长预算或宣称性能已修复。双平台CI和生产证据未齐，阶段仍进行中，不能宣布真实模型可用或工程结项。
 
@@ -35,7 +35,7 @@ R1.1隔离实现及此前已发现功能缺陷的修复已保存；本轮新证�
 |映射自然到期修复|通过|临时detached检出，来源时区日界及期间矩阵、SYNTHETIC降级与历史回放|[六项回归](R11_MAPPING_EXPIRY_REGRESSION.txt)：6通过、52.90秒|独审关闭，第三轮全量通过；最终候选全量待齐|
 |a2d267a第三轮完整回归|通过|Linux、临时合成数据库，无筛选或提前停止|[629通过/4跳过/1警告](R11_FINAL_FULL_ATTEMPT_3.txt)，5800.78秒|不替代f9a3db候选全量或Windows验收|
 |整体期限与MCP错误传播|通过|f9a3db隔离自验及父对话独审；包括真实HTTP、Task.cancel及分段超期响应|[17项自验](R11_CLEANUP_DEADLINE_FINAL.txt)、[真实进程](R11_DEADLINE_REAL_PROCESS.txt)、原清单独审18项|未更改30/20/45秒预算，不证明MCP冷启动性能已修复|
-|C成分集合完整性|未通过|临时完整原文两成员，输入删去下跌成员后仍MATCHED且B从0变1|[复现日志](R11_CONSTITUENT_SET_REPRODUCER.txt)、原清单|工程必需修复；不改公式、0.9阈值或范围|
+|C成分集合完整性|候选定向通过，待独审/全量|归档固定完整集合声明，阻断输入增删/重复/替换/重定向子集；新股分母和旧回放保留|[复现](R11_CONSTITUENT_SET_REPRODUCER.txt)、[47项回归](R11_CONSTITUENT_FINAL_REGRESSION.txt)、[6项复核](R11_CONSTITUENT_RECEIPT_REGRESSION.txt)|未改公式或0.9阈值；原运行全量不覆盖本修复|
 |f9a3db最终候选完整回归|未验证|已快进同步，session19483运行中；尚待完整终态|原清单准确运行记录|必须完整复验，不复用旧SHA全量结论|
 |Ubuntu/Windows CI|未验证|Git可用；GitHub API此前Forbidden|原清单阻塞|不重试/绕过，不合并或正式发布|
 |真实完整C/D输入与自然F观察|未验证|有限官方来源核查，尚无完整输入包|下方资料覆盖|无真实季节/排名、无合格F起点；不以合成或UNKNOWN代替|
@@ -70,14 +70,14 @@ D读取精确Core映射和账户快照；缺失或草稿仍显示受限研究，
 
 已实际执行的隔离示例：`.venv/bin/pytest -o addopts='' tests/test_r11_core_bindings.py::test_four_native_bound_weeks_reach_only_hypothetical_replacement -q`，1通过、23.81秒。四周只输出假想替换复核，回放PASS，逐次业务表不变；夹具中的基金、映射、账户和来源全部为临时SYNTHETIC数据。不是用户真实持仓的替换建议。
 
-输入契约见[R11Request与归档核验](../src/investor_core/r11_service.py)、[来源逐值绑定](../src/investor_core/r11_provenance.py)。D请求额外引用既有`portfolio_id`和按基金代码对应的`mapping_ids`，不通过请求创建/批准映射。归档原文必须是完整JSON_UTF8及真实哈希，每个标量提供原文JSON pointer；PDF/HTML未适配不能改标签冒充JSON验证。治理的`dataset_kind=SYNTHETIC`只用于模拟域，真实域资格不能使用模拟报告或回执。
+输入契约见[R11Request与归档核验](../src/investor_core/r11_service.py)、[来源逐值绑定](../src/investor_core/r11_provenance.py)。D请求额外引用既有`portfolio_id`和按基金代码对应的`mapping_ids`，不通过请求创建/批准映射。归档原文必须是完整JSON_UTF8及真实哈希，每个标量提供原文JSON pointer；C另需在来源归档facts中固定r11_constituent_collection={pointer,code_pointer}，输入/members整体绑定必须精确匹配并覆盖完整成员集合，不能凭自报总数或精选列表。旧v3回放保留但不计新v4资格。PDF/HTML未适配不能改标签冒充JSON验证。治理的`dataset_kind=SYNTHETIC`只用于模拟域，真实域资格不能使用模拟报告或回执。
 
 ## 5. 交付状态
 
 |环节|状态|对象与证据|
 |---|---|---|
 |方案批准|已完成|准确1d0b7ea，仅隔离研发|
-|代码实现|未完成|主体已保存至f9a3db；新增C完整成分集合缺口已复现，必须修复|
+|代码实现|未完成|C完整集合修复候选已实现并定向通过，待独审与最终全量，不能以旧全量替代|
 |测试与审查|未完成|a2d267a全量通过、f9a3db独审通过；最终候选全量与双平台CI尚待|
 |源码合并|未完成|仅feature，未合入develop/release/main|
 |版本发布|受阻|双平台CI未知；没有本批正式Tag/Release|
