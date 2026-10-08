@@ -1130,3 +1130,13 @@ E完整SYNTHETIC扩展用例仍在运行：**session44134，PID19373**，命令`
 [首轮定向](R11_FINAL_GATE_INITIAL_REGRESSION.txt)13通过、1失败、214.67秒；唯一剩余失败是删除原件的隔离故障注入被SQLite外键保护拦截，同时间修订正向断言已通过。现仅在该临时测试连接关闭外键以模拟原件丢失，生产外键保护未改；加入反向修订和原生BenchmarkService版本2创建/具体确认测试。[最终四项门禁回归](R11_FINAL_GATE_REGRESSION.txt)**4通过、94.87秒、退出0**，session19727已结束。没有真实批准、实际晋级或财务写入；新增审批只发生于临时SYNTHETIC数据库。
 
 Ruff、mypy86源文件通过；完整E在1e611a8源码25分06秒通过的日志已保存。当前最终源码还须一次必要全量（包含最新完整E），不能沿用旧SHA替代。接下来保存/推送本精确修复提交供增量独审，然后运行`.venv/bin/pytest -o addopts='' -q --tb=short --maxfail=1 > /tmp/r11-final-full-regression.log 2>&1`；maxfail=1只在出现实际失败时提前返回，成功时仍执行全部已收集测试。运行session/PID及终态随后回写本清单，不能重复启动。
+
+### 最终全量运行检查点（25a05ad源码，勿重复启动）
+
+最新业务修复提交**25a05ad436095ec9a6206bcfbe762270e90e6bf8**已推送，并以git ls-remote核验origin/feature一致。包含A500实际评分身份、同时间双向修订、缺失原件critical及当前已批准映射版本替代修复。前两项旧独审P2已关闭；本批新增门禁修复的增量独审尚待父对话回传。
+
+最终全量已启动，**session95964，PID20351**，目录`/workspace/Agent_CompoundInterest_Plan`，准确命令`.venv/bin/pytest -o addopts='' -q --tb=short --maxfail=1 > /tmp/r11-final-full-regression.log 2>&1`。启动后39秒核验pytest进程正常、日志尚无结果；这不是通过。测试包括当前完整SYNTHETIC E生命周期，不能把1e611a8的25分06秒成功当本提交全量结果。测试期间不得修改所验证的业务源码；普通文档检查点不改变r11 engine_hash。
+
+恢复首先轮询session95964并检查PID20351和日志尾部；仍运行则继续等待，**不要重启**。退出后以真实退出码/日志处理失败或归档完整终态；若出现失败，--maxfail=1会提前结束，不能将已执行子集称全量通过。随后完成必要修复、最新精确SHA独审及文档收敛。Ruff通过、mypy86源文件通过，当前源码离线wheel已重新构建。此检查点回传为了父对话并行审查，不是阶段验收或开发授权终止。
+
+外部边界维持：GitHub API Forbidden不重试/绕过；Ubuntu/Windows CI未核验，四长期分支未合并、无Tag/正式版本发布。真实数据和自然观察、离线Windows安装/六步生产验收均未补造；没有部署、实际晋级、投资配置或真实财务写入。当前不需要用户决定。
