@@ -12,9 +12,9 @@ from investor_core.execution import StrictModel
 from investor_core.ledger import LedgerError
 from investor_core.r11_candidates import CandidateInput, calculate_candidates
 from investor_core.r11_inputs import COMPUTATION_VERSION, DEFINITION, MODEL_VERSION, VERSION
-from investor_core.r11_macro import MacroInput, calculate_macro, stable_state
+from investor_core.r11_macro import MacroInput, calculate_macro
 from investor_core.r11_provenance import publication_matches, reconcile
-from investor_core.r11_rules import rules
+from investor_core.r11_quality import apply_extraction
 from investor_core.research import ResearchService
 from investor_core.scheduler import digest, stamp
 from investor_core.shadow_models import ModelDefinition, ShadowService
@@ -25,6 +25,8 @@ class R11Request(StrictModel):
     bundle_evidence_id: str
     idempotency_key: str = Field(min_length=1, max_length=200)
     supersedes: str | None = None
+    portfolio_id: str | None = None
+    mapping_ids: dict[str, str] = Field(default_factory=dict)
 
 
 class R11SourceBinding(StrictModel):
@@ -262,11 +264,18 @@ class R11Service:
                 "leading_score_history",
             }
             history = [{k: v for k, v in r["output"].items() if k in state_fields} for r in prior]
-            output = (
-                calculate_macro(data, history)
-                if isinstance(data, MacroInput)
-                else calculate_candidates(data, history)
-            )
+            if isinstance(data, MacroInput):
+                output = calculate_macro(data, history)
+            else:
+                from investor_core.r11_core_bindings import apply, capture
+
+                bindings = capture(
+                    c, data, request.portfolio_id, request.mapping_ids, str(data.context.day)
+                )
+                evidence["core_bindings"] = bindings
+                output = apply(
+                    calculate_candidates(data, history, core_bindings=bindings), bindings
+                )
             output = self._apply_extraction(output, evidence["extraction"], history)
             from investor_core.r11_governance import engine_hash
 
@@ -301,27 +310,7 @@ class R11Service:
             R11Governance(self).assess(request.method, "observation:" + saved["id"])
         return saved
 
-    @staticmethod
-    def _apply_extraction(
-        output: dict[str, Any], extraction: dict[str, Any], history: list[dict[str, Any]]
-    ) -> dict[str, Any]:
-        output["extraction"] = extraction
-        if extraction["status"] != "MATCHED":
-            output["gaps"] = sorted(set(output["gaps"] + ["SOURCE_VALUE_BINDING_UNVERIFIED"]))
-            output["status"] = "INSUFFICIENT_DATA"
-            if output["method"] == "C":
-                output["candidate_season"] = "UNKNOWN"
-                output.update(stable_state(output, history, rules("C")))
-            else:
-                output.update(
-                    leader=None, leading_weeks=0, leading_score_history=[], replacement="BLOCKED"
-                )
-                output["replacement_blockers"] = sorted(
-                    set(output["replacement_blockers"] + ["SOURCE_VALUE_BINDING_UNVERIFIED"])
-                )
-                for row in output["rows"]:
-                    row["rank"] = None
-        return output
+    _apply_extraction = staticmethod(apply_extraction)
 
     def replay(self, method: str, run_id: str) -> dict[str, Any]:
         with self.research._connect() as c:
@@ -380,8 +369,14 @@ class R11Service:
             )
         else:
             replay = calculate_candidates(
-                CandidateInput.model_validate(run["input"]), run["previous_outputs"]
+                CandidateInput.model_validate(run["input"]),
+                run["previous_outputs"],
+                core_bindings=run["evidence"].get("core_bindings"),
             )
+        if "core_bindings" in run["evidence"]:
+            from investor_core.r11_core_bindings import apply
+
+            replay = apply(replay, run["evidence"]["core_bindings"])
         extraction = reconcile(
             run["input"],
             run["evidence"]["sources"],

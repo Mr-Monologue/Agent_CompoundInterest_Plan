@@ -7,6 +7,7 @@ from typing import Any
 
 from investor_core.r11_candidates import CandidateInput, calculate_candidates
 from investor_core.r11_macro import MacroInput, calculate_macro
+from investor_core.r11_quality import apply_extraction
 from investor_core.r11_rules import registry, scenarios, stress_spec
 from investor_core.r11_validation import ValidationWindow, _complete, _selection, weeks
 from investor_core.scheduler import digest
@@ -69,9 +70,19 @@ def _sensitivity(
                     )
                     if window.method == "C"
                     else calculate_candidates(
-                        CandidateInput.model_validate(data), history, diagnostic_rules=values
+                        CandidateInput.model_validate(data),
+                        history,
+                        diagnostic_rules=values,
+                        core_bindings=record.get("evidence", {}).get("core_bindings"),
                     )
                 )
+                if "core_bindings" in record.get("evidence", {}):
+                    from investor_core.r11_core_bindings import apply
+
+                    computed = apply(computed, record["evidence"]["core_bindings"])
+                extraction = record["output"].get("extraction")
+                if extraction is not None:
+                    computed = apply_extraction(computed, extraction, history, values)
                 history.append(computed)
                 outputs[record["id"]] = computed
             fixed = frozen_sets[kind]

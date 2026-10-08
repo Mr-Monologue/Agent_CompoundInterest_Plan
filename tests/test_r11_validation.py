@@ -43,7 +43,13 @@ def setup(method="A500"):
                         dominant_season="SPRING",
                     ),
                     input={
-                        field: {"points": [{"day": f"2026-{10 + min(i // 4, 2):02d}-01"}]}
+                        field: {
+                            "identity": field,
+                            "unit": "PMI_POINTS",
+                            "points": [
+                                {"day": f"2026-{10 + min(i // 4, 2):02d}-01", "value": "50"}
+                            ],
+                        }
                         for field in ("pmi", "social_financing_yoy")
                     },
                 )

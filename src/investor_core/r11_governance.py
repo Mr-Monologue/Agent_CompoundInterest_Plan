@@ -23,7 +23,7 @@ from investor_core.r11_receipts import verify_artifacts
 from investor_core.r11_rules import registry
 from investor_core.r11_sensitivity import baseline_sets, sensitivity, stress_diagnostics
 from investor_core.r11_service import R11Service
-from investor_core.r11_validation import ValidationWindow, evidence_summary
+from investor_core.r11_validation import ValidationWindow, _complete, _selection, evidence_summary
 from investor_core.scheduler import digest, instant, stamp
 
 
@@ -145,6 +145,13 @@ class R11Governance:
         window = ValidationWindow.model_validate(registration["window"])
         if self.research._now() < datetime.combine(window.forward_end, time(12), TZ):
             raise LedgerError("R11_FORWARD_PERIOD_IN_PROGRESS", "No accelerated future validation")
+        # The registered end is the earliest review date, never a way to omit
+        # later forward failures. Preserve the original start and every elapsed week.
+        now = self.research._now().astimezone(TZ)
+        completed = now.date() - timedelta(days=(now.weekday() - 5) % 7)
+        if datetime.combine(completed, time(12), TZ) > now:
+            completed -= timedelta(days=7)
+        window = window.model_copy(update={"forward_end": max(window.forward_end, completed)})
         runs = [
             r
             for r in self.service.runs(window.method, current_version=True)
@@ -165,6 +172,11 @@ class R11Governance:
             and r["output"]["dataset_kind"] == window.dataset_kind
             and str(window.forward_start) <= r["output"]["as_of"][:10] <= str(window.forward_end)
         ]
+        selected = [
+            r
+            for kind in ("H", "F", "K")
+            for r in _selection(runs, window.method, kind, window.dataset_kind).values()
+        ]
         extra = dict(
             preregistered_engine=registration["engine_hash"] == engine_hash(),
             preregistered_parameters=registration["registry"] == registry(window.method),
@@ -180,7 +192,13 @@ class R11Governance:
                 for r in forward
             ),
             all_forward_values_bound=bool(forward)
-            and all(r["output"].get("extraction", {}).get("status") == "MATCHED" for r in forward),
+            and all(
+                r["output"].get("extraction", {}).get("status") == "MATCHED"
+                for r in selected
+                if r["output"]["evidence_class"] == "F" and _complete(r)
+            ),
+            approved_core_mappings=window.method == "C"
+            or all(r["output"].get("mapping_qualified", False) for r in selected if _complete(r)),
             per_scenario_sensitivity=diagnostics["result"] == "PASS",
             cost_delay_outage_stress=stress["result"] == "PASS",
         )
@@ -313,6 +331,52 @@ class R11Governance:
                 ),
             )
 
+    def _critical(self, c: Any, rows: list[dict[str, Any]]) -> list[str]:
+        real = [
+            r
+            for r in rows
+            if r["kind"] == "R11_OBSERVATION" and r["output"]["evidence_class"] == "F"
+        ]
+        latest = max(real, key=lambda r: (r["output"]["as_of"], r["created_at"])) if real else None
+        critical = []
+        if latest is None:
+            critical.append("NO_REAL_FORWARD_OBSERVATION")
+        else:
+            output = latest["output"]
+            if (
+                output["status"] != "CALCULATED_SHADOW"
+                or output["gaps"]
+                or (output["method"] != "C" and not output.get("mapping_qualified", False))
+            ):
+                critical.append("INPUT_QUALITY_OR_MAPPING_FAILED")
+            if instant(output["as_of"]) + timedelta(days=7) <= self.research._now():
+                critical.append("OBSERVATION_STALE")
+            if output.get("extraction", {}).get("status") != "MATCHED":
+                critical.append("INPUT_VALUE_BINDING_FAILED")
+            for archive in [
+                latest["evidence"]["bundle"],
+                *latest["evidence"]["sources"].values(),
+            ]:
+                if self.service._evidence(c, archive["id"]) != archive:
+                    critical.append("SOURCE_ARCHIVE_CHANGED")
+            if output["method"] != "C":
+                from investor_core.r11_core_bindings import changed
+
+                bindings = latest["evidence"].get("core_bindings")
+                if not bindings or changed(c, bindings):
+                    critical.append("CORE_MAPPING_OR_ACCOUNT_CHANGED")
+            # Replay is pure and reads its saved snapshots, with no writes.
+            if self.service.replay_record(latest)["result"] != "PASS":
+                critical.append("REPLAY_FAILED")
+        validations = [r for r in rows if r["kind"] == "R11_VALIDATION"]
+        if validations and validations[-1]["report"]["engine_hash"] != engine_hash():
+            critical.append("ENGINE_CHANGED")
+        for receipt in [r for r in rows if r["kind"] == "R11_RECEIPT"]:
+            for original in [receipt["original"], *receipt["artifacts"].values()]:
+                if self.service._evidence(c, original["id"]) != original:
+                    critical.append("REVIEW_EVIDENCE_INVALIDATED")
+        return sorted(set(critical))
+
     def _gate(
         self, c: Any, model_id: str, target: str, validation_id: str | None
     ) -> dict[str, Any]:
@@ -325,6 +389,7 @@ class R11Governance:
         if target == "ACTIVE":
             blockers.append("ACTIVE_UNREACHABLE")
         if target == "ADVISORY":
+            blockers += self._critical(c, rows)
             if mode == "OFF":
                 blockers.append("RESUME_SHADOW_WITH_FRESH_CONFIRMATION_FIRST")
             if validation_id is None:
@@ -490,33 +555,7 @@ class R11Governance:
                 and r["output"]["evidence_class"] == "F"
             ]
             latest = real[-1] if real else None
-            critical = []
-            if latest is None:
-                critical.append("NO_REAL_FORWARD_OBSERVATION")
-            else:
-                output = latest["output"]
-                if output["status"] != "CALCULATED_SHADOW" or output["gaps"]:
-                    critical.append("INPUT_QUALITY_OR_MAPPING_FAILED")
-                if instant(output["as_of"]) + timedelta(days=7) <= self.research._now():
-                    critical.append("OBSERVATION_STALE")
-                if output.get("extraction", {}).get("status") != "MATCHED":
-                    critical.append("INPUT_VALUE_BINDING_FAILED")
-                for archive in [
-                    latest["evidence"]["bundle"],
-                    *latest["evidence"]["sources"].values(),
-                ]:
-                    if self.service._evidence(c, archive["id"]) != archive:
-                        critical.append("SOURCE_ARCHIVE_CHANGED")
-                # Replay is read-only on a separate connection, with no lock writes.
-                if self.service.replay(method, latest["id"])["result"] != "PASS":
-                    critical.append("REPLAY_FAILED")
-            validations = [r for r in rows if r["kind"] == "R11_VALIDATION"]
-            if validations and validations[-1]["report"]["engine_hash"] != engine_hash():
-                critical.append("ENGINE_CHANGED")
-            for receipt in [r for r in rows if r["kind"] == "R11_RECEIPT"]:
-                for original in [receipt["original"], *receipt["artifacts"].values()]:
-                    if self.service._evidence(c, original["id"]) != original:
-                        critical.append("REVIEW_EVIDENCE_INVALIDATED")
+            critical = self._critical(c, rows)
             by_day = {r["output"]["as_of"][:10]: r["output"] for r in real}
             observations = [by_day[d] for d in sorted(by_day)[-13:]]
             if method == "C":

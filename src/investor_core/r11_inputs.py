@@ -169,9 +169,7 @@ class Series(StrictModel):
         return values, days, sorted(set(gaps + missing))
 
 
-def monthly(
-    series: Series, ctx: Context, unit: str, count: int = 4
-) -> tuple[list[Decimal], list[str]]:
+def monthly_points(series: Series, ctx: Context, count: int = 4) -> list[Point]:
     eligible = [
         p
         for p in series.points
@@ -182,7 +180,13 @@ def monthly(
             or ctx.sources[p.source].known_at() <= ctx.as_of
         )
     ]
-    points = sorted(eligible, key=lambda p: p.day)[-count:]
+    return sorted(eligible, key=lambda p: p.day)[-count:]
+
+
+def monthly(
+    series: Series, ctx: Context, unit: str, count: int = 4
+) -> tuple[list[Decimal], list[str]]:
+    points = monthly_points(series, ctx, count)
     gaps = []
     if len(points) != count:
         gaps.append("FOUR_MONTHS_REQUIRED")

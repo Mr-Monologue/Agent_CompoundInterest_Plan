@@ -249,14 +249,20 @@ def calculate_candidates(
     history: list[dict[str, Any]] | None = None,
     *,
     diagnostic_rules: dict[str, Any] | None = None,
+    core_bindings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with localcontext() as context:
         context.prec = 34
-        return _calculate(data, history or [], diagnostic_rules or rules(data.cohort))
+        return _calculate(
+            data, history or [], diagnostic_rules or rules(data.cohort), core_bindings
+        )
 
 
 def _calculate(
-    data: CandidateInput, history: list[dict[str, Any]], params: dict[str, Any]
+    data: CandidateInput,
+    history: list[dict[str, Any]],
+    params: dict[str, Any],
+    core_bindings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ctx = data.context
     points_required = params["return_window"] + 1
@@ -412,7 +418,12 @@ def _calculate(
             if platform and data.replacement_evidence
             else ["EXECUTION_UNKNOWN"]
         )
-        if not p.benchmark_research_approved:
+        mapping_approved = (
+            not core_bindings["mappings"][p.code]["blockers"]
+            if core_bindings is not None
+            else p.benchmark_research_approved
+        )
+        if not mapping_approved:
             warnings.append("MAPPING_DRAFT")
         rows.append(
             dict(

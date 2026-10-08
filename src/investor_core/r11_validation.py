@@ -7,10 +7,17 @@ from decimal import Decimal
 from itertools import pairwise
 from typing import Any, Literal
 
-from pydantic import model_validator
+from pydantic import ValidationError, model_validator
 
 from investor_core.execution import StrictModel
-from investor_core.r11_inputs import COMPUTATION_VERSION, TZ, VERSION, Source
+from investor_core.r11_inputs import (
+    COMPUTATION_VERSION,
+    TZ,
+    VERSION,
+    Context,
+    Series,
+    monthly_points,
+)
 
 
 class ValidationWindow(StrictModel):
@@ -58,7 +65,11 @@ def _complete(record: dict[str, Any] | None) -> bool:
     if not record:
         return False
     output = record["output"]
-    return output["status"] == "CALCULATED_SHADOW" and not output.get("gaps")
+    return (
+        output["status"] == "CALCULATED_SHADOW"
+        and not output.get("gaps")
+        and output.get("mapping_qualified", True)
+    )
 
 
 def _coverage(days: list[date], records: dict[date, dict[str, Any]]) -> dict[str, Any]:
@@ -138,22 +149,28 @@ def evidence_summary(
             for day in forward_days:
                 if day not in forward or not _complete(forward[day]):
                     continue
-                points = forward[day]["input"][field]["points"]
-                if points:
-                    latest = max(points, key=lambda p: p["day"])
-                    source_data = (
-                        forward[day]["input"]
-                        .get("context", {})
-                        .get("sources", {})
-                        .get(latest.get("source"))
+                inputs = forward[day]["input"]
+                try:
+                    context = Context.model_validate(
+                        dict(
+                            inputs["context"],
+                            as_of=forward[day]["output"]["as_of"],
+                            evidence_class="F",
+                        )
                     )
-                    if source_data is None:
+                    # Share the calculator's as-of selection; unused future releases
+                    # must not hide already-known selected months.
+                    points = monthly_points(Series.model_validate(inputs[field]), context)
+                except ValidationError:
+                    continue
+                if points:
+                    latest = points[-1]
+                    source = context.sources.get(latest.source or "")
+                    if source is None:
                         continue
-                    source = Source.model_validate(source_data)
                     start = datetime.combine(window.forward_start, time.min, TZ)
-                    cutoff = datetime.combine(day, time(12), TZ)
-                    if start <= source.published_at <= source.known_at() <= cutoff:
-                        releases.add(latest["day"][:7])
+                    if start <= source.published_at <= source.known_at() <= context.as_of:
+                        releases.add(latest.day.strftime("%Y-%m"))
             checks[field + "_three_new_months"] = len(releases) >= 3
     # Preconditions for robustness, never treat an empty/all-tied set as 100%.
     eligible_counts = {}
