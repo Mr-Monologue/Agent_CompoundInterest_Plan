@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from fastapi import FastAPI
 
+from investor_core.r11_service import R11Request, R11Service
+from investor_core.r11_validation import ValidationWindow, evidence_summary
 from investor_core.research import ResearchService
 from investor_core.shadow_models import (
     ModelDefinition,
@@ -16,6 +18,7 @@ from investor_core.shadow_models import (
 
 def register_shadow_routes(app: FastAPI, research: ResearchService) -> None:
     service = ShadowService(research)
+    r11 = R11Service(research)
 
     def response(data: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -58,3 +61,21 @@ def register_shadow_routes(app: FastAPI, research: ResearchService) -> None:
     @app.post("/v1/shadow-models/{model_id}/reviews/{draft_id}/confirm")
     def confirm(model_id: str, draft_id: str, request: ReviewConfirmation) -> dict[str, Any]:
         return response(service.confirm(model_id, draft_id, request))
+
+    @app.post("/v1/r11/research-runs")
+    def r11_observe(request: R11Request) -> dict[str, Any]:
+        return response(r11.observe(request))
+
+    @app.get("/v1/r11/research-runs/{method}")
+    def r11_runs(method: Literal["C", "MEDICAL", "A500"]) -> dict[str, Any]:
+        return response({"items": r11.runs(method), "money_action": False})
+
+    @app.get("/v1/r11/research-runs/{method}/{run_id}/replay")
+    def r11_replay(method: Literal["C", "MEDICAL", "A500"], run_id: str) -> dict[str, Any]:
+        return response(r11.replay(method, run_id))
+
+    @app.post("/v1/r11/validation-preview")
+    def r11_validation(window: ValidationWindow) -> dict[str, Any]:
+        records = r11.runs(window.method)
+        replays = {r["id"]: r11.replay(window.method, r["id"])["result"] == "PASS" for r in records}
+        return response(evidence_summary(window, records, replays))
