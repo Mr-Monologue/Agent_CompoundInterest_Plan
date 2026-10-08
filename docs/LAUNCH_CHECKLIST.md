@@ -1216,3 +1216,5 @@ HTTP测试现在使用asyncio.timeout_at覆盖连接、响应头与每个正文�
 隔离自验：[14项](R11_CLEANUP_DEADLINE_REGRESSION.txt)通过7.61秒；[嵌套原错误+清理错误保留](R11_CLEANUP_GROUP_REGRESSION.txt)1通过3.11秒；[真实HTTP/独立worker/离线进程](R11_DEADLINE_REAL_PROCESS.txt)1通过29.94秒。Ruff、mypy check.py和diff检查通过；测试全为临时合成数据。最新候选修复需独审及最终源码必要全量，不能用仍在跑的a2d267a结果代替。
 
 为尽早提供独审源码，将临时detached提交以快进方式推送到既有远端feature，不创建分支、不强推；本机feature工作树在原全量终态前保持a2d267a，终态归档后再用git merge --ff-only同步。精确新SHA提交后回传。不能将远端候选修复与当前运行SHA混淆。
+
+候选修复14819056b7c3fee87a422e5b6a69e7b1154f0115已快进推送并核验远端。随后自查补充控制信号边界：若关闭阶段新到达取消/SystemExit/KeyboardInterrupt（含BaseExceptionGroup），必须传播控制信号，不能由较早普通错误取代；仅普通清理Exception才恢复原错误。新增原始/成组取消两例，[当前隔离回归](R11_CLEANUP_DEADLINE_FINAL.txt)17通过（精确耗时见日志），Ruff/mypy通过；HTTP实际进程仍对应同一未变的期限实现。此补充在同一detached检出，主全量a2d267a未改。当前全量已越过此前HTTP/MCP失败点但尚未终态，不能据此消除此前冷启动可靠性问题。

@@ -49,7 +49,11 @@ async def _stdio_connection(parameters: StdioServerParameters) -> AsyncIterator[
                 original = exc
                 raise
     except BaseException as closing_error:
-        if original is not None and not _contains_error(closing_error, original):
+        if (
+            isinstance(closing_error, Exception)
+            and original is not None
+            and not _contains_error(closing_error, original)
+        ):
             raise original from closing_error
         raise
 

@@ -113,3 +113,29 @@ def test_shutdown_group_that_already_contains_original_keeps_both_errors(monkeyp
         asyncio.run(run())
     assert raised.value is combined
     assert raised.value.exceptions[1] is secondary
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_new_cancellation_during_shutdown_is_never_replaced(monkeypatch, grouped):
+    cancellation = asyncio.CancelledError("SYNTHETIC outer cancellation")
+    closing = (
+        BaseExceptionGroup("SYNTHETIC cancellation group", [cancellation])
+        if grouped else cancellation
+    )
+
+    @asynccontextmanager
+    async def transport(_):
+        try:
+            yield None, None
+        finally:
+            raise closing
+
+    monkeypatch.setattr(check, "stdio_client", transport)
+
+    async def run():
+        async with check._stdio_connection(None):
+            raise TimeoutError("SYNTHETIC original timeout")
+
+    with pytest.raises(type(closing)) as raised:
+        asyncio.run(run())
+    assert raised.value is closing
