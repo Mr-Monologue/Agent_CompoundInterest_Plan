@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from investor_core.execution import StrictModel
-from investor_core.r11_inputs import (
+from investor_core.r11_legacy.inputs import (
     VERSION,
     Calendar,
     Context,
@@ -19,13 +19,6 @@ from investor_core.r11_inputs import (
     down,
     sample_sd,
     up,
-)
-from investor_core.r11_replacement import (
-    Corroboration,
-    ReplacementEvidence,
-    corroboration_gaps,
-    platform_gaps,
-    replacement_result,
 )
 from investor_core.scheduler import digest
 
@@ -97,7 +90,6 @@ class Product(StrictModel):
     benchmark_effective_from: date | None = None
     benchmark_effective_to: date | None = None
     benchmark_research_approved: bool = False
-    corroboration: Corroboration | None = None
 
     @model_validator(mode="after")
     def dividends_unique(self) -> Product:
@@ -112,7 +104,6 @@ class CandidateInput(StrictModel):
     products: list[Product] = Field(min_length=2, max_length=2)
     benchmark: Series | None = None
     benchmark_calendar: Calendar | None = None
-    replacement_evidence: ReplacementEvidence | None = None
 
     @model_validator(mode="after")
     def fixed_pool(self) -> CandidateInput:
@@ -257,15 +248,13 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
     grids = []
     gaps = []
     endpoints = []
-    own_gaps: dict[str, list[str]] = {}
     for product in data.products:
         grid, missing = product.calendar.grid(ctx)
         grids.append(set(grid))
         _, days, series_gaps = product.nav.window(
             ctx, product.calendar, 253, 2, "NAV_CNY_NET_INTERNAL_FEES"
         )
-        gaps += [product.code + ":" + g for g in missing]
-        own_gaps[product.code] = series_gaps
+        gaps += [product.code + ":" + g for g in missing + series_gaps]
         if days:
             endpoints.append(days[-1])
     benchmark_returns = []
@@ -302,7 +291,6 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
         for row in history
         if row.get("definition_id") == VERSION
         and row.get("method") == data.cohort
-        and row.get("computation_version") == output["computation_version"]
         and row.get("evidence_class") == ctx.evidence_class
         and row.get("dataset_kind") == ctx.dataset_kind
         and row["as_of"][:10] < ctx.day.isoformat()
@@ -322,7 +310,7 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
     rows: list[dict[str, Any]] = []
     for p in sorted(data.products, key=lambda p: p.code):
         missing, exclusions = product_checks(p, data, days[0] if days else ctx.day)
-        missing += gaps + own_gaps[p.code]
+        missing += gaps
         returns, path_gaps = nav_returns(p, ctx, days) if days else ([], ["NO_WINDOW"])
         missing += path_gaps
         parts: dict[str, Decimal] = {}
@@ -388,19 +376,6 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
         if set(parts) != set(weights):
             missing.append("REQUIRED_SCORE_DIMENSION_MISSING")
         total_score = None if missing or exclusions else sum(parts[k] * weights[k] for k in weights)
-        warnings = corroboration_gaps(ctx, p.model_dump(mode="json"), p.corroboration)
-        platform = (
-            next((v for v in data.replacement_evidence.platforms if v.code == p.code), None)
-            if data.replacement_evidence
-            else None
-        )
-        warnings += (
-            platform_gaps(ctx, platform, data.replacement_evidence.account_ref, p.share_class or "")
-            if platform and data.replacement_evidence
-            else ["EXECUTION_UNKNOWN"]
-        )
-        if not p.benchmark_research_approved:
-            warnings.append("MAPPING_DRAFT")
         rows.append(
             dict(
                 code=p.code,
@@ -417,7 +392,8 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
                 total_score=str(total_score) if total_score is not None else None,
                 rank=None,
                 stock_range=[str(p.stock_min_pct), str(p.stock_max_pct)],
-                warnings=sorted(set(warnings)),
+                warnings=["OFFICIAL_SINGLE_SOURCE", "EXECUTION_UNKNOWN"]
+                + ([] if p.benchmark_research_approved else ["MAPPING_DRAFT"]),
             )
         )
     comparable = all(row["total_score"] is not None for row in rows)
@@ -432,7 +408,7 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
             for row in rows:
                 row["rank"] = 1 if row["code"] == leader else 2
     leading_weeks = 0
-    if leader and spread is not None and spread >= 10 and not any(r["warnings"] for r in rows):
+    if leader and spread is not None and spread >= 10:
         leading_weeks = 1 + (
             previous.get("leading_weeks", 0) if previous and previous.get("leader") == leader else 0
         )
@@ -446,15 +422,12 @@ def _calculate(data: CandidateInput, history: list[dict[str, Any]]) -> dict[str,
         window_end=end_text,
         window_hash=digest([d.isoformat() for d in days]),
         gaps=sorted(set(gaps)),
-        leading_score_history=(
-            (previous.get("leading_score_history", []) if previous and leading_weeks > 1 else [])
-            + (
-                [dict(as_of=ctx.as_of.isoformat(), spread=str(spread), leader=leader)]
-                if leading_weeks
-                else []
-            )
-        ),
+        replacement="BLOCKED",
+        replacement_blockers=[
+            "INDEPENDENT_VERIFICATION_REQUIRED",
+            "ACTUAL_HOLDING_AND_WEAKENED_THESIS_REQUIRED",
+            "PLATFORM_LIMIT_EVIDENCE_REQUIRED",
+        ],
         display_text="既有两产品研究比较;未验证影子试算,不是可投资资格或交易安排。",
     )
-    output.update(replacement_result(ctx, rows, leader, leading_weeks, data.replacement_evidence))
     return output

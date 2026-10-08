@@ -26,14 +26,13 @@ Json = dict[str, Any]
 class Source(StrictModel):
     archive_id: str = Field(min_length=1)
     document_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
-    url: str = Field(pattern=r"^(https://|attachment:sha256:[a-f0-9]{64}$)")
+    url: str = Field(pattern=r"^https://")
     lineage: str = Field(min_length=1)
     published_at: datetime
     publication_precision: Literal["INSTANT", "DATE"] = "INSTANT"
     publication_timezone: str
     first_retrieved_at: datetime
-    quality: Literal["OFFICIAL", "ACCOUNT_OBSERVATION", "UNVERIFIED", "CONFLICT"]
-    account_ref: str | None = None
+    quality: Literal["OFFICIAL", "UNVERIFIED", "CONFLICT"]
 
     @model_validator(mode="after")
     def aware(self) -> Source:
@@ -70,17 +69,12 @@ class Context(StrictModel):
     def day(self) -> date:
         return self.as_of.astimezone(TZ).date()
 
-    def source_gaps(self, key: str | None, *, account_ref: str | None = None) -> list[str]:
+    def source_gaps(self, key: str | None) -> list[str]:
         if key is None or key not in self.sources:
             return ["SOURCE_MISSING"]
         src = self.sources[key]
         gaps = []
-        account_capture = (
-            account_ref is not None
-            and src.account_ref == account_ref
-            and src.quality == "ACCOUNT_OBSERVATION"
-        )
-        if src.quality != "OFFICIAL" and not account_capture:
+        if src.quality != "OFFICIAL":
             gaps.append("SOURCE_" + src.quality)
         if self.evidence_class != "H" and src.known_at() > self.as_of:
             gaps.append("NOT_KNOWN_AS_OF")
@@ -168,17 +162,7 @@ class Series(StrictModel):
 
 
 def monthly(series: Series, ctx: Context, unit: str) -> tuple[list[Decimal], list[str]]:
-    eligible = [
-        p
-        for p in series.points
-        if p.day <= ctx.day
-        and (
-            ctx.evidence_class == "H"
-            or p.source not in ctx.sources
-            or ctx.sources[p.source].known_at() <= ctx.as_of
-        )
-    ]
-    points = sorted(eligible, key=lambda p: p.day)[-4:]
+    points = sorted([p for p in series.points if p.day <= ctx.day], key=lambda p: p.day)[-4:]
     gaps = []
     if len(points) != 4:
         gaps.append("FOUR_MONTHS_REQUIRED")
@@ -218,7 +202,7 @@ def base_output(ctx: Context, inputs: StrictModel, method: str) -> Json:
     body = inputs.model_dump(mode="json")
     return dict(
         definition_id=VERSION,
-        computation_version="r11-rules-v2",
+        computation_version="r11-rules-v1",
         definition_source=DEFINITION,
         method=method,
         as_of=ctx.as_of.isoformat(),

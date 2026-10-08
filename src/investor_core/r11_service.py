@@ -13,6 +13,7 @@ from investor_core.ledger import LedgerError
 from investor_core.r11_candidates import CandidateInput, calculate_candidates
 from investor_core.r11_inputs import DEFINITION, VERSION
 from investor_core.r11_macro import MacroInput, calculate_macro
+from investor_core.r11_provenance import publication_matches, reconcile
 from investor_core.research import ResearchService
 from investor_core.scheduler import digest, stamp
 from investor_core.shadow_models import ModelDefinition, ShadowService
@@ -101,9 +102,22 @@ class R11Service:
                 or source.publication_timezone != stored.get("publication_timezone")
                 or source.publication_precision != stored.get("publication_precision")
                 or source.first_retrieved_at != datetime.fromisoformat(archived["retrieved_at"])
+                or source.account_ref != stored.get("account_id")
             ):
                 raise LedgerError(
                     "R11_SOURCE_BINDING_MISMATCH", "Source provenance differs from archive"
+                )
+            if not publication_matches(source, archived):
+                raise LedgerError(
+                    "R11_PUBLICATION_CONFLICT", "Original publication date/precision conflict"
+                )
+            if (
+                data.context.dataset_kind == "REAL"
+                and data.context.evidence_class != "H"
+                and datetime.fromisoformat(archive["created_at"]) > data.context.as_of
+            ):
+                raise LedgerError(
+                    "R11_SOURCE_CAPTURE_LATE", "No real source archive existed at cutoff"
                 )
             if stored.get("dataset_kind") != data.context.dataset_kind:
                 raise LedgerError(
@@ -121,7 +135,12 @@ class R11Service:
                     "R11_FORWARD_CAPTURE_MISSING",
                     "Input bundle was not frozen in time; use historical diagnosis",
                 )
-        return data, dict(bundle=bundle, sources=snapshots)
+        extraction = reconcile(
+            data.model_dump(mode="json"),
+            snapshots,
+            facts.get("facts", {}).get("r11_bindings", {}),
+        )
+        return data, dict(bundle=bundle, sources=snapshots, extraction=extraction)
 
     def runs(self, method: str) -> list[dict[str, Any]]:
         with self.research._connect() as c:
@@ -193,6 +212,7 @@ class R11Service:
                 if isinstance(data, MacroInput)
                 else calculate_candidates(data, history)
             )
+            output = self._apply_extraction(output, evidence["extraction"])
             return self.shadow._append(
                 c,
                 model["id"],
@@ -216,11 +236,40 @@ class R11Service:
                 ),
             )
 
+    @staticmethod
+    def _apply_extraction(output: dict[str, Any], extraction: dict[str, Any]) -> dict[str, Any]:
+        output["extraction"] = extraction
+        if output["dataset_kind"] == "REAL" and extraction["status"] != "MATCHED":
+            output["gaps"] = sorted(set(output["gaps"] + ["SOURCE_VALUE_BINDING_UNVERIFIED"]))
+            output["status"] = "INSUFFICIENT_DATA"
+            if output["method"] == "C":
+                output.update(dominant_season="UNKNOWN", pending_season=None, pending_weeks=0)
+            else:
+                output.update(leader=None, leading_weeks=0, replacement="BLOCKED")
+        return output
+
     def replay(self, method: str, run_id: str) -> dict[str, Any]:
         run = next((r for r in self.runs(method) if r["id"] == run_id), None)
         if run is None:
             raise LedgerError("R11_RUN_MISSING", "Unknown research run")
-        if method == "C":
+        if run["output"].get("computation_version") == "r11-rules-v1":
+            from investor_core.r11_legacy.candidates import (
+                CandidateInput as OldCandidateInput,
+            )
+            from investor_core.r11_legacy.candidates import (
+                calculate_candidates as old_candidates,
+            )
+            from investor_core.r11_legacy.macro import MacroInput as OldMacroInput
+            from investor_core.r11_legacy.macro import calculate_macro as old_macro
+
+            replay = (
+                old_macro(OldMacroInput.model_validate(run["input"]), run["previous_outputs"])
+                if method == "C"
+                else old_candidates(
+                    OldCandidateInput.model_validate(run["input"]), run["previous_outputs"]
+                )
+            )
+        elif method == "C":
             replay = calculate_macro(
                 MacroInput.model_validate(run["input"]), run["previous_outputs"]
             )
@@ -228,6 +277,15 @@ class R11Service:
             replay = calculate_candidates(
                 CandidateInput.model_validate(run["input"]), run["previous_outputs"]
             )
+        extraction = reconcile(
+            run["input"],
+            run["evidence"]["sources"],
+            json.loads(run["evidence"]["bundle"]["facts_json"])
+            .get("facts", {})
+            .get("r11_bindings", {}),
+        )
+        if run["output"].get("computation_version") != "r11-rules-v1":
+            replay = self._apply_extraction(replay, extraction)
         checks = dict(
             definition=run["definition_hash"] == digest(DEFINITION),
             evidence=run["evidence_hash"] == digest(run["evidence"]),

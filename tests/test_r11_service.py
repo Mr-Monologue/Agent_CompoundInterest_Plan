@@ -1,5 +1,7 @@
 """Archived synthetic inputs, actual isolated HTTP, no market fetch or production writes."""
 
+import hashlib
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -28,6 +30,8 @@ def isolated(tmp_path):
 def archive_bundle(service, data, key="bundle"):
     src = data["context"]["sources"]["official"]
     archive = ExecutionService(service.research)
+    original = json.dumps({"publication": src["published_at"]})
+    src["document_hash"] = hashlib.sha256(original.encode()).hexdigest()
     args = dict(
         instrument_code="CORE01",
         source_name="SYNTHETIC R11 ONLY",
@@ -36,10 +40,12 @@ def archive_bundle(service, data, key="bundle"):
         retrieved_at=src["first_retrieved_at"],
         published_date=src["published_at"][:10],
         data_date="2020-01-01",
-        excerpt="SYNTHETIC ONLY",
+        excerpt=original,
         original_sha256=src["document_hash"],
         quality=src["quality"],
         facts={
+            "r11_original_format": "JSON_UTF8",
+            "r11_publication_pointer": "/publication",
             "publication_timezone": src["publication_timezone"],
             "publication_precision": src["publication_precision"],
             "dataset_kind": data["context"]["dataset_kind"],
@@ -155,7 +161,7 @@ def test_real_forward_cannot_backfill_a_late_bundle(isolated):
     evidence = archive_bundle(service, data)
     with pytest.raises(LedgerError) as late:
         service.observe(R11Request(method="C", bundle_evidence_id=evidence, idempotency_key="late"))
-    assert late.value.code == "R11_FORWARD_CAPTURE_MISSING"
+    assert late.value.code == "R11_SOURCE_CAPTURE_LATE"
 
 
 def test_http_read_replay_and_unknown_endpoint_have_no_business_effects(isolated, monkeypatch):

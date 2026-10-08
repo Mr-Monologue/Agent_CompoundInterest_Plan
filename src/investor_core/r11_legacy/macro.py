@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import Field, model_validator
 
 from investor_core.execution import StrictModel
-from investor_core.r11_inputs import (
+from investor_core.r11_legacy.inputs import (
     VERSION,
     Calendar,
     Context,
@@ -60,7 +60,6 @@ def stable_state(output: dict[str, Any], history: list[dict[str, Any]]) -> dict[
         for row in history
         if row.get("definition_id") == VERSION
         and row.get("method") == "C"
-        and row.get("computation_version") == output["computation_version"]
         and row.get("evidence_class") == output["evidence_class"]
         and row.get("dataset_kind") == output["dataset_kind"]
         and row["as_of"][:10] < output["as_of"][:10]
