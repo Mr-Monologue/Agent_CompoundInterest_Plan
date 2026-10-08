@@ -44,6 +44,41 @@ class FilterRule(StrictModel):
         return self
 
 
+class InputField(StrictModel):
+    name: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_.-]*$", max_length=80)
+    value_type: Literal["NUMBER", "INTEGER", "TEXT", "BOOLEAN", "DATE"]
+
+
+def valid_value(value: Any, value_type: str) -> bool:
+    if value is None:
+        return False
+    if value_type == "BOOLEAN":
+        return isinstance(value, bool)
+    if value_type == "TEXT":
+        return (
+            isinstance(value, str)
+            and bool(value.strip())
+            and value.strip().casefold() not in {"null", "none", "unknown", "n/a", "nan"}
+        )
+    if value_type == "DATE":
+        if not isinstance(value, str):
+            return False
+        try:
+            date.fromisoformat(value)
+            return True
+        except ValueError:
+            return False
+    if isinstance(value, bool) or not isinstance(value, (str, int, float, Decimal)):
+        return False
+    try:
+        number = Decimal(str(value))
+        return number.is_finite() and (
+            value_type != "INTEGER" or number == number.to_integral_value()
+        )
+    except InvalidOperation:
+        return False
+
+
 class ModelDefinition(StrictModel):
     model_key: str = Field(min_length=1, max_length=100)
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
@@ -52,6 +87,8 @@ class ModelDefinition(StrictModel):
     rationale: str = Field(min_length=1, max_length=2000)
     # A definition is a research proposal, never an approved strategy instance.
     rules: list[FilterRule] = Field(default_factory=list, max_length=100)
+    # No default scientific content contract is inferred from a slot name.
+    input_contract: dict[str, list[InputField]] = Field(default_factory=dict, max_length=6)
 
     @model_validator(mode="after")
     def rules_valid(self) -> ModelDefinition:
@@ -59,6 +96,12 @@ class ModelDefinition(StrictModel):
             raise ValueError("season formula not defined; do not infer it from filters")
         if any(r.slot not in D_INPUTS for r in self.rules):
             raise ValueError("unknown candidate input slot")
+        slots = C_INPUTS if self.model_type == "MACRO_REGIME" else D_INPUTS
+        if set(self.input_contract) - slots:
+            raise ValueError("unknown input contract dimension")
+        for fields in self.input_contract.values():
+            if not fields or len(fields) > 100 or len({f.name for f in fields}) != len(fields):
+                raise ValueError("distinct nonempty required fields expected")
         identities = [(r.slot, r.field, r.operator) for r in self.rules]
         if len(set(identities)) != len(identities):
             raise ValueError("duplicate rule")
@@ -157,8 +200,13 @@ def evaluate(spec: Json, request: Json, snapshots: list[Json]) -> Json:
                 reasons.append(slot + ":TIME_PROVENANCE_MISSING")
             slot_values = payload.get("values", {})
             values[slot] = slot_values if isinstance(slot_values, dict) else {}
-            if not values[slot]:
-                reasons.append(slot + ":VALUES_MISSING")
+            contract = spec.get("input_contract", {}).get(slot)
+            if not contract:
+                reasons.append(slot + ":INPUT_CONTRACT_UNDEFINED")
+            else:
+                for field in contract:
+                    if not valid_value(values[slot].get(field["name"]), field["value_type"]):
+                        reasons.append(slot + "." + field["name"] + ":VALUE_MISSING_OR_INVALID")
         excluded = []
         for rule in spec["rules"]:
             raw = values.get(rule["slot"], {}).get(rule["field"])
@@ -194,14 +242,19 @@ def evaluate(spec: Json, request: Json, snapshots: list[Json]) -> Json:
             )
         )
     return dict(
-        evaluator_version="shadow-evidence-v1",
+        evaluator_version="shadow-evidence-v2",
+        input_contract_hash=digest(spec.get("input_contract", {})),
         rows=rows,
         status="INSUFFICIENT_DATA" if any(r["missing"] for r in rows) else "EVIDENCE_COMPLETE",
         dominant_season="UNKNOWN",
         probabilities=None,
         ranking=None,
         money_action=False,
-        limitations=["SCOPE_NOT_APPROVED", "NUMERICAL_METHOD_NOT_VALIDATED"],
+        limitations=[
+            "SCOPE_NOT_APPROVED",
+            "INPUT_CONTRACT_NOT_REVIEWED",
+            "NUMERICAL_METHOD_NOT_VALIDATED",
+        ],
         display_text="影子研究: 未批准范围, 不改变策略、资格或金额; 季节概率与排名未实现。",
     )
 
@@ -311,6 +364,17 @@ class ShadowService:
         with self.research._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             model = self._model(c, request.model_id)
+            previous = c.execute(
+                "SELECT payload_json FROM shadow_records WHERE request_key=?",
+                ("OBSERVATION:" + request.idempotency_key,),
+            ).fetchone()
+            if previous:
+                saved = json.loads(previous[0])
+                if saved["model_id"] != request.model_id or saved["request_hash"] != digest(body):
+                    raise LedgerError(
+                        "SHADOW_KEY_CONFLICT", "Same key has different immutable input"
+                    )
+                return saved  # type: ignore[no-any-return]
             spec = model["definition"]
             events = [
                 r for r in self._rows(c, request.model_id) if r["kind"] == "REVIEW_CONFIRMATION"
@@ -405,9 +469,12 @@ class ShadowService:
                 c,
                 model_id,
                 "VALIDATION",
-                observation_id,
+                observation_id + ":" + replay["evaluator_version"],
                 dict(
-                    request_hash=digest(observation),
+                    request_hash=digest(
+                        dict(observation=observation, evaluator_version=replay["evaluator_version"])
+                    ),
+                    evaluator_version=replay["evaluator_version"],
                     observation_id=observation_id,
                     checks=checks,
                     result="INSUFFICIENT_DATA"

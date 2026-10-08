@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 
 REQUIRED_TABLES = {
+    "shadow_models", "shadow_records",
     "research_update_runs", "research_update_evidence",
     "holding_review_snapshots", "holding_review_tasks", "holding_review_events",
     "research_thesis_actions",

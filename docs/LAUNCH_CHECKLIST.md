@@ -847,3 +847,32 @@ cd /workspace/Agent_CompoundInterest_Plan
 - 下一实质工程仍需补齐模型方法/作用域与预注册验证计划后实现C状态稳定、D评分/替换、E可核验证据适配及受控晋级/降级；本阶段未完成，不把此检查点当最终验收。第二独立代码审查、Windows/CI及本机验收单独保留。父对话可在明确数值路径后继续调度，普通开发授权无需重批；未因会话切换获得任何生产授权。
 
 全量定位补记：独立后台HTTP进程测试的旧40×0.1秒启动窗口在共享CPU下失败，日志为空且未进入业务断言。相同环境单独测量旧基线ad5a034导入6.03秒、候选3.16秒，负载下曾10.29秒；不能归因为新增业务逻辑失败。只将该测试启动等待改为单调时钟30秒上界，保留进程退出立即失败、health/ready与真实任务/重启/防重断言，不修改运行时配置。该修复属于授权内隔离测试可靠性修复。后续以最终完整回归补记为准，之前中断/失败不计通过。
+
+独立审查交接安排：父对话已明确将另开独立云端任务审查，本线程不把实现者多轮自审当独立结果，不向用户重复申请开发许可。已推送并核实实现检查点 `ff1e4aec795e029626255ab1a11c5043e21f8a3a`；相对ad5a034为20文件、1144增/22删。真正产品新增集中在shadow_models.py、api/shadow.py和0045迁移；其余为API接线、版本/schema、测试与原文档。最终全量当前命令改为 `.venv/bin/python -m pytest --basetemp=/tmp/compound-shadow-release-candidate --maxfail=1 --tb=short --show-capture=no`，session 93869，日志 `/tmp/compound-shadow-final.log`；上面的21952已因定位启动窗口失败终止，不继续等待旧session。
+
+独立审查优先风险：①日期型公开信息、来源时区、retrieved_at和as_of的防未来泄漏与保守限制；②D归档原始身份/作用域、缺值和非有限值不得假通过；③模型/输入指纹、追加历史和幂等键碰撞；④审批token脱敏/失效、证据漂移与并发事务；⑤新增表迁移与v1.6金额/原业务完全隔离；⑥E现为不可晋级的基础门禁，缺完整数值/稳定/样本外/独立评审适配，不得以固定false字段声称晋级治理完成。审查命令 `git diff ad5a034..ff1e4ae`，复现新增测试与完整回归见本节；无生产数据或真实投资配置。
+
+补充审查限制：当前EVIDENCE_COMPLETE只表示已声明槽位有可追溯且时点/身份/质量检查通过的非空值对象，不证明五维指标语义、独立上游或模型输入规范已验证；目前没有逐维数值字段契约。D benchmark槽位也尚未接入既有研究映射批准/历史有效期的专门适配。因此这些不能算完整C/D输入准入，需在独立审查中重点评估命名与缺口表达，并在后续方法/输入规范明确后补足；所有晋级仍阻断、概率与排名仍空，不能借该状态消除未满足项。
+
+
+### 独立审查结果与修复批次（ff1e4ae之后，进行中）
+
+父对话安排的独立审查已完成初版复核：新设施/迁移/六步/后台独立进程43项通过，Ruff/mypy62文件及diff检查通过；未运行独立全量或Windows。审查提出三项合成数据可复现问题，接受并修复，不要求用户重新批准：
+
+1. P2输入语义完整性：旧版只检查values非空，null/空串或六维只有fee/product_type可能被误报完整。新增版本化input_contract（随不可变模型版本及参数指纹），逐维必需字段与明确类型；缺契约/缺值/null/空白/占位文本/非有限数/类型不符均受限。未由现有架构定义的真实维度内容不自动填充；测试契约仅为合成夹具，不充当实际模型定义。仍保留INPUT_CONTRACT_NOT_REVIEWED，结构满足不等于科学语义获批准。
+2. P2就绪检查：REQUIRED_TABLES补入shadow_models/shadow_records，分别缺表且保留0045版本时必须database-schema FAIL。此修复不改迁移/业务数据。
+3. P3暂停幂等：观察同事务内优先核对既有请求键、模型和请求指纹，完全一致返回原记录；OFF仅阻断新观察，旧键不同载荷仍SHADOW_KEY_CONFLICT。覆盖暂停读回全库不变、冲突和新键拒绝。
+
+同时将验证回执键绑定evaluator_version，避免v2内容检查错误复用旧v1的input_coverage结果；旧记录保留且新旧回执分开。新增负测覆盖旧回执不可遮蔽新检查。初次修复测试因同一夹具内两个模型复用全局幂等键而触发预期冲突，已给第二请求独立键，不放松产品防冲突逻辑。
+
+原ff1e4ae全量在56%左右尚无新失败时因收到独审修复要求停止，不能算最终全量通过；将以本修复批次的最终代码重新跑全量。当前专项命令：`.venv/bin/python -m pytest tests/test_shadow_models.py tests/test_migrations.py tests/test_six_step_isolated_flow.py tests/test_background_scheduler_http_process.py --maxfail=1 --tb=short --show-capture=no`（session42882）。后续推送新SHA并交父对话复审，不能沿用ff1e4ae审查覆盖新代码。
+
+### 交父对话的一次集中重大方法选择（不是批准记录）
+
+依据：架构§8.2—8.6只规定五维与概率/稳定输出，§9.2—9.5规定批准候选范围、过滤/评分/稳定条件，§19要求先定观察与评审；SHADOW_MODEL_MINIMUM_PLAN明确首作用域、候选范围、方法参数和观察标准需先明确。文档没有具体指标/可知时点口径、概率校准目标、评分权重、状态阈值或观察长度，因此不能把它们自行填成已批准生产事实。
+
+推荐供决定的路径：C首先限定A股宽基环境这一研究作用域；D仅沿用现有医疗C份额、A500联接A两个独立比较范围；先研发可解释规则型影子方法，由工程侧提出完整指标、参数、入退/持续机制及回放/验证方案。没有校准前不把规则分数称作季节概率，未知数据不补齐。替代路径为先做统计概率模型研究，须另定状态标签、样本及校准目标，数据需求与周期更大。此项为重大研究方法/作用域选择，不批准参数生效、实际资格、投资阈值或任何v1.6变化；尚未得到该选择，继续独立安全修复。
+
+完整阶段尚需C实际状态/稳定机制，D评分/替换与既有历史研究基准映射适配，E完整证据适配/分级晋级/降级；不能用永久固定未满足项称阶段完成。当前修复不解决这些实质模型定义。明确路径后继续本阶段授权，无需重新批准普通开发；生产授权仍独立。
+
+独审修复专项最终结果：上述55项全部通过（248.95秒），Ruff全仓通过，mypy62文件通过，diff空白检查通过；保留既有Starlette测试客户端弃用警告。三项复现对应测试：test_review_dimension_values_must_satisfy_versioned_contract / test_review_undefined_contract_and_thin_candidate_evidence_never_pass；test_review_readiness_rejects_each_missing_shadow_table；test_review_paused_exact_observation_replay_is_readonly_and_conflicts_rejected。test_validator_version_does_not_reuse_legacy_coverage_receipt补回执版本隔离。准备推送本批精确SHA供独立复审，最终全量另跑，不宣称专项替代全量。

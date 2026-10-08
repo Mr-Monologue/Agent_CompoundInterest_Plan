@@ -35,6 +35,11 @@ def rig(tmp_path):
 
 
 def definition(kind="MACRO_REGIME", version="1.0.0", **kw):
+    slots = C_INPUTS if kind == "MACRO_REGIME" else D_INPUTS
+    kw.setdefault(
+        "input_contract",
+        {slot: [{"name": slot + "_fixture", "value_type": "NUMBER"}] for slot in slots},
+    )
     return ModelDefinition(
         model_key="synthetic-" + kind,
         version=version,
@@ -60,7 +65,11 @@ def source(service, *, scope="REGION:TEST", subject="CORE01", **kw):
             "publication_timezone": "Asia/Shanghai",
             "shadow_scope": scope,
             "shadow_subject": subject,
-            "values": {"fee": "1", "product_type": "INDEX"},
+            "values": {
+                "fee": "1",
+                "product_type": "INDEX",
+                **{slot + "_fixture": "1" for slot in C_INPUTS | D_INPUTS},
+            },
         },
     )
     values.update(kw)
@@ -351,7 +360,7 @@ def test_review_source_identity_and_malformed_time_are_limited(rig):
     model = service.register(definition("SATELLITE_RANKING"))
     request = complete(service, model, "SATELLITE_RANKING", instrument_code="SAT01")
     output = service.observe(request)["output"]
-    assert all("SOURCE_IDENTITY_MISMATCH" in x for x in output["rows"][0]["missing"])
+    assert any("SOURCE_IDENTITY_MISMATCH" in x for x in output["rows"][0]["missing"])
     # Generic evidence API permits arbitrary facts; malformed provenance must not
     # crash shadow evaluation or be treated as verified timing.
     for index, timestamp in enumerate((123, "2026-09-23T10:00:00", None)):
@@ -378,7 +387,7 @@ def test_review_source_identity_and_malformed_time_are_limited(rig):
         )["id"]
         inputs = [ShadowInput(slot=s, subject="CORE01", evidence_id=eid) for s in D_INPUTS]
         result = service.observe(observation(model, inputs, key=f"malformed-{index}"))["output"]
-        assert all("TIME_PROVENANCE_MISSING" in x for x in result["rows"][0]["missing"])
+        assert any("TIME_PROVENANCE_MISSING" in x for x in result["rows"][0]["missing"])
 
 
 def test_as_of_data_day_uses_archived_timezone(rig):
@@ -399,4 +408,130 @@ def test_missing_source_timezone_does_not_borrow_runtime_timezone(rig):
     )
     output = service.observe(request)["output"]
     assert output["status"] == "INSUFFICIENT_DATA"
-    assert all("TIME_PROVENANCE_MISSING" in x for x in output["rows"][0]["missing"])
+    assert any("TIME_PROVENANCE_MISSING" in x for x in output["rows"][0]["missing"])
+
+
+@pytest.mark.parametrize("bad", [None, "", " ", "NaN", True, [], "not-numeric"])
+def test_review_dimension_values_must_satisfy_versioned_contract(rig, bad):
+    _, _, service, _, _, _ = rig
+    contract = {s: [{"name": "value", "value_type": "NUMBER"}] for s in C_INPUTS}
+    model = service.register(definition(input_contract=contract))
+    request = complete(
+        service,
+        model,
+        facts={
+            "publication_timezone": "Asia/Shanghai",
+            "shadow_scope": "REGION:TEST",
+            "shadow_subject": "CORE01",
+            "values": {"value": bad},
+        },
+    )
+    record = service.observe(request)
+    assert record["output"]["status"] == "INSUFFICIENT_DATA"
+    assert len(record["output"]["rows"][0]["missing"]) == 5
+    assert not service.validate(model["id"], record["id"])["checks"]["input_coverage"]
+
+
+def test_review_undefined_contract_and_thin_candidate_evidence_never_pass(rig):
+    _, _, service, _, _, _ = rig
+    model = service.register(definition(input_contract={}))
+    record = service.observe(complete(service, model))
+    assert record["output"]["status"] == "INSUFFICIENT_DATA"
+    assert all("INPUT_CONTRACT_UNDEFINED" in x for x in record["output"]["rows"][0]["missing"])
+    candidate = service.register(
+        definition(
+            "SATELLITE_RANKING",
+            rules=[{"slot": "cost", "field": "fee", "operator": "MAX", "value": "2"}],
+        )
+    )
+    request = complete(
+        service,
+        candidate,
+        "SATELLITE_RANKING",
+        facts={
+            "publication_timezone": "Asia/Shanghai",
+            "shadow_scope": "REGION:TEST",
+            "shadow_subject": "CORE01",
+            "values": {"fee": "1", "product_type": "INDEX"},
+        },
+    )
+    request = request.model_copy(update={"idempotency_key": "thin-candidate"})
+    result = service.observe(request)["output"]
+    assert result["status"] == "INSUFFICIENT_DATA"
+    assert result["rows"][0]["filter_result"] == "UNKNOWN"
+    assert any("benchmark" in x for x in result["rows"][0]["missing"])
+    with pytest.raises(LedgerError, match="new model version"):
+        service.register(
+            definition(
+                input_contract={s: [{"name": "different", "value_type": "TEXT"}] for s in C_INPUTS}
+            )
+        )
+
+
+@pytest.mark.parametrize("table", ["shadow_models", "shadow_records"])
+def test_review_readiness_rejects_each_missing_shadow_table(rig, table):
+    import sqlite3
+
+    from investor_core.database import check_database
+
+    db, settings, _, _, _, _ = rig
+    with sqlite3.connect(db) as c:
+        c.execute('DROP TABLE "' + table + '"')  # table is from the fixed parametrization above.
+    check = next(c for c in check_database(settings) if c.name == "database-schema")
+    assert check.status == "FAIL" and table in check.message
+
+
+def test_review_paused_exact_observation_replay_is_readonly_and_conflicts_rejected(rig):
+    db, _, service, _, _, _ = rig
+    model = service.register(definition())
+    request = observation(model)
+    saved = service.observe(request)
+    draft = service.create_review(
+        ReviewRequest(
+            model_id=model["id"], target="OFF", reason="Synthetic pause", idempotency_key="pause"
+        )
+    )
+    service.confirm(
+        model["id"],
+        draft["id"],
+        ReviewConfirmation(
+            confirmation_token=draft["confirmation_token"], confirmed_by="synthetic-user"
+        ),
+    )
+    before = dump(db)
+    assert service.observe(request) == saved
+    assert dump(db) == before
+    with pytest.raises(LedgerError) as conflict:
+        service.observe(request.model_copy(update={"as_of": request.as_of - timedelta(hours=1)}))
+    assert conflict.value.code == "SHADOW_KEY_CONFLICT"
+    with pytest.raises(LedgerError) as paused:
+        service.observe(request.model_copy(update={"idempotency_key": "new"}))
+    assert paused.value.code == "SHADOW_PAUSED"
+    assert dump(db) == before
+
+
+def test_validator_version_does_not_reuse_legacy_coverage_receipt(rig):
+    from investor_core.scheduler import digest
+
+    _, _, service, _, _, _ = rig
+    model = service.register(definition())
+    observation_record = service.observe(observation(model))
+    with service.research._connect() as c:
+        legacy = service._append(
+            c,
+            model["id"],
+            "VALIDATION",
+            observation_record["id"],
+            {
+                "request_hash": digest(observation_record),
+                "observation_id": observation_record["id"],
+                "checks": {"input_coverage": True},
+                "result": "INSUFFICIENT_DATA",
+            },
+        )
+    current = service.validate(model["id"], observation_record["id"])
+    assert current["id"] != legacy["id"]
+    assert current["evaluator_version"] == "shadow-evidence-v2"
+    assert not current["checks"]["input_coverage"]
+    assert service.validate(model["id"], observation_record["id"]) == current
+    assert legacy in service.read(model["id"])["history"]

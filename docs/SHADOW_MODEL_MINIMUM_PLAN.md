@@ -43,9 +43,9 @@
 - POST `/v1/shadow-observations`：显式作用域、带时区as_of、subject列表与(slot,evidence_id,subject)引用。已有market_research_evidence原件完整快照、指纹和缺失同存；错模型作用域/未来观察拒绝，找不到证据或可知时间不足返回受限记录。
 - 证据应按既有SourceArchive归档。其facts包含shadow_scope、shadow_subject、publication_timezone（明确IANA来源时区）、values对象；C五维为valuation/fundamentals/liquidity/structure/price，D为identity/product/benchmark/cost/delay/limit。D还核对原归档基金身份，不以自填subject覆盖来源身份。仅OFFICIAL达到本版来源质量检查；不等于独立多源认证。
 - 日期精度发布时点保守取原件明确时区的发布日期末（缺来源时区保持未知，不猜测运行机器时区），与retrieved_at取较晚者；若晚于as_of则NOT_KNOWN_AS_OF。后采集旧资料不会自动冒充当时已知。错误/无时区/缺时点保留缺口；该规则可能阻断可事后重建的样本，应补时点证据而非倒填时间。
-- C只检查证据维度，不计算季节；dominant_season=UNKNOWN、probabilities=null。D仅运行定义中显式EQ/MIN/MAX硬过滤；缺数据UNKNOWN、未配规则NOT_CONFIGURED，数字使用Decimal且拒绝非有限值。规则是未批准研究提案，所有结果仍SCOPE_NOT_APPROVED，ranking=null，不形成投资资格。
-- POST `/v1/shadow-models/{id}/observations/{observation_id}/validate`：Core用保存快照确定性重放并核对指纹；不接受调用方自报PASS或指标。只验证工程重现及输入完整性；作用域批准、数值方法、稳定性、独立评审、样本外和成本/压力验证仍明确未完成。
+- C只检查证据维度，不计算季节；dominant_season=UNKNOWN、probabilities=null。模型定义的input_contract按维度列出必需字段与NUMBER/INTEGER/TEXT/BOOLEAN/DATE类型，随模型版本及参数指纹不可变；没有契约保持INPUT_CONTRACT_UNDEFINED，null/空字符串/占位文本/非有限数/类型错误不算完整。测试夹具契约不作为真实模型指标定义。D仅运行定义中显式EQ/MIN/MAX硬过滤；缺数据UNKNOWN、未配规则NOT_CONFIGURED，数字使用Decimal且拒绝非有限值。规则是未批准研究提案，所有结果仍SCOPE_NOT_APPROVED，ranking=null，不形成投资资格。
+- POST `/v1/shadow-models/{id}/observations/{observation_id}/validate`：Core用保存快照确定性重放并核对指纹；验证回执按evaluator_version分离，v2不会复用旧v1覆盖判断；不接受调用方自报PASS或指标。只验证工程重现及输入完整性；作用域批准、数值方法、稳定性、独立评审、样本外和成本/压力验证仍明确未完成。
 - GET `/v1/shadow-models/{id}/promotion-check?target=ADVISORY|ACTIVE|OFF|SHADOW`：返回当前状态、条件和阻断。当前ADVISORY/ACTIVE均不可通过；ACTIVE另阻断直接跨级、未接入策略和缺具体策略批准。
-- POST `/v1/shadow-reviews` 与 POST `/v1/shadow-models/{id}/reviews/{draft_id}/confirm`：仅可对OFF/SHADOW创建具体暂停/恢复审查草稿；短期token只在首次创建响应返回，持久化只存摘要，列表不泄露。明确确认时再次核对时效、状态、证据和模型版本；漂移/过期阻断。重复确认复用原结果；OFF阻断新观察，不删除历史。恢复SHADOW仍不改变生产策略。
+- POST `/v1/shadow-reviews` 与 POST `/v1/shadow-models/{id}/reviews/{draft_id}/confirm`：仅可对OFF/SHADOW创建具体暂停/恢复审查草稿；短期token只在首次创建响应返回，持久化只存摘要，列表不泄露。明确确认时再次核对时效、状态、证据和模型版本；漂移/过期阻断。重复确认复用原结果；OFF阻断新观察，但同事务内先核对幂等键/模型/请求指纹；完全相同的历史观察重放只返回原记录，冲突仍拒绝，不删除历史。恢复SHADOW仍不改变生产策略。
 
 上述为共用设施与安全边界，不是完整四季、卫星雷达或E晋级验证完成。数值定义/稳定机制/候选批准/样本外及独立评审仍以唯一清单跟踪，不能用API可调用代替真实证据。现行金额、风险与信号引擎不读取这些记录；仅独立新增0045两张表。
