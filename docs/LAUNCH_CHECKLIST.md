@@ -1114,3 +1114,19 @@ E完整SYNTHETIC扩展用例仍在运行：**session44134，PID19373**，命令`
 收尾另复现两项必须修复的门禁边界，见[失败复现](R11_FINAL_GATE_REPRODUCERS.txt)（2失败、34.54秒）及tests/test_r11_final_gates.py：①Core批准映射与输入声明相符，但可与实际用于A500评分的000510CNY010不同，应额外绑定实际评分身份及TOTAL_RETURN口径；②同一时刻同周修订，当前健康max(as_of,created_at)可能取首个旧失败记录，应按追加顺序选最新修订。同一测试随后还将核对原件删除按SOURCE_ARCHIVE_CHANGED降级，不能冒出异常中断健康评估。为保证当前长测试注册的代码指纹，未在其运行途中修改源码；这两项仍未修复，不能移为后置。
 
 **下一执行顺序（无需新授权）：**先轮询session44134并核验PID/日志；结束后保存完整E真实终态。然后集中修复以上门禁：A500实际评分映射一致；健康同周最后修订；缺失原件明确critical。相应更新合成A500夹具的映射identity（仍SYNTHETIC，不是实际批准），跑新复现及受影响测试，收敛后运行最终全量（其中含最新完整E）。原清单/报告同步并推送精确SHA供父对话独审。最终全量尚未启动；静态检查mypy86文件通过、wheel离线构建成功。CI仍未知，无合并/正式发布/部署/实际晋级/真实财务写入。本次结束回传只是父对话要求的跨线程检查点，不是工程结项或重新请求授权。
+
+### E完整扩展模拟真实终态（对应1e611a8业务源码）
+
+已回收session44134，退出0；PID19373不存在。准确结果：**1 passed、1既有警告、1506.26秒（25分06秒）**，见[完整生命周期日志](R11_COMPLETE_LIFECYCLE_REGRESSION.txt)。该运行验证初次ADVISORY具体确认、过期自动SHADOW、OFF、新SHADOW草稿、新增第14个合成周与新验证/回执、新ADVISORY确认、实际重算赢家四次翻转后连续两周稳定失败降级、新SHADOW草稿；真实域始终UNREGISTERED。全部SYNTHETIC和测试时钟，不能计真实F或真实晋级。
+
+终态仅覆盖1e611a8业务源码（0102ccd只补证据/测试）；其后两处已知门禁修复和原件缺失故障处理尚在定向回归，最新源码必须由随后最终全量覆盖。当前session31977、日志/tmp/r11-final-gates-regression.log，命令为`.venv/bin/pytest -o addopts='' tests/test_r11_final_gates.py tests/test_r11_core_bindings.py tests/test_r11_review_boundaries.py tests/test_r11_governance.py -q --tb=short`。定向运行中已有一个失败待完整断言，不宣称全绿；最终全量未启动。Ruff/mypy86文件、新wheel构建通过。下一步先解决该失败、提交门禁修复并核验远端，再启动一次最终全量（包含当前完整E）。
+
+### 收尾门禁修复完成自验，准备最终全量
+
+父对话独审0102ccd确认上轮两项P2（无效预热、月度发布）关闭；35轻量通过、2已知负例失败。新增P2为新映射版本批准后，健康检查只比较旧ID内容，未识别已批准替代。已将capture/changed共用newer_approval，健康核对当前时点的新批准版本：草稿不误报，批准后CORE_MAPPING_OR_ACCOUNT_CHANGED阻断并降级；旧快照仍确定性回放。当前账户归属/状态及保存映射原件漂移核对继续保留。
+
+另外两项自发现门禁已修复：A500精确绑定真正用于评分的000510CNY010/CNY/TOTAL_RETURN，不能只让输入声明和Core映射互相一致；同周同时间健康按最后追加修订选择，已覆盖先坏后好及先好后坏。原件缺失按明确critical处理，草稿/确认/健康均不因找不到原件而放过或中断。
+
+[首轮定向](R11_FINAL_GATE_INITIAL_REGRESSION.txt)13通过、1失败、214.67秒；唯一剩余失败是删除原件的隔离故障注入被SQLite外键保护拦截，同时间修订正向断言已通过。现仅在该临时测试连接关闭外键以模拟原件丢失，生产外键保护未改；加入反向修订和原生BenchmarkService版本2创建/具体确认测试。[最终四项门禁回归](R11_FINAL_GATE_REGRESSION.txt)**4通过、94.87秒、退出0**，session19727已结束。没有真实批准、实际晋级或财务写入；新增审批只发生于临时SYNTHETIC数据库。
+
+Ruff、mypy86源文件通过；完整E在1e611a8源码25分06秒通过的日志已保存。当前最终源码还须一次必要全量（包含最新完整E），不能沿用旧SHA替代。接下来保存/推送本精确修复提交供增量独审，然后运行`.venv/bin/pytest -o addopts='' -q --tb=short --maxfail=1 > /tmp/r11-final-full-regression.log 2>&1`；maxfail=1只在出现实际失败时提前返回，成功时仍执行全部已收集测试。运行session/PID及终态随后回写本清单，不能重复启动。

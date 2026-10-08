@@ -57,7 +57,9 @@ def core_mappings(service, codes=("022463", "022424")):
                 dict(
                     name="SYNTHETIC research path",
                     provider="SYNTHETIC",
-                    code="SYNTHETIC_PUBLISHED_PATH",
+                    code="000510CNY010"
+                    if code in {"022463", "022424"}
+                    else "SYNTHETIC_PUBLISHED_PATH",
                     currency="CNY",
                     return_basis="TOTAL_RETURN",
                     weight_bps=10000,

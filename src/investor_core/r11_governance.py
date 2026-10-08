@@ -331,13 +331,20 @@ class R11Governance:
                 ),
             )
 
+    def _archive_matches(self, c: Any, snapshot: dict[str, Any]) -> bool:
+        try:
+            return self.service._evidence(c, snapshot["id"]) == snapshot
+        except LedgerError:
+            # Missing originals are a safety failure, not an aborted assessment.
+            return False
+
     def _critical(self, c: Any, rows: list[dict[str, Any]]) -> list[str]:
         real = [
             r
             for r in rows
             if r["kind"] == "R11_OBSERVATION" and r["output"]["evidence_class"] == "F"
         ]
-        latest = max(real, key=lambda r: (r["output"]["as_of"], r["created_at"])) if real else None
+        latest = max(reversed(real), key=lambda r: r["output"]["as_of"]) if real else None
         critical = []
         if latest is None:
             critical.append("NO_REAL_FORWARD_OBSERVATION")
@@ -357,13 +364,13 @@ class R11Governance:
                 latest["evidence"]["bundle"],
                 *latest["evidence"]["sources"].values(),
             ]:
-                if self.service._evidence(c, archive["id"]) != archive:
+                if not self._archive_matches(c, archive):
                     critical.append("SOURCE_ARCHIVE_CHANGED")
             if output["method"] != "C":
                 from investor_core.r11_core_bindings import changed
 
                 bindings = latest["evidence"].get("core_bindings")
-                if not bindings or changed(c, bindings):
+                if not bindings or changed(c, bindings, self.research._now()):
                     critical.append("CORE_MAPPING_OR_ACCOUNT_CHANGED")
             # Replay is pure and reads its saved snapshots, with no writes.
             if self.service.replay_record(latest)["result"] != "PASS":
@@ -373,7 +380,7 @@ class R11Governance:
             critical.append("ENGINE_CHANGED")
         for receipt in [r for r in rows if r["kind"] == "R11_RECEIPT"]:
             for original in [receipt["original"], *receipt["artifacts"].values()]:
-                if self.service._evidence(c, original["id"]) != original:
+                if not self._archive_matches(c, original):
                     critical.append("REVIEW_EVIDENCE_INVALIDATED")
         return sorted(set(critical))
 
@@ -420,7 +427,7 @@ class R11Governance:
                     else:
                         latest = selected[-1]
                         for archive in [latest["original"], *latest["artifacts"].values()]:
-                            if self.service._evidence(c, archive["id"]) != archive:
+                            if not self._archive_matches(c, archive):
                                 blockers.append("REVIEW_ARTIFACT_CHANGED")
         return dict(
             current=mode,

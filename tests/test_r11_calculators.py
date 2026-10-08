@@ -135,7 +135,9 @@ def candidates(cohort="MEDICAL", cutoff=date(2026, 10, 10)):
                 dividend_coverage_to=days[-1],
                 dividends=[],
                 benchmark_mapping_source="official",
-                benchmark_identity="SYNTHETIC_PUBLISHED_PATH",
+                benchmark_identity="000510CNY010"
+                if cohort == "A500"
+                else "SYNTHETIC_PUBLISHED_PATH",
                 benchmark_currency="CNY",
                 benchmark_return_basis="TOTAL_RETURN",
                 benchmark_effective_from=days[0],

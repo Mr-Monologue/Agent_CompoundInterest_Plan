@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from investor_core.r11_candidates import CandidateInput
 from investor_core.scheduler import instant
+
+
+def newer_approval(c: Any, mapping: dict[str, Any], as_of: datetime) -> bool:
+    rows = c.execute(
+        "SELECT payload_json FROM research_benchmark_mappings "
+        "WHERE portfolio_id=? AND instrument_code=? AND version>?",
+        (mapping["portfolio_id"], mapping["instrument_code"], mapping["version"]),
+    ).fetchall()
+    return any(
+        value.get("status") == "APPROVED_RESEARCH"
+        and value.get("confirmed_at")
+        and instant(value["confirmed_at"]) <= as_of
+        for value in (json.loads(row[0]) for row in rows)
+    )
 
 
 def capture(
@@ -25,6 +40,14 @@ def capture(
     mappings = {}
     for product in data.products:
         blockers = []
+        if data.cohort == "A500" and (
+            data.benchmark is None
+            or product.benchmark_identity != data.benchmark.identity
+            or product.benchmark_identity != "000510CNY010"
+            or product.benchmark_return_basis != "TOTAL_RETURN"
+            or product.benchmark_currency != "CNY"
+        ):
+            blockers.append("MAPPING_DIFFERS_FROM_SCORED_BENCHMARK")
         row = c.execute(
             "SELECT payload_json FROM research_benchmark_mappings WHERE id=?",
             (mapping_ids.get(product.code),),
@@ -42,17 +65,7 @@ def capture(
                 and instant(value["confirmed_at"]) > data.context.as_of
             ):
                 blockers.append("MAPPING_APPROVAL_AFTER_CUTOFF")
-            newer = c.execute(
-                "SELECT payload_json FROM research_benchmark_mappings "
-                "WHERE portfolio_id=? AND instrument_code=? AND version>?",
-                (portfolio_id, product.code, value["version"]),
-            ).fetchall()
-            if any(
-                v.get("status") == "APPROVED_RESEARCH"
-                and v.get("confirmed_at")
-                and instant(v["confirmed_at"]) <= data.context.as_of
-                for v in (json.loads(r[0]) for r in newer)
-            ):
+            if newer_approval(c, value, data.context.as_of):
                 blockers.append("MAPPING_VERSION_SUPERSEDED")
             # A composite contract benchmark is not an exact single-index research mapping.
             for point in product.nav.points:
@@ -127,7 +140,7 @@ def apply(output: dict[str, Any], bindings: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
-def changed(c: Any, bindings: dict[str, Any]) -> bool:
+def changed(c: Any, bindings: dict[str, Any], now: datetime) -> bool:
     """Current approval/entity drift blocks new advice without rewriting saved runs."""
     for mapping in bindings["mappings"].values():
         old = mapping["snapshot"]
@@ -139,7 +152,7 @@ def changed(c: Any, bindings: dict[str, Any]) -> bool:
         current = json.loads(row[0]) if row else {}
         current.pop("confirmation_digest", None)
         current.pop("confirmation_token", None)
-        if current != old:
+        if current != old or newer_approval(c, old, now):
             return True
     account = bindings.get("account")
     if account:
