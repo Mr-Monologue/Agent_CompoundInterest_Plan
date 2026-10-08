@@ -114,9 +114,14 @@ def register_shadow_routes(app: FastAPI, research: ResearchService) -> None:
         method: Literal["C", "MEDICAL", "A500"],
         target: Literal["OFF", "SHADOW", "ADVISORY", "ACTIVE"] = "ADVISORY",
         validation_id: str | None = None,
+        dataset_kind: Literal["REAL", "SYNTHETIC"] = "REAL",
     ) -> dict[str, Any]:
-        return response(governance.gate(method, target, validation_id))
+        return response(governance.gate(method, target, validation_id, dataset_kind))
 
     @app.post("/v1/r11/{method}/assess")
-    def r11_assess(method: Literal["C", "MEDICAL", "A500"], idempotency_key: str) -> dict[str, Any]:
-        return response(governance.assess(method, idempotency_key))
+    def r11_assess(
+        method: Literal["C", "MEDICAL", "A500"],
+        idempotency_key: str,
+        dataset_kind: Literal["REAL", "SYNTHETIC"] = "REAL",
+    ) -> dict[str, Any]:
+        return response(governance.assess(method, idempotency_key, dataset_kind))

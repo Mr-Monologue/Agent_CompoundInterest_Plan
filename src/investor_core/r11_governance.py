@@ -18,7 +18,7 @@ from pydantic import Field
 
 from investor_core.execution import StrictModel
 from investor_core.ledger import LedgerError
-from investor_core.r11_inputs import DEFINITION, TZ
+from investor_core.r11_inputs import DEFINITION, MODEL_VERSION, TZ
 from investor_core.r11_receipts import verify_artifacts
 from investor_core.r11_rules import registry
 from investor_core.r11_sensitivity import baseline_sets, sensitivity, stress_diagnostics
@@ -55,6 +55,7 @@ class ReceiptRequest(StrictModel):
 
 
 class Receipt(StrictModel):
+    dataset_kind: Literal["REAL", "SYNTHETIC"] = "REAL"
     receipt_type: Literal["ENGINEERING", "INDEPENDENT_REVIEW"]
     report_hash: str
     engine_hash: str
@@ -70,6 +71,7 @@ class Receipt(StrictModel):
 
 
 class GovernanceDraft(StrictModel):
+    dataset_kind: Literal["REAL", "SYNTHETIC"] = "REAL"
     method: Literal["C", "MEDICAL", "A500"]
     target: Literal["OFF", "SHADOW", "ADVISORY"]
     validation_id: str | None = None
@@ -88,8 +90,8 @@ class R11Governance:
         self.research = service.research
         self.shadow = service.shadow
 
-    def _model(self, method: str) -> dict[str, Any]:
-        return self.shadow.register(self.service.definition(method))
+    def _model(self, method: str, dataset_kind: str = "REAL") -> dict[str, Any]:
+        return self.shadow.register(self.service.definition(method, dataset_kind))
 
     def _find(self, connection: Any, record_id: str, kind: str) -> dict[str, Any]:
         row = connection.execute(
@@ -103,7 +105,7 @@ class R11Governance:
         return value
 
     def register(self, request: RegistrationRequest) -> dict[str, Any]:
-        model = self._model(request.window.method)
+        model = self._model(request.window.method, request.window.dataset_kind)
         body = request.model_dump(mode="json")
         with self.research._connect() as c:
             c.execute("BEGIN IMMEDIATE")
@@ -143,10 +145,12 @@ class R11Governance:
         window = ValidationWindow.model_validate(registration["window"])
         if self.research._now() < datetime.combine(window.forward_end, time(12), TZ):
             raise LedgerError("R11_FORWARD_PERIOD_IN_PROGRESS", "No accelerated future validation")
-        runs = self.service.runs(window.method)
-        replays = {
-            r["id"]: self.service.replay(window.method, r["id"])["result"] == "PASS" for r in runs
-        }
+        runs = [
+            r
+            for r in self.service.runs(window.method, current_version=True)
+            if r["output"]["dataset_kind"] == window.dataset_kind
+        ]
+        replays = {r["id"]: self.service.replay_record(r)["result"] == "PASS" for r in runs}
         summary = evidence_summary(window, runs, replays)
         summary["not_assessed_by_this_preview"] = []
         summary["pending_external_evidence"] = ["INDEPENDENT_REVIEW", "ENGINEERING"]
@@ -158,7 +162,7 @@ class R11Governance:
             r
             for r in runs
             if r["output"]["evidence_class"] == "F"
-            and r["output"]["dataset_kind"] == "REAL"
+            and r["output"]["dataset_kind"] == window.dataset_kind
             and str(window.forward_start) <= r["output"]["as_of"][:10] <= str(window.forward_end)
         ]
         extra = dict(
@@ -168,7 +172,7 @@ class R11Governance:
             exact_observation_engine=all(
                 r.get("engine_hash") == engine_hash()
                 for r in runs
-                if r["output"]["dataset_kind"] == "REAL"
+                if r["output"]["dataset_kind"] == window.dataset_kind
             ),
             forward_capture_after_registration=all(
                 instant(r["evidence"]["bundle"]["created_at"])
@@ -186,6 +190,8 @@ class R11Governance:
             sensitivity=diagnostics,
             stress=stress,
             method=window.method,
+            dataset_kind=window.dataset_kind,
+            simulation_only=window.dataset_kind == "SYNTHETIC",
             registration_id=registration["id"],
             engine_hash=engine_hash(),
             definition_hash=digest(DEFINITION),
@@ -195,7 +201,7 @@ class R11Governance:
                 r["id"]
                 for r in runs
                 if r["output"]["evidence_class"] == "H"
-                and r["output"]["dataset_kind"] == "REAL"
+                and r["output"]["dataset_kind"] == window.dataset_kind
                 and str(window.history_start)
                 <= r["output"]["as_of"][:10]
                 <= str(window.history_end)
@@ -242,7 +248,8 @@ class R11Governance:
             receipt, original = self._receipt(c, request.evidence_id)
             report = validation["report"]
             if (
-                receipt.report_hash != validation["report_hash"]
+                receipt.dataset_kind != report.get("dataset_kind", "REAL")
+                or receipt.report_hash != validation["report_hash"]
                 or receipt.engine_hash != report["engine_hash"]
                 or receipt.definition_hash != report["definition_hash"]
                 or receipt.reviewer.strip().casefold() == receipt.implementer.strip().casefold()
@@ -288,7 +295,7 @@ class R11Governance:
                 receipt.model_dump(mode="json"),
                 report,
                 artifacts,
-                self.service.runs(report["method"]),
+                self.service.runs(report["method"], current_version=True),
                 lambda eid: self.service._evidence(c, eid),
             )
             return self.shadow._append(
@@ -310,6 +317,8 @@ class R11Governance:
         self, c: Any, model_id: str, target: str, validation_id: str | None
     ) -> dict[str, Any]:
         rows = self.shadow._rows(c, model_id)
+        definition = self.shadow._model(c, model_id)["definition"]
+        simulation = definition["model_key"].startswith("r11-simulation-")
         events = [r for r in rows if r["kind"] == "REVIEW_CONFIRMATION"]
         mode = events[-1]["target"] if events else "SHADOW"
         blockers = []
@@ -358,13 +367,20 @@ class R11Governance:
             ),
             money_action=False,
             active_reachable=False,
+            simulation_only=simulation,
+            dataset_kind="SYNTHETIC" if simulation else "REAL",
         )
 
-    def gate(self, method: str, target: str, validation_id: str | None = None) -> dict[str, Any]:
+    def gate(
+        self, method: str, target: str, validation_id: str | None = None, dataset_kind: str = "REAL"
+    ) -> dict[str, Any]:
         with self.research._connect() as c:
             row = c.execute(
                 "SELECT payload_json FROM shadow_models WHERE model_key=? AND version=?",
-                ("r11-" + method.lower(), "1.0.0"),
+                (
+                    ("r11-simulation-" if dataset_kind == "SYNTHETIC" else "r11-") + method.lower(),
+                    MODEL_VERSION,
+                ),
             ).fetchone()
             if row is None:
                 return dict(
@@ -378,7 +394,7 @@ class R11Governance:
             return self._gate(c, json.loads(row[0])["id"], target, validation_id)
 
     def draft(self, request: GovernanceDraft) -> dict[str, Any]:
-        model = self._model(request.method)
+        model = self._model(request.method, request.dataset_kind)
         with self.research._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             gate = self._gate(c, model["id"], request.target, request.validation_id)
@@ -449,14 +465,18 @@ class R11Governance:
                     confirmed_by=request.confirmed_by,
                     created_at=stamp(self.research._now()),
                     financial_mutation=False,
+                    dataset_kind=body["dataset_kind"],
+                    simulation_only=body["dataset_kind"] == "SYNTHETIC",
                 ),
             )
 
-    def assess(self, method: str, idempotency_key: str) -> dict[str, Any]:
+    def assess(
+        self, method: str, idempotency_key: str, dataset_kind: str = "REAL"
+    ) -> dict[str, Any]:
         """Discover stale/damaged evidence and downgrade research display only."""
         from investor_core.r11_validation import _switches
 
-        model = self._model(method)
+        model = self._model(method, dataset_kind)
         with self.research._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             rows = self.shadow._rows(c, model["id"])
@@ -466,7 +486,7 @@ class R11Governance:
                 r
                 for r in rows
                 if r["kind"] == "R11_OBSERVATION"
-                and r["output"]["dataset_kind"] == "REAL"
+                and r["output"]["dataset_kind"] == dataset_kind
                 and r["output"]["evidence_class"] == "F"
             ]
             latest = real[-1] if real else None

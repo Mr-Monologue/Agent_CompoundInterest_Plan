@@ -18,8 +18,6 @@ from investor_core.scheduler import digest
 
 DEFINITION = json.loads(files("investor_core").joinpath("r11_definition.json").read_text())
 VERSION = DEFINITION["definition_id"]
-MODEL_VERSION = "1.0.1"
-COMPUTATION_VERSION = "r11-rules-v3"
 TZ = ZoneInfo("Asia/Shanghai")
 D = Decimal
 Json = dict[str, Any]
@@ -222,7 +220,7 @@ def base_output(ctx: Context, inputs: StrictModel, method: str) -> Json:
     body = inputs.model_dump(mode="json")
     return dict(
         definition_id=VERSION,
-        computation_version=COMPUTATION_VERSION,
+        computation_version="r11-rules-v2",
         definition_source=DEFINITION,
         method=method,
         as_of=ctx.as_of.isoformat(),

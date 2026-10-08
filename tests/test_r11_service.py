@@ -13,6 +13,9 @@ from test_r11_calculators import candidates, macro
 from investor_core.api.app import create_app
 from investor_core.execution import ExecutionService, SourceArchive
 from investor_core.ledger import LedgerError
+from investor_core.r11_candidates import CandidateInput
+from investor_core.r11_macro import MacroInput
+from investor_core.r11_provenance import leaves
 from investor_core.r11_service import R11Request, R11Service
 from investor_core.research import ResearchService
 from investor_core.shadow_models import ReviewConfirmation, ReviewRequest
@@ -28,9 +31,30 @@ def isolated(tmp_path):
 
 
 def archive_bundle(service, data, key="bundle"):
+    normalized = (
+        MacroInput.model_validate(data) if "pb" in data else CandidateInput.model_validate(data)
+    ).model_dump(mode="json")
+    if "products" in normalized:
+        for product in normalized["products"]:
+            product["nav"]["points"] = product["nav"]["points"][-300:]
+            product["calendar"]["dates"] = product["calendar"]["dates"][-300:]
+            product["calendar"]["covered_from"] = product["calendar"]["dates"][0]
+        if normalized["benchmark"]:
+            normalized["benchmark"]["points"] = normalized["benchmark"]["points"][-300:]
+            normalized["benchmark_calendar"]["dates"] = normalized["benchmark_calendar"]["dates"][
+                -300:
+            ]
+            normalized["benchmark_calendar"]["covered_from"] = normalized["benchmark_calendar"][
+                "dates"
+            ][0]
+    data.clear()
+    data.update(normalized)
     src = data["context"]["sources"]["official"]
     archive = ExecutionService(service.research)
-    original = json.dumps({"publication": src["published_at"]})
+    values = leaves(data)
+    original = json.dumps(
+        {"publication": src["published_at"], "values": list(values.values())}, separators=(",", ":")
+    )
     src["document_hash"] = hashlib.sha256(original.encode()).hexdigest()
     args = dict(
         instrument_code="CORE01",
@@ -54,7 +78,16 @@ def archive_bundle(service, data, key="bundle"):
     )
     source = archive.archive(SourceArchive.model_validate(args))
     src["archive_id"] = source["id"]
-    args.update(source_ref="https://example.test/" + key, facts={"r11_input": data})
+    args.update(
+        source_ref="https://example.test/" + key,
+        facts={
+            "r11_input": data,
+            "r11_bindings": {
+                path: {"source": "official", "pointer": f"/values/{i}"}
+                for i, path in enumerate(values)
+            },
+        },
+    )
     return archive.archive(SourceArchive.model_validate(args))["id"]
 
 

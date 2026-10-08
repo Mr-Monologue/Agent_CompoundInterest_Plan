@@ -51,7 +51,7 @@ def verify_artifacts(
         if (
             value.get("artifact_type") != name
             or value.get("engine_hash") != report["engine_hash"]
-            or value.get("dataset_kind") != "REAL"
+            or value.get("dataset_kind") != report.get("dataset_kind", "REAL")
             or value.get("result") != "PASS"
         ):
             raise LedgerError(
@@ -152,6 +152,8 @@ def verify_artifacts(
                 "Different URLs alone are not independent origins",
             )
         fields = pair.get("fields", {})
+        if fields == "IDENTICAL_POINTERS":
+            fields = {path: path for path in required[primary["id"]]}
         if not isinstance(fields, dict) or set(fields) != required[primary["id"]]:
             raise LedgerError(
                 "R11_INDEPENDENT_VALUE_COVERAGE",

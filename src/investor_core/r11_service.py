@@ -11,9 +11,10 @@ from pydantic import Field, ValidationError, model_validator
 from investor_core.execution import StrictModel
 from investor_core.ledger import LedgerError
 from investor_core.r11_candidates import CandidateInput, calculate_candidates
-from investor_core.r11_inputs import DEFINITION, VERSION
-from investor_core.r11_macro import MacroInput, calculate_macro
+from investor_core.r11_inputs import COMPUTATION_VERSION, DEFINITION, MODEL_VERSION, VERSION
+from investor_core.r11_macro import MacroInput, calculate_macro, stable_state
 from investor_core.r11_provenance import publication_matches, reconcile
+from investor_core.r11_rules import rules
 from investor_core.research import ResearchService
 from investor_core.scheduler import digest, stamp
 from investor_core.shadow_models import ModelDefinition, ShadowService
@@ -45,17 +46,23 @@ class R11Service:
         self.shadow = ShadowService(research)
 
     @staticmethod
-    def definition(method: str) -> ModelDefinition:
+    def definition(method: str, dataset_kind: str = "REAL") -> ModelDefinition:
         return ModelDefinition(
-            model_key="r11-" + method.lower(),
-            version="1.0.0",
+            model_key=("r11-simulation-" if dataset_kind == "SYNTHETIC" else "r11-")
+            + method.lower(),
+            version=MODEL_VERSION,
             model_type="MACRO_REGIME" if method == "C" else "SATELLITE_RANKING",
             scope={
                 "C": "REGION:CN_A_BROAD",
                 "MEDICAL": "SECTOR:CN_MEDICAL_C",
                 "A500": "STYLE:CN_A500_FEEDER_A",
             }[method],
-            rationale=json.dumps(DEFINITION, sort_keys=True),
+            rationale=json.dumps(
+                dict(
+                    DEFINITION, dataset_kind=dataset_kind, computation_version=COMPUTATION_VERSION
+                ),
+                sort_keys=True,
+            ),
         )
 
     @staticmethod
@@ -142,21 +149,52 @@ class R11Service:
         )
         return data, dict(bundle=bundle, sources=snapshots, extraction=extraction)
 
-    def runs(self, method: str) -> list[dict[str, Any]]:
+    def runs(self, method: str, *, current_version: bool = False) -> list[dict[str, Any]]:
         with self.research._connect() as c:
             rows = c.execute(
-                "SELECT payload_json FROM shadow_models WHERE model_key=? AND version=?",
-                ("r11-" + method.lower(), "1.0.0"),
-            ).fetchone()
-            if not rows:
-                return []
-            model = json.loads(rows[0])
-            return [r for r in self.shadow._rows(c, model["id"]) if r["kind"] == "R11_OBSERVATION"]
+                "SELECT r.payload_json FROM shadow_records r "
+                "JOIN shadow_models m ON m.id=r.model_id "
+                "WHERE m.model_key IN (?,?) AND (? IS NULL OR m.version=?) "
+                "AND r.kind=? ORDER BY r.rowid",
+                (
+                    "r11-" + method.lower(),
+                    "r11-simulation-" + method.lower(),
+                    MODEL_VERSION if current_version else None,
+                    MODEL_VERSION,
+                    "R11_OBSERVATION",
+                ),
+            ).fetchall()
+            return [json.loads(r[0]) for r in rows]
 
     def observe(self, request: R11Request) -> dict[str, Any]:
         # Explicit caller request creates research metadata only. No production
         # configuration, models, accounts, strategy or scheduler registration.
-        model = self.shadow.register(self.definition(request.method))
+        body = request.model_dump(mode="json")
+        with self.research._connect() as c:
+            old = c.execute(
+                "SELECT payload_json FROM shadow_records WHERE request_key=?",
+                ("R11_OBSERVATION:" + request.idempotency_key,),
+            ).fetchone()
+            if old:
+                saved = json.loads(old[0])
+                if saved["request_hash"] != digest(body):
+                    raise LedgerError(
+                        "SHADOW_KEY_CONFLICT", "Same key has different immutable input"
+                    )
+                return saved  # type: ignore[no-any-return]
+            bundle = self._evidence(c, request.bundle_evidence_id)
+            dataset = (
+                json.loads(bundle["facts_json"])
+                .get("facts", {})
+                .get("r11_input", {})
+                .get("context", {})
+                .get("dataset_kind")
+            )
+        if dataset not in {"REAL", "SYNTHETIC"}:
+            raise LedgerError(
+                "R11_DATASET_KIND_MISSING", "Explicit real or synthetic dataset required"
+            )
+        model = self.shadow.register(self.definition(request.method, dataset))
         body = request.model_dump(mode="json")
         with self.research._connect() as c:
             c.execute("BEGIN IMMEDIATE")
@@ -206,13 +244,30 @@ class R11Service:
                 raise LedgerError(
                     "R11_OUT_OF_ORDER", "Replay a separate history, do not rewrite later states"
                 )
-            history = [r["output"] for r in prior if r not in same_week]
+            prior = [r for r in prior if r not in same_week]
+            state_fields = {
+                "definition_id",
+                "method",
+                "evidence_class",
+                "dataset_kind",
+                "computation_version",
+                "as_of",
+                "last_stable",
+                "stable_since",
+                "pending_season",
+                "pending_weeks",
+                "window_end",
+                "leader",
+                "leading_weeks",
+                "leading_score_history",
+            }
+            history = [{k: v for k, v in r["output"].items() if k in state_fields} for r in prior]
             output = (
                 calculate_macro(data, history)
                 if isinstance(data, MacroInput)
                 else calculate_candidates(data, history)
             )
-            output = self._apply_extraction(output, evidence["extraction"])
+            output = self._apply_extraction(output, evidence["extraction"], history)
             from investor_core.r11_governance import engine_hash
 
             saved = self.shadow._append(
@@ -231,6 +286,7 @@ class R11Service:
                     evidence=evidence,
                     evidence_hash=digest(evidence),
                     previous_outputs=history,
+                    previous_run_hashes={r["id"]: r["output_hash"] for r in prior},
                     output=output,
                     output_hash=digest(output),
                     created_at=stamp(self.research._now()),
@@ -246,21 +302,48 @@ class R11Service:
         return saved
 
     @staticmethod
-    def _apply_extraction(output: dict[str, Any], extraction: dict[str, Any]) -> dict[str, Any]:
+    def _apply_extraction(
+        output: dict[str, Any], extraction: dict[str, Any], history: list[dict[str, Any]]
+    ) -> dict[str, Any]:
         output["extraction"] = extraction
-        if output["dataset_kind"] == "REAL" and extraction["status"] != "MATCHED":
+        if extraction["status"] != "MATCHED":
             output["gaps"] = sorted(set(output["gaps"] + ["SOURCE_VALUE_BINDING_UNVERIFIED"]))
             output["status"] = "INSUFFICIENT_DATA"
             if output["method"] == "C":
-                output.update(dominant_season="UNKNOWN", pending_season=None, pending_weeks=0)
+                output["candidate_season"] = "UNKNOWN"
+                output.update(stable_state(output, history, rules("C")))
             else:
-                output.update(leader=None, leading_weeks=0, replacement="BLOCKED")
+                output.update(
+                    leader=None, leading_weeks=0, leading_score_history=[], replacement="BLOCKED"
+                )
+                output["replacement_blockers"] = sorted(
+                    set(output["replacement_blockers"] + ["SOURCE_VALUE_BINDING_UNVERIFIED"])
+                )
+                for row in output["rows"]:
+                    row["rank"] = None
         return output
 
     def replay(self, method: str, run_id: str) -> dict[str, Any]:
-        run = next((r for r in self.runs(method) if r["id"] == run_id), None)
-        if run is None:
+        with self.research._connect() as c:
+            row = c.execute(
+                "SELECT r.payload_json FROM shadow_records r "
+                "JOIN shadow_models m ON m.id=r.model_id WHERE r.id=? AND r.kind=? "
+                "AND m.model_key IN (?,?)",
+                (
+                    run_id,
+                    "R11_OBSERVATION",
+                    "r11-" + method.lower(),
+                    "r11-simulation-" + method.lower(),
+                ),
+            ).fetchone()
+        if row is None:
             raise LedgerError("R11_RUN_MISSING", "Unknown research run")
+        return self.replay_record(json.loads(row[0]))
+
+    @staticmethod
+    def replay_record(run: dict[str, Any]) -> dict[str, Any]:
+        method = run["output"]["method"]
+        run_id = run["id"]
         if run["output"].get("computation_version") == "r11-rules-v1":
             from investor_core.r11_legacy.candidates import (
                 CandidateInput as OldCandidateInput,
@@ -278,6 +361,19 @@ class R11Service:
                     OldCandidateInput.model_validate(run["input"]), run["previous_outputs"]
                 )
             )
+        elif run["output"].get("computation_version") == "r11-rules-v2":
+            from investor_core.r11_legacy.v2.candidates import CandidateInput as V2Candidate
+            from investor_core.r11_legacy.v2.candidates import calculate_candidates as v2_candidates
+            from investor_core.r11_legacy.v2.macro import MacroInput as V2Macro
+            from investor_core.r11_legacy.v2.macro import calculate_macro as v2_macro
+
+            replay = (
+                v2_macro(V2Macro.model_validate(run["input"]), run["previous_outputs"])
+                if method == "C"
+                else v2_candidates(
+                    V2Candidate.model_validate(run["input"]), run["previous_outputs"]
+                )
+            )
         elif method == "C":
             replay = calculate_macro(
                 MacroInput.model_validate(run["input"]), run["previous_outputs"]
@@ -293,8 +389,27 @@ class R11Service:
             .get("facts", {})
             .get("r11_bindings", {}),
         )
-        if run["output"].get("computation_version") != "r11-rules-v1":
-            replay = self._apply_extraction(replay, extraction)
+        version = run["output"].get("computation_version")
+        if version == "r11-rules-v2":
+            from investor_core.r11_legacy.v2.provenance import reconcile as v2_reconcile
+
+            extraction = v2_reconcile(
+                run["input"],
+                run["evidence"]["sources"],
+                json.loads(run["evidence"]["bundle"]["facts_json"])
+                .get("facts", {})
+                .get("r11_bindings", {}),
+            )
+            replay["extraction"] = extraction
+            if replay["dataset_kind"] == "REAL" and extraction["status"] != "MATCHED":
+                replay["gaps"] = sorted(set(replay["gaps"] + ["SOURCE_VALUE_BINDING_UNVERIFIED"]))
+                replay["status"] = "INSUFFICIENT_DATA"
+                if method == "C":
+                    replay.update(dominant_season="UNKNOWN", pending_season=None, pending_weeks=0)
+                else:
+                    replay.update(leader=None, leading_weeks=0, replacement="BLOCKED")
+        elif version != "r11-rules-v1":
+            replay = R11Service._apply_extraction(replay, extraction, run["previous_outputs"])
         checks = dict(
             definition=run["definition_hash"] == digest(DEFINITION),
             evidence=run["evidence_hash"] == digest(run["evidence"]),
@@ -306,5 +421,7 @@ class R11Service:
             checks=checks,
             result="PASS" if all(checks.values()) else "FAIL",
             money_action=False,
+            historical_evaluator=version != "r11-rules-v3",
+            qualifies_current_version=version == "r11-rules-v3",
             actual_promotion_authorized=False,
         )

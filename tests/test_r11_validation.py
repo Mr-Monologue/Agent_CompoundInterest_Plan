@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from test_r11_calculators import fixture_context
 
-from investor_core.r11_inputs import VERSION
+from investor_core.r11_inputs import COMPUTATION_VERSION, VERSION
 from investor_core.r11_validation import ValidationWindow, evidence_summary, weeks
 
 
@@ -13,6 +13,7 @@ def setup(method="A500"):
     count = 104 if method == "C" else 52
     window = ValidationWindow(
         method=method,
+        dataset_kind="SYNTHETIC",
         history_start=forward - timedelta(weeks=count),
         history_end=forward - timedelta(weeks=1),
         forward_start=forward,
@@ -29,7 +30,8 @@ def setup(method="A500"):
                     id=f"{kind}-{i}",
                     output=dict(
                         definition_id=VERSION,
-                        dataset_kind="REAL",
+                        computation_version=COMPUTATION_VERSION,
+                        dataset_kind="SYNTHETIC",
                         evidence_class=kind,
                         method=method,
                         as_of=f"{day}T12:00:00+08:00",
@@ -82,6 +84,7 @@ def test_missing_week_remains_denominator_twelve_of_thirteen_fails_d():
 
 def test_synthetic_or_wrong_model_never_contributes():
     window, runs, checks = setup()
+    window = window.model_copy(update={"dataset_kind": "REAL"})
     for row in runs:
         row["output"]["dataset_kind"] = "SYNTHETIC"
     result = evidence_summary(window, runs, checks)
@@ -89,7 +92,7 @@ def test_synthetic_or_wrong_model_never_contributes():
     assert result["history"]["valid_weeks"] == 0
     assert result["robustness_eligible"] == {"H": 0, "F": 0}
     for row in runs:
-        row["output"]["dataset_kind"] = "REAL"
+        row["output"]["dataset_kind"] = "SYNTHETIC"
         row["output"]["method"] = "MEDICAL"
     assert evidence_summary(window, runs, checks)["history"]["valid_weeks"] == 0
 

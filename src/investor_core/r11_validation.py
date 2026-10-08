@@ -10,11 +10,12 @@ from typing import Any, Literal
 from pydantic import model_validator
 
 from investor_core.execution import StrictModel
-from investor_core.r11_inputs import TZ, VERSION, Source
+from investor_core.r11_inputs import COMPUTATION_VERSION, TZ, VERSION, Source
 
 
 class ValidationWindow(StrictModel):
     method: Literal["C", "MEDICAL", "A500"]
+    dataset_kind: Literal["REAL", "SYNTHETIC"] = "REAL"
     history_start: date
     history_end: date
     forward_start: date
@@ -36,13 +37,16 @@ def weeks(start: date, end: date) -> list[date]:
     return [start + timedelta(weeks=i) for i in range((end - start).days // 7 + 1)]
 
 
-def _selection(runs: list[dict[str, Any]], method: str, kind: str) -> dict[date, dict[str, Any]]:
+def _selection(
+    runs: list[dict[str, Any]], method: str, kind: str, dataset_kind: str = "REAL"
+) -> dict[date, dict[str, Any]]:
     selected = {}
     for record in runs:
         row = record["output"]
         if (
             row.get("definition_id") == VERSION
-            and row.get("dataset_kind") == "REAL"
+            and row.get("computation_version") == COMPUTATION_VERSION
+            and row.get("dataset_kind") == dataset_kind
             and row.get("evidence_class") == kind
             and row.get("method") == method
         ):
@@ -78,8 +82,8 @@ def evidence_summary(
 ) -> dict[str, Any]:
     history_days = weeks(window.history_start, window.history_end)
     forward_days = weeks(window.forward_start, window.forward_end)
-    historical = _selection(runs, window.method, "H")
-    forward = _selection(runs, window.method, "F")
+    historical = _selection(runs, window.method, "H", window.dataset_kind)
+    forward = _selection(runs, window.method, "F", window.dataset_kind)
     h = _coverage(history_days, historical)
     f = _coverage(forward_days, forward)
     required_history = 104 if window.method == "C" else 52
@@ -96,7 +100,7 @@ def evidence_summary(
             for r in runs
             if r["output"].get("definition_id") == VERSION
             and r["output"].get("method") == window.method
-            and r["output"].get("dataset_kind") == "REAL"
+            and r["output"].get("dataset_kind") == window.dataset_kind
             and r["output"].get("evidence_class") in {"F", "K"}
         ),
     )
@@ -171,6 +175,8 @@ def evidence_summary(
     return dict(
         definition_id=VERSION,
         method=window.method,
+        dataset_kind=window.dataset_kind,
+        simulation_only=window.dataset_kind == "SYNTHETIC",
         history=h,
         forward=f,
         robustness_eligible=eligible_counts,

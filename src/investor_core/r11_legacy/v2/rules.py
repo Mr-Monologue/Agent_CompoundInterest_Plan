@@ -99,26 +99,6 @@ def _scenarios(method: str) -> dict[str, dict[str, Any]]:
     return result
 
 
-def stress_spec(method: str) -> dict[str, list[str]]:
-    common = {
-        "SOURCE_OUTAGE": ["no_financial_action", "must_be_incomplete"],
-        "SOURCE_REVISION": [
-            "no_financial_action",
-            "input_changed",
-            "baseline_preserved",
-            "repeat_deterministic",
-            "single_cutoff_count",
-        ],
-        "IDENTITY_CHANGE": ["no_financial_action", "must_be_incomplete"],
-    }
-    if method != "C":
-        common.update(
-            DOUBLE_FEE_RATES=["no_financial_action", "exact_fee_rate_doubling"],
-            DOUBLE_DELAY=["no_financial_action", "exact_delay_doubling"],
-        )
-    return common
-
-
 def registry(method: str) -> dict[str, Any]:
     # Decimal values are serialized as text; no binary float perturbation drift.
     def serial(value: Any) -> Any:
@@ -131,5 +111,4 @@ def registry(method: str) -> dict[str, Any]:
         return value
 
     body = dict(method=method, baseline=serial(rules(method)), scenarios=serial(scenarios(method)))
-    body["stress_scenarios"] = stress_spec(method)
     return dict(body, registry_hash=digest(body))

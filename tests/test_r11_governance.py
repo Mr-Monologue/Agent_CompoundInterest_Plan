@@ -26,6 +26,7 @@ from investor_core.r11_validation import ValidationWindow
 def window():
     return ValidationWindow(
         method="A500",
+        dataset_kind="SYNTHETIC",
         history_start="2025-10-11",
         history_end="2026-10-03",
         forward_start="2026-10-10",
@@ -35,9 +36,8 @@ def window():
 
 def diagnostic_record(day, kind, index, *, extra_point=True):
     body = candidates("A500", day)
-    # REAL here deliberately tests the selector with synthetic fixtures. No
-    # persisted record or production observation is created by this unit test.
-    body["context"].update(evidence_class=kind, dataset_kind="REAL")
+    # Synthetic fixtures remain in the explicit simulation domain throughout.
+    body["context"].update(evidence_class=kind, dataset_kind="SYNTHETIC")
     count = 254 if extra_point else 253
     for p in body["products"]:
         p["assets_report_date"] = str(day - timedelta(days=30))
@@ -108,7 +108,9 @@ def test_missing_perturbed_warmup_stays_in_denominator_and_blocks():
 def test_preregistration_no_backfill_and_no_synthetic_promotion(isolated):  # noqa: F811
     db, _, service, clock = isolated
     governance = R11Governance(service)
-    request = RegistrationRequest(window=window(), idempotency_key="register")
+    request = RegistrationRequest(
+        window=window().model_copy(update={"dataset_kind": "REAL"}), idempotency_key="register"
+    )
     with pytest.raises(LedgerError) as late:
         governance.register(request)
     assert late.value.code == "R11_REGISTRATION_LATE"

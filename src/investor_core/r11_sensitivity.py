@@ -7,7 +7,7 @@ from typing import Any
 
 from investor_core.r11_candidates import CandidateInput, calculate_candidates
 from investor_core.r11_macro import MacroInput, calculate_macro
-from investor_core.r11_rules import registry, scenarios
+from investor_core.r11_rules import registry, scenarios, stress_spec
 from investor_core.r11_validation import ValidationWindow, _complete, _selection, weeks
 from investor_core.scheduler import digest
 
@@ -28,7 +28,7 @@ def baseline_sets(window: ValidationWindow, runs: list[dict[str, Any]]) -> dict[
         ("H", window.history_start, window.history_end),
         ("F", window.forward_start, window.forward_end),
     ]:
-        selected = _selection(runs, window.method, kind)
+        selected = _selection(runs, window.method, kind, window.dataset_kind)
         result[kind] = [
             selected[d]["id"]
             for d in weeks(start, end)
@@ -55,7 +55,7 @@ def _sensitivity(
     for name, values in scenarios(window.method).items():
         strata: dict[str, Any] = {}
         for kind in ("H", "F"):
-            selected = _selection(runs, window.method, kind)
+            selected = _selection(runs, window.method, kind, window.dataset_kind)
             history: list[dict[str, Any]] = []
             outputs = {}
             end = window.history_end if kind == "H" else window.forward_end
@@ -134,39 +134,110 @@ def _sensitivity(
     )
 
 
+def assess_stress_rows(
+    method: str, expected_ids: list[str], rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    spec = stress_spec(method)
+    required = {(run_id, scenario) for run_id in expected_ids for scenario in spec}
+    actual = {(row["run_id"], row["scenario"]) for row in rows}
+    missing = sorted(required - actual)
+    covered = required == actual and len(rows) == len(required) and bool(required)
+    covered = covered and all(set(row["checks"]) == set(spec[row["scenario"]]) for row in rows)
+    passed = covered and all(all(row["checks"].values()) for row in rows)
+    return dict(
+        rows=rows,
+        required_scenarios=spec,
+        expected_observation_ids=expected_ids,
+        missing=[dict(run_id=key, scenario=name) for key, name in missing],
+        result="PASS" if passed else "INCOMPLETE" if not covered else "FAIL",
+        baseline="NO_MODEL_NO_REPLACEMENT_NO_FINANCIAL_ACTION",
+        realized_return_difference=None,
+        limitation="No real trades or predictive/cost-benefit efficacy inferred",
+    )
+
+
 def stress_diagnostics(window: ValidationWindow, runs: list[dict[str, Any]]) -> dict[str, Any]:
-    """Actual recomputation of outage and doubled cost/delay; no fabricated returns."""
-    selected = _selection(runs, window.method, "F")
+    """Every registered scenario must actually execute for every complete F record."""
+    selected = _selection(runs, window.method, "F", window.dataset_kind)
     rows = []
+    expected_ids = []
     for day, record in sorted(selected.items()):
         if not window.forward_start <= day <= window.forward_end or not _complete(record):
             continue
-        source_body = record["input"]
-        for scenario in (
-            ["SOURCE_OUTAGE"]
-            if window.method == "C"
-            else ["SOURCE_OUTAGE", "DOUBLE_FEE_RATES", "DOUBLE_DELAY"]
-        ):
+        expected_ids.append(record["id"])
+        original_hash = digest(record["input"])
+        history = record.get("previous_outputs", [])
+        for scenario in stress_spec(window.method):
+            checks = {}
+            data: MacroInput | CandidateInput
             if window.method == "C":
-                data = MacroInput.model_validate(source_body)
-                for source in data.context.sources.values():
-                    source.quality = "UNVERIFIED"
-                output = calculate_macro(data, record.get("previous_outputs", []))
+                data = MacroInput.model_validate(record["input"])
+                if scenario == "IDENTITY_CHANGE":
+                    data.index_identity = "STRESS_INVALID_INDEX_IDENTITY"
+                elif scenario == "SOURCE_REVISION":
+                    point = data.pb.points[-1]
+                    assert point.value is not None
+                    point.value *= Decimal("1.01")
             else:
-                data_d = CandidateInput.model_validate(source_body)
-                for product in data_d.products:
-                    if scenario == "DOUBLE_FEE_RATES" and product.fees:
+                data = CandidateInput.model_validate(record["input"])
+                if scenario == "IDENTITY_CHANGE":
+                    data.products[0].nav.identity = "STRESS_WRONG_SHARE_CLASS"
+                elif scenario == "SOURCE_REVISION":
+                    point = data.products[0].nav.points[-1]
+                    assert point.value is not None
+                    point.value *= Decimal("1.01")
+                elif scenario == "DOUBLE_FEE_RATES":
+                    for product in data.products:
+                        assert product.fees is not None
                         product.fees.subscription_value *= 2
                         product.fees.redemption_rate_pct_at_365_days *= 2
-                    elif scenario == "DOUBLE_DELAY":
-                        if product.subscription_confirmation_max_trading_days is not None:
-                            product.subscription_confirmation_max_trading_days *= 2
-                        if product.redemption_arrival_max_trading_days is not None:
-                            product.redemption_arrival_max_trading_days *= 2
-                if scenario == "SOURCE_OUTAGE":
-                    for source in data_d.context.sources.values():
-                        source.quality = "UNVERIFIED"
-                output = calculate_candidates(data_d, record.get("previous_outputs", []))
+                    checks["exact_fee_rate_doubling"] = all(
+                        p.fees is not None
+                        and p.fees.subscription_value
+                        == Decimal(old["fees"]["subscription_value"]) * 2
+                        and p.fees.redemption_rate_pct_at_365_days
+                        == Decimal(old["fees"]["redemption_rate_pct_at_365_days"]) * 2
+                        for p, old in zip(data.products, record["input"]["products"], strict=True)
+                    )
+                elif scenario == "DOUBLE_DELAY":
+                    for product in data.products:
+                        assert product.subscription_confirmation_max_trading_days is not None
+                        assert product.redemption_arrival_max_trading_days is not None
+                        product.subscription_confirmation_max_trading_days *= 2
+                        product.redemption_arrival_max_trading_days *= 2
+                    checks["exact_delay_doubling"] = all(
+                        p.subscription_confirmation_max_trading_days
+                        == old["subscription_confirmation_max_trading_days"] * 2
+                        and p.redemption_arrival_max_trading_days
+                        == old["redemption_arrival_max_trading_days"] * 2
+                        for p, old in zip(data.products, record["input"]["products"], strict=True)
+                    )
+            if scenario == "SOURCE_OUTAGE":
+                for source in data.context.sources.values():
+                    source.quality = "UNVERIFIED"
+            output = (
+                calculate_macro(data, history)
+                if isinstance(data, MacroInput)
+                else calculate_candidates(data, history)
+            )
+            checks["no_financial_action"] = not output["money_action"]
+            if scenario in {"SOURCE_OUTAGE", "IDENTITY_CHANGE"}:
+                checks["must_be_incomplete"] = output["status"] != "CALCULATED_SHADOW"
+            if scenario == "SOURCE_REVISION":
+                repeated = (
+                    calculate_macro(data, history)
+                    if isinstance(data, MacroInput)
+                    else calculate_candidates(data, history)
+                )
+                checks.update(
+                    input_changed=digest(data.model_dump(mode="json")) != original_hash,
+                    baseline_preserved=digest(record["input"]) == original_hash,
+                    repeat_deterministic=repeated == output,
+                )
+                field = "pending_weeks" if window.method == "C" else "leading_weeks"
+                prior = [h for h in history if h["as_of"] < output["as_of"]]
+                bound = (prior[-1].get(field, 0) if prior else 0) + 1
+                checks["single_cutoff_count"] = output.get(field, 0) <= bound
             rows.append(
                 dict(
                     run_id=record["id"],
@@ -177,17 +248,7 @@ def stress_diagnostics(window: ValidationWindow, runs: list[dict[str, Any]]) -> 
                     replacement=output.get("replacement"),
                     gaps=output["gaps"],
                     output_hash=digest(output),
-                    money_action=output["money_action"],
-                    outage_blocked=scenario != "SOURCE_OUTAGE"
-                    or output["status"] != "CALCULATED_SHADOW",
+                    checks=checks,
                 )
             )
-    return dict(
-        rows=rows,
-        result="PASS"
-        if rows and all(not r["money_action"] and r["outage_blocked"] for r in rows)
-        else "INCOMPLETE",
-        baseline="NO_MODEL_NO_REPLACEMENT_NO_FINANCIAL_ACTION",
-        realized_return_difference=None,
-        limitation="No real trades or predictive/cost-benefit efficacy inferred",
-    )
+    return assess_stress_rows(window.method, expected_ids, rows)

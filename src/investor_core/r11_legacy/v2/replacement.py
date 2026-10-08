@@ -9,7 +9,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from investor_core.execution import StrictModel
-from investor_core.r11_inputs import Context
+from investor_core.r11_legacy.v2.inputs import Context
 from investor_core.scheduler import digest
 
 
@@ -140,9 +140,9 @@ def replacement_result(
             "PLATFORM_LIMIT_EVIDENCE_REQUIRED",
         ]
     else:
-        blockers += ctx.source_gaps(
-            evidence.holding_source, account_ref=evidence.account_ref
-        ) + ctx.source_gaps(evidence.thesis_source, account_ref=evidence.account_ref)
+        blockers += ctx.source_gaps(evidence.holding_source) + ctx.source_gaps(
+            evidence.thesis_source
+        )
         if ctx.dataset_kind == "REAL":
             for key in (evidence.holding_source, evidence.thesis_source):
                 source = ctx.sources.get(key)

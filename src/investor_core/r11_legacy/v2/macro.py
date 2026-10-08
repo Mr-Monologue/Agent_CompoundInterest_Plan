@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import Field, model_validator
 
 from investor_core.execution import StrictModel
-from investor_core.r11_inputs import (
+from investor_core.r11_legacy.v2.inputs import (
     VERSION,
     Calendar,
     Context,
@@ -19,7 +19,7 @@ from investor_core.r11_inputs import (
     clip,
     monthly,
 )
-from investor_core.r11_rules import rules
+from investor_core.r11_legacy.v2.rules import rules
 
 
 class Member(StrictModel):
@@ -81,7 +81,6 @@ def stable_state(
             pending_weeks=0,
             confidence="LOW",
             ambiguity="HIGH",
-            uncertain=True,
         )
     candidate = output["candidate_season"]
     weeks = 0
