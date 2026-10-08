@@ -1218,3 +1218,13 @@ HTTP测试现在使用asyncio.timeout_at覆盖连接、响应头与每个正文�
 为尽早提供独审源码，将临时detached提交以快进方式推送到既有远端feature，不创建分支、不强推；本机feature工作树在原全量终态前保持a2d267a，终态归档后再用git merge --ff-only同步。精确新SHA提交后回传。不能将远端候选修复与当前运行SHA混淆。
 
 候选修复14819056b7c3fee87a422e5b6a69e7b1154f0115已快进推送并核验远端。随后自查补充控制信号边界：若关闭阶段新到达取消/SystemExit/KeyboardInterrupt（含BaseExceptionGroup），必须传播控制信号，不能由较早普通错误取代；仅普通清理Exception才恢复原错误。新增原始/成组取消两例，[当前隔离回归](R11_CLEANUP_DEADLINE_FINAL.txt)17通过（精确耗时见日志），Ruff/mypy通过；HTTP实际进程仍对应同一未变的期限实现。此补充在同一detached检出，主全量a2d267a未改。当前全量已越过此前HTTP/MCP失败点但尚未终态，不能据此消除此前冷启动可靠性问题。
+
+### 父对话请求的运行状态回传（第三轮仍未终态）
+
+候选业务/测试修复最新**f9a3db470db946510ac07061a6779f81cca4e62c**已推送并git ls-remote核验；需父对话对该精确SHA独审，包含HTTP整体期限与MCP关闭错误保留/新取消信号不覆盖。候选17项隔离测试通过6.98秒，HTTP实际进程1通过29.94秒，Ruff/mypy通过；不等于候选全量已通过。
+
+第三轮**session44431/PID21900仍在**，最近核验已运行39分40秒，CPU约97%，RSS约502MB；最后输出到45%后20个进度点，没有F或终态。/tmp/pytest-of-agent/pytest-45/test_complete_simulated_eviden0/r11-synthetic.db只读检查54条R11_OBSERVATION及1条预注册，确认正在完整E模拟内部推进；不是停住、不重复启动。之前该完整E单项约25分钟，目前第三轮包含前面约32分钟既有测试，不能将整个耗时误作E已超时。
+
+**两个目录/版本必须区分**：当前运行/workspace/Agent_CompoundInterest_Plan仍a2d267a；已准备并推送的候选修复位于/tmp/r11-mcp-cleanup-review，远端feature为f9a3db4及后续文档检查点。本轮未改正在验证的源码/测试。恢复先轮询session44431并检查PID21900及/tmp/r11-final-full-regression-3.log，采集完整终态；随后原工作树git merge --ff-only origin/feature同步已知远端候选，再进行必要最终复验。未终态前不能快进工作树改变所验文件，不能将a2d267a的结果当f9a3db4全量结果。
+
+本次回传回应父对话可见进度请求，不终止测试、不撤销授权、不请求用户“是否继续”。阶段仍进行中，MCP冷启动速度波动原因未明且可靠性问题保留，双平台CI等固定门禁不降标。
