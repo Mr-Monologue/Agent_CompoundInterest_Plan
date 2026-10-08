@@ -876,3 +876,11 @@ cd /workspace/Agent_CompoundInterest_Plan
 完整阶段尚需C实际状态/稳定机制，D评分/替换与既有历史研究基准映射适配，E完整证据适配/分级晋级/降级；不能用永久固定未满足项称阶段完成。当前修复不解决这些实质模型定义。明确路径后继续本阶段授权，无需重新批准普通开发；生产授权仍独立。
 
 独审修复专项最终结果：上述55项全部通过（248.95秒），Ruff全仓通过，mypy62文件通过，diff空白检查通过；保留既有Starlette测试客户端弃用警告。三项复现对应测试：test_review_dimension_values_must_satisfy_versioned_contract / test_review_undefined_contract_and_thin_candidate_evidence_never_pass；test_review_readiness_rejects_each_missing_shadow_table；test_review_paused_exact_observation_replay_is_readonly_and_conflicts_rejected。test_validator_version_does_not_reuse_legacy_coverage_receipt补回执版本隔离。准备推送本批精确SHA供独立复审，最终全量另跑，不宣称专项替代全量。
+
+修复检查点已正常推送并经git ls-remote核实：`cea288e88cfbe2b1effedeeae374f430ee900b7c`。相对ff1e4ae为5文件245增/13删，仅两份原文档、shadow_models.py、database.py和test_shadow_models.py；未更改生产算法/配置。该SHA的wheel/sdist、Ruff、mypy62文件及diff检查均通过。父对话可据 `git diff ff1e4ae..cea288e` 复审三个问题及新增验证版本隔离。
+
+最终全量恢复入口更新：`.venv/bin/python -m pytest --basetemp=/tmp/compound-shadow-after-review --maxfail=1 --tb=short --show-capture=no`，当前session94021，日志`/tmp/compound-shadow-after-review.log`。session42882的55项专项已结束；旧session93869已停止。最终代码即cea288e，后续仅此清单补记不会改变实现审查范围；若再修代码须告知新SHA并更新最终验证范围。本阶段仍进行中，方法选择/实质C/D/E缺口与独立复审结论分开记录。
+
+即时回传检查点：父对话要求不要等待长全量才披露重大方法选择。执行本身正常，最近已运行至约27%、无失败，尚未有最终全量结论。本线程持续输出进度但父对话报告未收到，且本线程没有可调用的父对话跨线程消息工具；本次先结束回复以使平台回传检查点，不代表阶段结束或需要重新批准。实现SHA仍cea288e88cfbe2b1effedeeae374f430ee900b7c，只有清单补记待提交。
+
+恢复时先续读session94021；如当前会话不能访问该session，检查`/tmp/compound-shadow-after-review.log`和对应pytest进程，不能假定后台测试完成。若进程已结束，读取退出/最终结果并补记；若环境重启丢失进程，按上一段完整命令重跑。不要重复启动仍在运行的测试。最终全量、独立复审和重大方法选择返回后继续本阶段任务；开发授权持续，未获生产部署/策略配置/财务操作授权。
