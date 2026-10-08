@@ -771,3 +771,35 @@ Git clone/ls-remote/push均成功，不代表API同样可用。没有实际调�
 |账户适用额度、论点/映射内容、真实申购与份额/记账、真实周报和通知收件|需要真实证据与各自明确确认|不得为验收制造投资事实；没有实际投资需求可保留真实业务验收缺口，不转化为反复开发任务|
 
 因此，若用户选择先六步，应将它定位为已有能力的使用/验收收口，云端发布门禁及可选整链证据完成后即可报告工程范围结束；本机/真实业务部分保持待验收。若希望本机离线期间继续较大新增工程，应另选C/D影子方向并明确其最小作用域，而不是无限延长六步开发。
+
+### 同一隔离实例六步串联证据（2026-10-08，阶段顺序仍待决定）
+
+父对话明确要求补齐同一隔离实例六步验证，不启动C/D/E。本轮只新增 `tests/test_six_step_isolated_flow.py`；复用原 `test_stage_business_flow` 的完整/部分/跳过链和 `manual_stage_flow.loopback_client`，不修改业务代码、旧测试或迁移。
+
+每个终态分支只建立一个临时SQLite数据库、一个Core实例、一个随机127.0.0.1端口；六步共享同一数据库、组合、账户和HTTP客户端，中途不重新建立实例。三个分支各自独立运行。代码阻止非loopback socket连接；未读取生产数据、未调用真实平台、未发送通知。初始持仓与策略由原configured_services测试夹具创建，确认人均为test-user/isolated-user，仅表示测试夹具确认。
+
+研究输入复用带明确SYNTHETIC标记的study/source_probe：6个合成历史数据日、两产品、六窗口。只在已解析数据提供器边界替换输入，实际build计算、研究归档、更新状态机和HTTP路由运行。**本测试不覆盖外网采集/原文解析，也不声称刷新了全部持仓**：研究样例沿既有003096/009163入口，持仓样例为CORE01/SAT01，两者在同库独立；持仓解释照实展示其缺口，不将独立同类研究当成持有理由或买入资格。
+
+|步骤|明确合成输入与操作|验证输出/保护|
+|---|---|---|
+|1 更新数据与研究|GET research-update-check；POST research-updates，scope=003096；再用相同key请求|检查全库不变；真实计算12份额窗口，研究v1→v2；资料完整性不足仍PARTIAL，不升格SUCCESS；重复key不再次调用数据提供器。除peer_research_runs/research_update_runs外全库内容不变|
+|2 解释持仓|同组合/账户GET portfolio-research-summary|显示CORE01/SAT01及归档/质量/未知信息；查询全库不变；没有批准论点、映射或投资资格|
+|3 受约束预算|同账户GET weekly-plan-preview，明确100元，固定测试日期2026-07-21；未提供账户约束|候选10000分、未核实10000分；EXECUTION_CONSTRAINT_UNKNOWN、无可执行日历，查询全库不变。已核实额度拆单仍由test_execution覆盖，不将本次未知路径冒充已核实执行|
+|4 测试确认后记录合成事实|复用原HTTP链：完整为40+60元两笔；部分为40元后明确放弃60元；跳过为0元|在途不变持仓、份额确认不等于记账；测试明确确认后才记账；毛额/净额/费用与计划累计一致；丢失提交响应后读回，负向重试不重复事实。没有外部真实购买|
+|5 复盘与周报|同计划绑定周期与终态，测试确认报告|三分支分别EXECUTED/PARTIALLY_EXECUTED_CLOSED/SKIPPED；正式测试报告执行100/40/0元、放弃0/60/100元；估值LIMITED且不替换NAV；每分支仅一份报告，notification_sent=false|
+|6 异常发现与反馈|立即再次更新验证429 RESEARCH_UPDATE_COOLDOWN；随后仅测试时钟推进31秒，注入003096-nav源失败；GET latest|更新FAILED，保留先前PARTIAL结果与研究v2，不说“没有变化”；除允许的研究运行表外，账本/持仓/策略/批准/计划/周报及其他表全量不变；失败回读本身全库不变。验证的是研究运行失败反馈，不是实际Windows休眠/调度或通知收件|
+
+可重复命令（正确仓库目录，使用已安装的锁定依赖）：
+
+```bash
+cd /workspace/Agent_CompoundInterest_Plan
+.venv/bin/python -m pytest tests/test_six_step_isolated_flow.py --tb=short
+.venv/bin/python -m pytest tests/test_six_step_isolated_flow.py tests/test_stage_business_flow.py tests/test_research_updates.py tests/test_execution.py tests/test_daily_client.py --tb=short
+.venv/bin/ruff check .
+```
+
+初次串联断言曾将真实PARTIAL误期望为SUCCESS、过早触发更新冷却；核对既有契约后更正测试期望并加入明确冷却断言/测试时钟，不修改产品保护。三终态首次完整运行3通过（15.06秒）；随后将数据保护比较收紧为只允许上述两张研究表变化；新增三分支及原业务链、研究更新、执行约束、日常客户端相关回归共60项通过（81.91秒），Ruff全仓通过。仅保留既有Starlette测试客户端弃用警告，无失败。先前486通过+4平台跳过是本轮新增前全量基线，不能改称新增后全量结果。
+
+此项仅补工程证据；生产账户约束、真实确认/成交、生产安装、Windows现场异常恢复和本人收件仍未验收，六步生产闭环不因合成测试通过而结项。未发现需要新增业务能力或外部授权才能完成本项隔离测试的阻塞。
+
+本次交付仅测试与本清单，产品版本仍0.44.2；不触发软件Release或部署。API访问拒绝不绕过，远端CI仍未核验；推送不等于双平台发布完成。
