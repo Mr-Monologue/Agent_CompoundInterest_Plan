@@ -915,3 +915,15 @@ cd /workspace/Agent_CompoundInterest_Plan
 3. 稳健性固定基准非过渡/非并列集合，H至少26、F至少8周；零或不足为未完成。每个扰动场景、H/F分别要求>=80%，不得合并平均；扰动后并列/未知计不保持，不能删分母；缺数据场景不完整阻断。门槛全部仍是待批准建议，未落代码。
 
 旧R1批准请求已由父对话暂缓。R1.1完整稿应先独审复查再交用户整体决定；未授权实施数值方法。最终全量继续原session22384，无需因纯文档修改重跑代码测试。实现审查基准仍adfa887，当前文档提交SHA通过git日志核对。
+
+### 2026-10-08 最终全量终态与R1.1审查检查点
+
+最终实现SHA：`adfa8873cc64d761f07fd721d371abcadb463dca`。其后`1d0b7eac39ae9fb277c2ee69dd7597b1e2fd84d2`仅修改两份原文档；本轮以`git diff --exit-code adfa887 -- src tests migrations pyproject.toml uv.lock`核实实现与测试未变。
+
+原session22384（未重启）最终退出码0：**544 passed, 4 skipped, 1 warning in 1326.67s (0:22:06)**。命令`.venv/bin/python -m pytest --basetemp=/tmp/compound-shadow-review2 --maxfail=1 --tb=short --show-capture=no`；完整本机日志`/tmp/compound-shadow-review2.log`。这是adfa887最终代码的完整Linux回归，包含影子契约/治理、迁移、六步隔离串联及后台真实HTTP进程验证，不用旧SHA或专项结果替代。
+
+四个跳过项均在tests/test_update_safety.py，条件sys.platform != win32或未找到PowerShell，原因“Windows executable updater test”：test_preflight_from_unrelated_directory_and_missing_database、test_only_complete_untampered_backups_are_recoverable、test_full_updater_backup_failure_restarts_without_install_or_restore、test_finalizer_preserves_real_isolated_task_definition。Linux跳过不等于Windows已通过。唯一警告是既有Starlette TestClient使用httpx的弃用提醒，无新增失败。此前最终代码Ruff、mypy src（62文件）、uv build --offline均通过，无代码变更无需因本次文档补记重跑。
+
+父对话另传回独立文档复审：精确1d0b7ea的R1.1三项草案P2全部关闭，无阻断提交的内在矛盾；已于07:55向用户发出R1.1一次整体批准请求，仍待答复。代码adfa887的三项P2也已独审关闭（独立79测试+78断言矩阵通过）。本机没有注册、激活或实施未批准的R1.1数值定义。
+
+当前可独立完成的本批修复、全量验证及文档审查已完成；阶段未结项。后续依赖明确：等待用户R1.1方法决定后继续既有自主开发授权；GitHub API Forbidden未重试/绕过，Ubuntu/Windows远端CI仍未核验，因此不合并长期分支、不建Tag/Release、不声称发布门禁通过；源码仅feature推送。真实前瞻13周及历史/独立来源覆盖尚未取得，不能由测试替代；离线Windows本机现用安装、真实六步生产验收及部署权限缺口不变。无投资配置/策略切换、无真实财务写入、无部署。本检查点不改变阶段授权，不需要重新请求“是否继续”。
