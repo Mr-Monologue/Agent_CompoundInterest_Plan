@@ -1328,3 +1328,9 @@ release-manifest.json只修正notes中“数值计算尚不存在”的过时说
 已推送并核对远端源码`9c88d1d7dd995204d6f6225d0531428ece23352f`；其中src与已独审08e20完全相同，增量仅测试启动门禁复用、原日志/文档与manifest说明。2026-10-08 17:22 UTC在主工作树启动**session6921 / PID30981**：`.venv/bin/pytest -o addopts='' -q -ra --tb=short --durations=20 > /tmp/r11-final-full-regression-5.log 2>&1`。无maxfail、过滤、人工跳过或诊断插件；目前未终态，不声称通过。
 
 主工作树固定9c88d1d且干净，本恢复记录只在detached文档工作树提交；整轮执行期间不修改主树源码/测试。旧session19483/PID26298已退出1并已完整归档，不可再轮询旧会话或因此重复启动。下一步持续跟踪**6921/30981**到终态，若失败依新保留日志处理；新增测试复用可由父对话增量审查，不重复已关闭C缺陷。CI/正式发布/离线Windows生产状态仍独立UNKNOWN，无部署或实际模型/财务操作。
+
+### 17:35环境重连：原pytest仍在，工具会话句柄失联（恢复方式变更）
+
+环境starting通知后wait_for_environment返回ready，但write_stdin(6921)返回Unknown process id；**不能因此重启pytest，也不要继续把6921当可用工具句柄**。17:35:59 UTC实查原PID30981仍为原pytest命令，墙钟13:13、CPU累计12:38；日志已过31%，后续继续增长，主工作树仍9c88d1d且干净。父shell30978仍是原重定向pytest命令。该通知没有中断已观察到的测试计算。
+
+当前恢复方式：只读检查PID30981的命令/CPU及`/tmp/r11-final-full-regression-5.log`，可用os.pidfd_open + poll最多45秒观察原进程退出，再读取完整日志。新观察器不是新pytest；其工具session及退出码都不能冒充原测试session/退出码。原工具退出码目前不可取得，若终态仍无法取得需明确记为UNKNOWN，不从观察器exit=0推断pytest exit=0。完整pytest摘要/失败堆栈仍由原日志保存；若进程消失且日志没有完整终态，应记录中断，而非称通过。源代码/测试仍冻结，不重复启动，不因重连改动本轮参数。
