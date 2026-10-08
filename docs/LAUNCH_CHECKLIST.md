@@ -1168,3 +1168,11 @@ session95964退出1，PID20351已结束，原全量不再运行。[全量首次�
 新全量**session20654，PID21017**，目录/workspace/Agent_CompoundInterest_Plan，准确命令`.venv/bin/pytest -o addopts='' -q --tb=short --maxfail=1 > /tmp/r11-final-full-regression-2.log 2>&1`。保留首次失败日志，不改生产或测试超时、不跳过MCP握手用例。启动14秒进程正常，无终态；运行期间业务源码和测试保持不变，文档检查点不改变engine_hash。恢复先轮询该session/核对PID及日志，禁止重复启动；结束后保存准确退出码/覆盖范围，失败继续定位，不能把maxfail后的已通过子集称全量通过。
 
 工程剩余为本源码最终全量、自然到期修复独审及材料收敛；双平台CI门禁仍UNKNOWN，不降标、不合并或正式发布。真实资料字段矩阵、自然F和Windows生产缺口独立保留。当前无新增用户决定，已批准开发继续。
+
+### 第二轮全量终态与进程用例诊断
+
+session20654/PID21017已结束，退出1；[第二轮全量原日志](R11_FINAL_FULL_ATTEMPT_2.txt)**30通过、1失败、343.63秒**，maxfail提前退出，不能称全量通过。失败为tests/test_background_scheduler_http_process.py::test_separate_worker_http_process_and_offline_restart的/ready读取超过测试客户端0.3秒预算；服务日志为空，没有已记录的进程崩溃。该测试及health.py/database.py相对adfa887基线没有变化。此前session95964也已终态，不能再将其描述为后台运行。
+
+已启动两个进程模块定向诊断**session76860，PID21401**，命令`.venv/bin/pytest -o addopts='' tests/test_background_scheduler_http_process.py tests/test_codex_mcp.py -q --tb=short --durations=10 > /tmp/r11-process-timeout-diagnosis.log 2>&1`；尚无终态。没有重跑全量，没有修改超时或跳过测试；先取诊断结果，明确区分测试启动/探测预算与实际服务性能，再作有证据的必要修复。
+
+自然到期修复2e2328c的独审仍待回传；其当前wheel已离线构建，并逐字节核对包内r11_core_bindings.py与当前源码一致、冻结定义包含在包内。无发布/安装。工程未完成，真实资料、自然F、双平台CI未知及Windows离线缺口不变。
