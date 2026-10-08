@@ -1242,3 +1242,11 @@ HTTP测试现在使用asyncio.timeout_at覆盖连接、响应头与每个正文�
 完整E模拟已在约50分钟处通过并转后续测试，不再等待其观察数持续增加：只读临时合成库现有71观察、2验证、4回执、6健康评估、5草稿及7确认，均为已结束用例的SYNTHETIC记录，不是实际模型晋级。主工作树仍a2d267a且干净；候选f9a3db独审已通过，尚未同步进正在跑全量的工作树。
 
 当前没有可证明的执行环境阻塞；恢复仍先轮询session44431/核验PID21900和/tmp/r11-final-full-regression-3.log，不重启、不提前结束。真实终态后才同步候选并最终复验。此状态请求回传只为父对话及时获知实际进度，不终止原测试或新增权限申请。
+
+### 第三轮完整终态通过；仅终态后快进最终候选
+
+**session44431退出0，PID21900已结束**，[完整原日志](R11_FINAL_FULL_ATTEMPT_3.txt)：**629通过、4跳过、1既有警告，5800.78秒（1小时36分40秒）**。命令无maxfail、无筛选/跳过、无诊断插件。准确验证对象为a2d267a；完整E生命周期、全部R1.1及既有功能均已执行。4跳过均为tests/test_update_safety.py的Windows executable updater test（非Windows或无PowerShell），分别是preflight、备份篡改核验、备份失败恢复服务、保留真实隔离任务定义；不算Windows已通过。警告仍是Starlette TestClient/httpx既有弃用提醒。
+
+取得退出0并核验无pytest进程后，才fetch核对远端5个已知提交、确认主工作树干净，以git merge --ff-only origin/feature同步到**e204d4fdd8028cdda25df971755991d09838df1c**。最终业务/测试修复仍是已独审**f9a3db470db946510ac07061a6779f81cca4e62c**，其他提交只有文档证据。无强制同步、历史重写或分支合并到develop/release/main。
+
+a2d267a的全量不能替代f9a3db新代码全量；接下来在快进后的固定源码执行`.venv/bin/pytest -o addopts='' -q -ra --tb=short --durations=20 > /tmp/r11-final-full-regression-4.log 2>&1`，包含新增17项错误传播/整体期限测试及完整E，不额外重试或改预算。准确进程随后记录。MCP冷启动原失败及主机耗时波动原因未明的范围继续保留，不因第三轮通过宣称性能问题已修复。
