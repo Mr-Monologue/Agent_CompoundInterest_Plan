@@ -104,7 +104,6 @@ def test_four_native_bound_weeks_reach_only_hypothetical_replacement(isolated): 
     scope = core_mappings(service, ("003096", "009163"))
     with service.research._connect() as c:
         account = c.execute("SELECT id FROM accounts LIMIT 1").fetchone()[0]
-    before = business_rows(db)
     for i in range(4):
         day = datetime(2026, 10, 10).date() + timedelta(weeks=i)
         clock[0] = datetime.combine(day, time(12), TZ)
@@ -132,7 +131,7 @@ def test_four_native_bound_weeks_reach_only_hypothetical_replacement(isolated): 
             source = body["context"]["sources"][key]
             source.update(
                 url=f"https://example.test/native-{i}-{key}",
-                lineage="SYNTHETIC_" + key,
+                lineage="SYNTHETIC_" + key.upper(),
                 published_at=clock[0].isoformat(),
                 first_retrieved_at=clock[0].isoformat(),
                 publication_precision="INSTANT",
@@ -158,6 +157,7 @@ def test_four_native_bound_weeks_reach_only_hypothetical_replacement(isolated): 
                 ),
             )
         eid = bundle(service, body, f"native-replacement-{i}")
+        before = business_rows(db)
         run = service.observe(
             R11Request(
                 method="MEDICAL",
@@ -168,6 +168,7 @@ def test_four_native_bound_weeks_reach_only_hypothetical_replacement(isolated): 
         )
         assert run["output"]["leading_weeks"] == i + 1, run["output"]
         assert service.replay("MEDICAL", run["id"])["result"] == "PASS"
+        assert business_rows(db) == before
     assert run["output"]["replacement"] == "SHADOW_REPLACEMENT_REVIEW"
     assert not run["output"]["money_action"]
     assert business_rows(db) == before
