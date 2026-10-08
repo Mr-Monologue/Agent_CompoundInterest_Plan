@@ -1,0 +1,60 @@
+"""Shadow-only research endpoints; no strategy, portfolio or ledger mutation."""
+
+from typing import Any, Literal
+
+from fastapi import FastAPI
+
+from investor_core.research import ResearchService
+from investor_core.shadow_models import (
+    ModelDefinition,
+    ReviewConfirmation,
+    ReviewRequest,
+    ShadowObservation,
+    ShadowService,
+)
+
+
+def register_shadow_routes(app: FastAPI, research: ResearchService) -> None:
+    service = ShadowService(research)
+
+    def response(data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "data": data,
+            "meta": {"schema_version": "1.0", "data_quality": "WARNING"},
+            "warnings": ["SHADOW_ONLY", "NUMERICAL_METHOD_NOT_VALIDATED"],
+        }
+
+    @app.get("/v1/shadow-models")
+    def list_models() -> dict[str, Any]:
+        return response(service.list_models())
+
+    @app.post("/v1/shadow-models")
+    def register(request: ModelDefinition) -> dict[str, Any]:
+        return response(service.register(request))
+
+    @app.get("/v1/shadow-models/{model_id}")
+    def read(model_id: str) -> dict[str, Any]:
+        return response(service.read(model_id))
+
+    @app.post("/v1/shadow-observations")
+    def observe(request: ShadowObservation) -> dict[str, Any]:
+        return response(service.observe(request))
+
+    @app.post("/v1/shadow-models/{model_id}/observations/{observation_id}/validate")
+    def validate(model_id: str, observation_id: str) -> dict[str, Any]:
+        return response(service.validate(model_id, observation_id))
+
+    @app.get("/v1/shadow-models/{model_id}/promotion-check")
+    def gate(
+        model_id: str, target: Literal["OFF", "SHADOW", "ADVISORY", "ACTIVE"] = "ADVISORY"
+    ) -> dict[str, Any]:
+        return response(service.gate(model_id, target))
+
+    @app.post("/v1/shadow-reviews")
+    def review(request: ReviewRequest) -> dict[str, Any]:
+        return response(service.create_review(request))
+
+    @app.post("/v1/shadow-models/{model_id}/reviews/{draft_id}/confirm")
+    def confirm(model_id: str, draft_id: str, request: ReviewConfirmation) -> dict[str, Any]:
+        return response(service.confirm(model_id, draft_id, request))

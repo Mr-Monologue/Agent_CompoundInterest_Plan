@@ -77,7 +77,10 @@ def test_separate_worker_http_process_and_offline_restart(tmp_path: Path) -> Non
     ]
     try:
         with httpx.Client(base_url=url, trust_env=False, timeout=0.3) as client:
-            for _ in range(40):
+            # Cold Core import can exceed four seconds on shared CI/cloud CPUs.
+            # Keep a bounded readiness deadline and fail immediately on process exit.
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
                 if process.poll() is not None:
                     raise AssertionError(log_path.read_text(encoding="utf-8"))
                 try:
