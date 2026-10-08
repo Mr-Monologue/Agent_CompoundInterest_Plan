@@ -40,6 +40,8 @@ def definition(kind="MACRO_REGIME", version="1.0.0", **kw):
         "input_contract",
         {slot: [{"name": slot + "_fixture", "value_type": "NUMBER"}] for slot in slots},
     )
+    if kind == "SATELLITE_RANKING" and kw["input_contract"]:
+        kw["input_contract"].setdefault("cost", []).append({"name": "fee", "value_type": "NUMBER"})
     return ModelDefinition(
         model_key="synthetic-" + kind,
         version=version,
@@ -531,7 +533,171 @@ def test_validator_version_does_not_reuse_legacy_coverage_receipt(rig):
         )
     current = service.validate(model["id"], observation_record["id"])
     assert current["id"] != legacy["id"]
-    assert current["evaluator_version"] == "shadow-evidence-v2"
+    assert current["evaluator_version"] == "shadow-evidence-v3"
     assert not current["checks"]["input_coverage"]
     assert service.validate(model["id"], observation_record["id"]) == current
     assert legacy in service.read(model["id"])["history"]
+
+
+@pytest.mark.parametrize(
+    "value_type,operator,value",
+    [
+        ("NUMBER", "EQ", " "),
+        ("NUMBER", "EQ", "NaN"),
+        ("NUMBER", "EQ", "Infinity"),
+        ("TEXT", "EQ", " "),
+        ("TEXT", "EQ", "NaN"),
+        ("TEXT", "MIN", "1"),
+        ("BOOLEAN", "MAX", "1"),
+        ("BOOLEAN", "EQ", "1"),
+        ("BOOLEAN", "EQ", "yes"),
+        ("INTEGER", "EQ", "1.5"),
+        ("DATE", "MAX", "1"),
+        ("DATE", "EQ", "invalid"),
+    ],
+)
+def test_review_rule_threshold_and_operator_follow_contract(value_type, operator, value):
+    with pytest.raises(ValidationError):
+        definition(
+            "SATELLITE_RANKING",
+            input_contract={"limit": [{"name": "declared", "value_type": value_type}]},
+            rules=[{"slot": "limit", "field": "declared", "operator": operator, "value": value}],
+        )
+
+
+@pytest.mark.parametrize("value", [" ", "NaN", "1"])
+def test_review_undeclared_rule_rejected_and_legacy_evaluation_limited(rig, value):
+    from investor_core.shadow_models import evaluate
+
+    _, _, service, _, _, _ = rig
+    spec = definition("SATELLITE_RANKING").model_dump(mode="json")
+    spec["rules"] = [{"slot": "limit", "field": "undeclared", "operator": "EQ", "value": value}]
+    with pytest.raises(ValidationError):
+        ModelDefinition.model_validate(spec)
+    # Stored pre-fix definitions must also fail closed, not merely new requests.
+    model = service.register(definition("SATELLITE_RANKING"))
+    record = service.observe(complete(service, model, "SATELLITE_RANKING"))
+    result = evaluate(spec, record["input"], record["snapshots"])
+    assert "limit.undeclared:RULE_CONTRACT_INVALID" in result["rows"][0]["missing"]
+    assert result["status"] == "INSUFFICIENT_DATA"
+
+
+@pytest.mark.parametrize(
+    "raw,threshold,expected",
+    [
+        (True, "True", "PASS_RESEARCH_ONLY"),
+        (False, "false", "PASS_RESEARCH_ONLY"),
+        (True, "false", "EXCLUDED"),
+        (False, "true", "EXCLUDED"),
+        ("true", "true", "UNKNOWN"),
+        (1, "true", "UNKNOWN"),
+    ],
+)
+def test_review_boolean_eq_matches_typed_values(rig, raw, threshold, expected):
+    _, _, service, _, _, _ = rig
+    contract = {s: [{"name": s + "_fixture", "value_type": "NUMBER"}] for s in D_INPUTS}
+    contract["product"].append({"name": "subscription_open", "value_type": "BOOLEAN"})
+    model = service.register(
+        definition(
+            "SATELLITE_RANKING",
+            input_contract=contract,
+            rules=[
+                {
+                    "slot": "product",
+                    "field": "subscription_open",
+                    "operator": "EQ",
+                    "value": threshold,
+                }
+            ],
+        )
+    )
+    request = complete(
+        service,
+        model,
+        "SATELLITE_RANKING",
+        facts={
+            "publication_timezone": "Asia/Shanghai",
+            "shadow_scope": "REGION:TEST",
+            "shadow_subject": "CORE01",
+            "values": {
+                **{s + "_fixture": "1" for s in D_INPUTS},
+                "fee": "1",
+                "subscription_open": raw,
+            },
+        },
+    )
+    assert service.observe(request)["output"]["rows"][0]["filter_result"] == expected
+
+
+@pytest.mark.parametrize("with_rule", [False, True])
+def test_review_pre_contract_registration_replay_preserves_legacy_hash(rig, with_rule):
+    import json
+
+    from investor_core.scheduler import digest
+
+    db, _, service, _, _, _ = rig
+    request = definition(
+        "SATELLITE_RANKING",
+        input_contract={},
+        rules=[{"slot": "cost", "field": "fee", "operator": "MAX", "value": "2"}]
+        if with_rule
+        else [],
+    )
+    legacy_spec = request.model_dump(mode="json")
+    legacy_spec.pop("input_contract")
+    saved = {
+        "id": "legacy-model",
+        "definition": legacy_spec,
+        "parameters_hash": digest(legacy_spec),
+        "mode": "SHADOW",
+        "status": "DRAFT",
+        "created_at": "2026-09-24T00:00:00Z",
+    }
+    with service.research._connect() as c:
+        c.execute(
+            "INSERT INTO shadow_models VALUES (?,?,?,?)",
+            (saved["id"], request.model_key, request.version, json.dumps(saved)),
+        )
+    before = dump(db)
+    assert service.register(request) == saved
+    assert service.register(ModelDefinition.model_validate(legacy_spec)) == saved
+    assert dump(db) == before
+    with pytest.raises(LedgerError, match="new model version"):
+        service.register(definition("SATELLITE_RANKING", rules=request.model_dump()["rules"]))
+    with pytest.raises(LedgerError, match="new model version"):
+        service.register(request.model_copy(update={"rationale": "changed"}))
+    assert dump(db) == before
+    if with_rule:
+        with pytest.raises(LedgerError) as bad:
+            service.register(request.model_copy(update={"version": "2.0.0"}))
+        assert bad.value.code == "SHADOW_RULE_CONTRACT_INVALID"
+
+
+def test_review_eq_evidence_uses_declared_type_and_legacy_bad_threshold_is_limited(rig):
+    from copy import deepcopy
+
+    from investor_core.shadow_models import evaluate
+
+    _, _, service, _, _, _ = rig
+    model = service.register(
+        definition(
+            "SATELLITE_RANKING",
+            rules=[{"slot": "cost", "field": "fee", "operator": "EQ", "value": "1.0"}],
+        )
+    )
+    record = service.observe(complete(service, model, "SATELLITE_RANKING"))
+    assert record["output"]["rows"][0]["filter_result"] == "PASS_RESEARCH_ONLY"
+    for raw in (" ", "NaN", "Infinity", None, True):
+        snapshots = deepcopy(record["snapshots"])
+        for snapshot in snapshots:
+            if snapshot["slot"] == "cost":
+                snapshot["facts"]["facts"]["values"]["fee"] = raw
+        result = evaluate(model["definition"], record["input"], snapshots)
+        assert result["rows"][0]["filter_result"] == "UNKNOWN"
+        assert "cost.fee:VALUE_MISSING_OR_INVALID" in result["rows"][0]["missing"]
+    for threshold in (" ", "NaN", "Infinity"):
+        legacy = deepcopy(model["definition"])
+        legacy["rules"][0]["value"] = threshold
+        result = evaluate(legacy, record["input"], record["snapshots"])
+        assert result["rows"][0]["filter_result"] == "UNKNOWN"
+        assert "cost.fee:RULE_CONTRACT_INVALID" in result["rows"][0]["missing"]

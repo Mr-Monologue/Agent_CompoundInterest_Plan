@@ -79,6 +79,24 @@ def valid_value(value: Any, value_type: str) -> bool:
         return False
 
 
+def rule_contract(rule: Json, contract: Json) -> tuple[str, Any]:
+    fields = contract.get(rule["slot"], [])
+    field = next((f for f in fields if f["name"] == rule["field"]), None)
+    if field is None:
+        raise ValueError("rule field must be declared in its input dimension")
+    kind = field["value_type"]
+    if rule["operator"] != "EQ" and kind not in {"NUMBER", "INTEGER"}:
+        raise ValueError("MIN/MAX require a numeric input contract")
+    value = rule["value"]
+    if kind == "BOOLEAN":
+        if value.casefold() not in {"true", "false"}:
+            raise ValueError("boolean EQ threshold must be true or false")
+        value = value.casefold() == "true"
+    if not valid_value(value, kind):
+        raise ValueError("rule threshold must satisfy its input contract")
+    return kind, value
+
+
 class ModelDefinition(StrictModel):
     model_key: str = Field(min_length=1, max_length=100)
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
@@ -102,6 +120,12 @@ class ModelDefinition(StrictModel):
         for fields in self.input_contract.values():
             if not fields or len(fields) > 100 or len({f.name for f in fields}) != len(fields):
                 raise ValueError("distinct nonempty required fields expected")
+        # Empty contracts remain parseable for exact replay of pre-contract models.
+        # New registrations still reject rules without contracts in register().
+        if self.input_contract:
+            contract = {s: [f.model_dump() for f in fs] for s, fs in self.input_contract.items()}
+            for rule in self.rules:
+                rule_contract(rule.model_dump(), contract)
         identities = [(r.slot, r.field, r.operator) for r in self.rules]
         if len(set(identities)) != len(identities):
             raise ValueError("duplicate rule")
@@ -211,20 +235,27 @@ def evaluate(spec: Json, request: Json, snapshots: list[Json]) -> Json:
         for rule in spec["rules"]:
             raw = values.get(rule["slot"], {}).get(rule["field"])
             label = rule["slot"] + "." + rule["field"]
-            if raw is None or isinstance(raw, (bool, dict, list)):
+            try:
+                kind, threshold = rule_contract(rule, spec.get("input_contract", {}))
+            except ValueError:
+                reasons.append(label + ":RULE_CONTRACT_INVALID")
+                continue
+            if not valid_value(raw, kind):
                 reasons.append(label + ":VALUE_MISSING_OR_INVALID")
                 continue
-            if rule["operator"] == "EQ":
-                passed = str(raw) == rule["value"]
+            if kind in {"NUMBER", "INTEGER"}:
+                a, b = Decimal(str(raw)), Decimal(str(threshold))
+                passed = (
+                    a == b
+                    if rule["operator"] == "EQ"
+                    else a >= b
+                    if rule["operator"] == "MIN"
+                    else a <= b
+                )
+            elif kind == "DATE":
+                passed = date.fromisoformat(str(raw)) == date.fromisoformat(threshold)
             else:
-                try:
-                    a, b = Decimal(str(raw)), Decimal(rule["value"])
-                    if not a.is_finite():
-                        raise ValueError("nonfinite")
-                    passed = a >= b if rule["operator"] == "MIN" else a <= b
-                except (InvalidOperation, ValueError):
-                    reasons.append(label + ":VALUE_MISSING_OR_INVALID")
-                    continue
+                passed = raw == threshold
             if not passed:
                 excluded.append(label + ":RULE_NOT_MET")
         rows.append(
@@ -242,7 +273,7 @@ def evaluate(spec: Json, request: Json, snapshots: list[Json]) -> Json:
             )
         )
     return dict(
-        evaluator_version="shadow-evidence-v2",
+        evaluator_version="shadow-evidence-v3",
         input_contract_hash=digest(spec.get("input_contract", {})),
         rows=rows,
         status="INSUFFICIENT_DATA" if any(r["missing"] for r in rows) else "EVIDENCE_COMPLETE",
@@ -296,9 +327,21 @@ class ShadowService:
             ).fetchone()
             if row:
                 saved = json.loads(row[0])
-                if saved["parameters_hash"] != fingerprint:
+                legacy_spec = {k: v for k, v in spec.items() if k != "input_contract"}
+                legacy_replay = (
+                    "input_contract" not in saved["definition"]
+                    and not spec["input_contract"]
+                    and saved["definition"] == legacy_spec
+                    and saved["parameters_hash"] == digest(legacy_spec)
+                )
+                if saved["parameters_hash"] != fingerprint and not legacy_replay:
                     raise LedgerError("SHADOW_VERSION_CONFLICT", "Create a new model version")
                 return saved  # type: ignore[no-any-return]
+            for rule in spec["rules"]:
+                try:
+                    rule_contract(rule, spec["input_contract"])
+                except ValueError as exc:
+                    raise LedgerError("SHADOW_RULE_CONTRACT_INVALID", str(exc)) from exc
             saved = dict(
                 id=str(uuid4()),
                 definition=spec,
