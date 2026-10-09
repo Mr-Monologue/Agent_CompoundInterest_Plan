@@ -1477,3 +1477,19 @@ release-manifest.json只修正notes中“数值计算尚不存在”的过时说
 本执行任务边界：先feature提交/推送，创建或更新feature → develop draft PR，取得可读CI入口及实际head，交父对话；不并发合并/发布。CI触发为pull_request和main push，feature推送不是CI通过证据。远端双平台CI结果、实际merge checkout与tree门禁仍待核验；阶段尚未待验收或结项。三模块资料限制及固定结束条件全部不变。
 
 治理自审：分开项目工程授权、阶段范围和阶段部署授权；原拒绝历史保留；五种阶段状态及八节报告、原清单唯一入口保持。仅改治理文档和当前状态，不新增权限外业务动作，无单独治理验收节点。
+
+
+### 0.46.0源码发布准备（提交前快照）
+
+阶段名称：真实数据接入与影子观察启动准备｜阶段状态：进行中
+
+依RELEASE_CHECKLIST，本次新来源准备能力使用0.46.0：同步pyproject.toml、运行时version.py、uv.lock本项目项及release-manifest.json，并补CHANGELOG。database_revision仍0045_shadow_models、依赖包与R1.1业务源码不变；发布manifest不等部署授权。PROJECT_STATUS/ROADMAP只更新导航摘要，任务仍只维护本清单。
+
+新版本提交是新候选，不能把77177d2的CI37893040458写成新head已验证。必要本地检查为版本/锁定依赖一致性、现有运行时发布契约测试、wheel及sdist构建和包内源码核验、业务源码/迁移及定义不变性；不重复无变化的本地全量。结果保存在R11_SOURCE_ADAPTER_EVIDENCE.json的release_preparation及隔离evidence/version-preparation.json。
+
+既有门禁顺序：feature→develop双平台CI与审查通过；develop→release双平台CI通过；release manifest变更触发现有release.yml（Ubuntu pytest/Ruff/mypy及版本一致性后创建Tag/源码Release）；release→main双平台CI通过；最后核验develop/release/main/Tag同tree、Tag准确release提交、Release及产物。当前工作流只创建源码Release及GitHub自动源码归档，不上传wheel/sdist资产；本地两种包属于构建验证产物，不擅自增加发布工作流。父对话统一协调合并发布，避免并发。当前不安装、不部署。
+
+
+版本准备自验已通过：0.46.0四处一致，uv离线锁检查0；12项既有Windows运行时/发布契约测试通过，版本文件Ruff0；wheel及sdist构建0，102份包内源码/定义字节与本候选一致。相对714项受测集合仅version.py、pyproject.toml、uv.lock三个版本项变化，其余171文件原始hash不变；项目/锁文件除本项目版本外结构相同，依赖、迁移、模型定义不变。未重复本机全量，新head必须重新核验双平台CI。
+
+构建历史保留：首次缓存目录位于源码内导致exit2；随后长时间无进展的本任务构建主动中止，子进程exit4294967295，不伪称自然失败原因。系统证书构建成功后发现sdist含本地依赖缓存，已增加.task-cache/到.gitignore，最终离线重建通过且不含缓存、原件、数据库或.env。wheel 515620字节，sdist 1114438字节；指纹见release_preparation.artifacts。它们是本次包内容验证快照，未上传、未安装，不冒充未来Tag的最终源码归档。
