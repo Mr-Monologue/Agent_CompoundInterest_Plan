@@ -1,0 +1,254 @@
+{
+  "result": {
+    "purpose": "ISOLATED_CONDITIONAL_COMPONENTS_NOT_QUALIFIED_R11_RUN",
+    "window_start": "2025-09-16",
+    "window_end": "2026-10-08",
+    "endpoints": 253,
+    "returns": 252,
+    "missing_on_csi_grid": {
+      "003096": [],
+      "009163": []
+    },
+    "calendar_limitation": "CSI grid not independent proof of fund applicable valuation calendar",
+    "source_independence": "unverified",
+    "rows": [
+      {
+        "code": "003096",
+        "return_pct": "-7.620630603404855444746650549007860",
+        "max_drawdown_pct": "29.09226932668329177057356608478821",
+        "annualized_sample_volatility_pct": "32.16121248188202430769422124138046",
+        "external_cost_pct": "0.2500",
+        "conditional_dimension_scores": {
+          "return_score": "30.94842349148786138813337362748035",
+          "risk_score": "37.88095678809990994313427189857698",
+          "cost_score": "87.5000",
+          "management": null
+        },
+        "total_score": null,
+        "rank": null,
+        "dividends_in_window": {},
+        "limitations": [
+          "dividend lists agree in this window but independent complete coverage not established",
+          "manager last-change chain incomplete",
+          "redemption arrival bound unknown",
+          "fund calendar qualification unknown",
+          "exact draft benchmark identity/effective range incomplete",
+          "source publication/timezone chain incomplete"
+        ]
+      },
+      {
+        "code": "009163",
+        "return_pct": "-12.67027977149553244470484839607410",
+        "max_drawdown_pct": "25.47894583292813381308956530195450",
+        "annualized_sample_volatility_pct": "29.90489106384094349979461974163067",
+        "external_cost_pct": "0",
+        "conditional_dimension_scores": {
+          "return_score": "18.32430057126116888823787900981475",
+          "risk_score": "45.86324926601577232084306060588380",
+          "cost_score": "100",
+          "management": null
+        },
+        "total_score": null,
+        "rank": null,
+        "dividends_in_window": {},
+        "limitations": [
+          "dividend lists agree in this window but independent complete coverage not established",
+          "manager last-change chain incomplete",
+          "redemption arrival bound unknown",
+          "fund calendar qualification unknown",
+          "exact draft benchmark identity/effective range incomplete",
+          "source publication/timezone chain incomplete"
+        ]
+      }
+    ]
+  },
+  "new_public_sources": [
+    {
+      "key": "zo-nav",
+      "kind": "nav",
+      "code": "003096",
+      "url": "https://www.zofund.com/ws-business-server/fund/getFundNavList?productCode=003096&productId=391&merchantId=0&siteno=main&startDate=2022-12-30&endDate=2026-10-09",
+      "started": "2026-10-09T09:53:10.653480+00:00",
+      "retrieved_at": "2026-10-09T09:53:11.317315+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "e9cea387d8e9987bafe1e4605593c375d6aecc6c0f6632f21ac89da50a094f4b",
+      "count": 913,
+      "first": {
+        "day": "2022-12-30",
+        "value": "2.3104"
+      },
+      "last": {
+        "day": "2026-10-08",
+        "value": "1.8341"
+      }
+    },
+    {
+      "key": "gf-nav",
+      "kind": "nav",
+      "code": "009163",
+      "url": "https://www.gffunds.com.cn/apistore/JsonService?service=MarketPerformance&method=NAV&op=queryNAVByFundcode&fundcode=009163&_mode=all&startdate=20221230&enddate=20261009",
+      "started": "2026-10-09T09:53:10.653985+00:00",
+      "retrieved_at": "2026-10-09T09:53:12.539004+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "37153fa5de39984a8f038b702fbace474c08b0d91d3e8c7f78b1e2a01cf4bef8",
+      "count": 913,
+      "first": {
+        "day": "2022-12-30",
+        "value": "2.1841"
+      },
+      "last": {
+        "day": "2026-10-08",
+        "value": "1.7886"
+      }
+    },
+    {
+      "key": "zo-div",
+      "kind": "div",
+      "code": "003096",
+      "url": "https://www.zofund.com/ws-business-server/fund/getFundMelonmdPage?productId=391&productCode=003096&merchantId=0&siteno=main&pageNum=1&pageSize=5000",
+      "started": "2026-10-09T09:53:10.653985+00:00",
+      "retrieved_at": "2026-10-09T09:53:11.072869+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "2a920cfa827dc227eb39fbec7f750e8c1cdbd1c64292ae18b7c51c38d1e6797e",
+      "count": 2,
+      "first": {
+        "ex_date": "2018-06-19",
+        "cash_per_unit": "0.075"
+      },
+      "last": {
+        "ex_date": "2021-08-10",
+        "cash_per_unit": "0.12169"
+      }
+    },
+    {
+      "key": "gf-div",
+      "kind": "div",
+      "code": "009163",
+      "url": "https://www.gffunds.com.cn/apistore/JsonService?service=Equity&method=Dividend&op=queryDividendByFundcode&fundcode=009163",
+      "started": "2026-10-09T09:53:11.108034+00:00",
+      "retrieved_at": "2026-10-09T09:53:11.230758+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "b53e75447e548e01c47161989af40b27259d9ca005d1dd925fe878bdd7e3a7cd",
+      "count": 0,
+      "first": null,
+      "last": null
+    },
+    {
+      "key": "calendar",
+      "kind": "calendar",
+      "code": "000933",
+      "url": "https://www.csindex.com.cn/csindex-home/perf/index-perf?indexCode=000933&startDate=20221230&endDate=20261009",
+      "started": "2026-10-09T09:53:11.241759+00:00",
+      "retrieved_at": "2026-10-09T09:53:11.979555+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "13fe110590da5b8e28b949d2dbab268fe40b4d3df28ef198f8c2bf880ca600fc",
+      "count": 911,
+      "first": {
+        "day": "2022-12-30",
+        "value": "10280.1"
+      },
+      "last": {
+        "day": "2026-10-09",
+        "value": "7838.39"
+      }
+    },
+    {
+      "key": "zo-channel-div",
+      "url": "https://fundf10.eastmoney.com/fhsp_003096.html",
+      "retrieved_at": "2026-10-09T09:53:53.038583+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "a3ffc3ef02312f97a383c845a000329a347b1cec2e6589ce3658ff8d5b6c87c7",
+      "parsed": [
+        {
+          "ex_date": "2018-06-19",
+          "cash_per_unit": "0.075"
+        },
+        {
+          "ex_date": "2021-01-18",
+          "cash_per_unit": "0.03531"
+        },
+        {
+          "ex_date": "2021-08-10",
+          "cash_per_unit": "0.12169"
+        }
+      ]
+    },
+    {
+      "key": "gf-channel-div",
+      "url": "https://fundf10.eastmoney.com/fhsp_009163.html",
+      "retrieved_at": "2026-10-09T09:53:52.981769+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "7fb09ba099cddfb735ef23c54152a9f3d2f6b0e96f14302c48fca15e4409cdde",
+      "parsed": []
+    },
+    {
+      "key": "zo-product",
+      "url": "https://www.zofund.com/fundDetail/003096/index.html",
+      "retrieved_at": "2026-10-09T09:53:52.910650+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "0981f13c50af6f5a08d650f826a3a29c672cff4e231c114bc75d2144939ec075"
+    },
+    {
+      "key": "gf-product",
+      "url": "https://gfwx.gffunds.com.cn/funds/?fundcode=009163",
+      "retrieved_at": "2026-10-09T09:53:53.151529+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "5ed0e9f1b8f1c011aac54d980860aa1269db29807300ca6345fa94d6fa03f62f"
+    },
+    {
+      "key": "gf-prospectus",
+      "url": "https://www.gffunds.com.cn/jjgg/flwj/202505/P020250526316412126656.pdf",
+      "retrieved_at": "2026-10-09T09:53:53.506729+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "f04e623bcb5c478b5ef878b741b157b7e6b838a08bff773e658686396e9f3036"
+    }
+  ],
+  "reused_legal_sources": {
+    "zo-legal": {
+      "source_ref": "https://www.zofund.com/2026/wsnotice/20260921/7dda89d63a114540ac1e0826aaebd57d.pdf",
+      "retrieved_at": "2026-09-29T02:08:01.032624Z",
+      "published_at": null,
+      "data_date": "2026-09-21",
+      "content_hash": null
+    },
+    "gf-legal": {
+      "source_ref": "https://www.gffunds.com.cn/jjgg/flwj/202607/P020260727336432205546.pdf",
+      "retrieved_at": "2026-09-29T02:07:14.008022Z",
+      "published_at": null,
+      "data_date": "2026-07-10",
+      "content_hash": null
+    },
+    "zo-half": {
+      "source_ref": "https://www.zofund.com/2026/wsnotice/20260829/673593c1c76447269a9c6e485b35e04c.pdf",
+      "retrieved_at": "2026-09-29T02:08:00.872366Z",
+      "published_at": null,
+      "data_date": "2026-06-30",
+      "content_hash": null
+    },
+    "gf-half": {
+      "source_ref": "https://www.gffunds.com.cn/jjgg/dqgg/202608/P020260831324422388065.pdf",
+      "retrieved_at": "2026-09-29T02:07:13.893644Z",
+      "published_at": null,
+      "data_date": "2026-06-30",
+      "content_hash": null
+    }
+  },
+  "archived_response_sha256": "fd5e4793e9a0ce7153a2b79eb26b6035947aaa2eeae165bca6035e2148b41a8e",
+  "definition_commit": "1d0b7ea",
+  "definition_blob": "7fdbfdd55d72837197f3e07f042f8e27ed26fce5",
+  "calculation_code_commit": "d6435790f991f3b83661894e248e33e170c79fa3",
+  "production_accessed": false,
+  "preregistration_created": false,
+  "approval_mutation": false,
+  "full_model_run": false
+}

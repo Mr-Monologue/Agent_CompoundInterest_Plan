@@ -1,3 +1,7 @@
+> 最新（2026-10-09）：Ryan已验收v0.46.0受限准备及源码发布，原范围已结项、未部署。独立医疗D单次可行性验证已完成调查，完整评分因明确证据缺口受阻；有真实分项、无总分/前瞻。见原清单末尾及docs/MEDICAL_D_ONCE_FEASIBILITY.md。本轮停止。
+
+> 当前状态（2026-10-09发布收尾）：v0.46.0源码已发布，main最终双平台CI通过，阶段待验收、未部署、无合格前瞻起点。以[原实施清单](docs/LAUNCH_CHECKLIST.md)末尾与[最终待验收报告](docs/R11_SOURCE_RELEASE_ACCEPTANCE.md)为准。下文旧状态作为历史保留。本行是发布后本地文档。
+
 > 当前阶段（2026-10-09）：真实数据接入与影子观察启动准备，进行中。用户已验收v0.45.0 R1.1工程并允许结项，最终源码发布/CI证据见[最终附录](https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/pull/221#issuecomment-6073769486)。首轮真实可行性、必要隔离适配、真实回放及独审已完成；0.46.0源码候选准备中，双平台CI/源码治理和阶段验收未完成。三模块均无合格F起点，不改变R1.1定义，不批准映射/晋级/部署/投资财务。唯一任务与固定结束条件见[原清单](docs/LAUNCH_CHECKLIST.md#shadow-current-stage)，证据见[可行性报告](docs/R11_REAL_DATA_FEASIBILITY.md)。以下为历史记录，不覆盖当前状态。
 
 > 当前阶段（2026-10-09）：C/D最小影子系统与E治理进行中。f559候选的双平台CI #325已核验成功（Ubuntu673通过/4跳过，Windows677通过），既有独审已收敛；原第五轮退出码仍UNKNOWN。工程证据及验收材料已备，文档归档后最新head CI须另核验；受控合并发布与K3关键验收尚未完成，未结项。本任务暂不合并，无部署/实际晋级/配置/财务授权，F无合格起点、ACTIVE不可达。唯一当前入口为[原清单](docs/LAUNCH_CHECKLIST.md#r11-ci-evidence)。以下为历史记录。
