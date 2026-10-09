@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-09T01:55:00Z",
+  "purpose": "Immutable evidence snapshot for f559 candidate; documentation archive child head must be independently checked without recursive evidence commits.",
+  "repository": "Mr-Monologue/Agent_CompoundInterest_Plan",
+  "pr": {
+    "number": 221,
+    "head": "f559ad874155166cec6b0447f820ff3fc00793a3",
+    "base": "669c9d7a308fb30f0d14e5ce6870266589f4ce1e",
+    "draft": true,
+    "merged": false
+  },
+  "run": {
+    "id": 37870112209,
+    "run_number": 325,
+    "run_attempt": 1,
+    "event": "pull_request",
+    "head_sha": "f559ad874155166cec6b0447f820ff3fc00793a3",
+    "status": "completed",
+    "conclusion": "success",
+    "created_at": "2026-10-09T01:30:34Z",
+    "updated_at": "2026-10-09T01:48:20Z",
+    "url": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/actions/runs/37870112209"
+  },
+  "actual_checkout": "0dc568bb10d05be46b0eb662419003ed32933b01",
+  "comparisons": {
+    "local_test_to_candidate": {
+      "repository_full_name": "Mr-Monologue/Agent_CompoundInterest_Plan",
+      "base": "9c88d1d7dd995204d6f6225d0531428ece23352f",
+      "head": "f559ad874155166cec6b0447f820ff3fc00793a3",
+      "status": "ahead",
+      "ahead_by": 3,
+      "behind_by": 0,
+      "total_commits": 3,
+      "too_large": null,
+      "base_commit": {
+        "sha": "9c88d1d7dd995204d6f6225d0531428ece23352f",
+        "url": "https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/commits/9c88d1d7dd995204d6f6225d0531428ece23352f",
+        "html_url": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/commit/9c88d1d7dd995204d6f6225d0531428ece23352f"
+      },
+      "merge_base_commit": {
+        "sha": "9c88d1d7dd995204d6f6225d0531428ece23352f",
+        "url": "https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/commits/9c88d1d7dd995204d6f6225d0531428ece23352f",
+        "html_url": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/commit/9c88d1d7dd995204d6f6225d0531428ece23352f"
+      },
+      "files": [
+        {
+          "filename": "PROJECT_STATUS.md",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "previous_filename": null
+        },
+        {
+          "filename": "ROADMAP.md",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "previous_filename": null
+        },
+        {
+          "filename": "docs/LAUNCH_CHECKLIST.md",
+          "status": "modified",
+          "additions": 45,
+          "deletions": 10,
+          "changes": 55,
+          "previous_filename": null
+        },
+        {
+          "filename": "docs/R11_FINAL_FULL_ATTEMPT_5.txt",
+          "status": "added",
+          "additions": 43,
+          "deletions": 0,
+          "changes": 43,
+          "previous_filename": null
+        },
+        {
+          "filename": "docs/R11_FINAL_RUN_EVIDENCE.json",
+          "status": "added",
+          "additions": 63,
+          "deletions": 0,
+          "changes": 63,
+          "previous_filename": null
+        },
+        {
+          "filename": "docs/SHADOW_STAGE_ACCEPTANCE.md",
+          "status": "modified",
+          "additions": 39,
+          "deletions": 39,
+          "changes": 78,
+          "previous_filename": null
+        }
+      ]
+    },
+    "candidate_to_actual_checkout": {
+      "repository_full_name": "Mr-Monologue/Agent_CompoundInterest_Plan",
+      "base": "f559ad874155166cec6b0447f820ff3fc00793a3",
+      "head": "0dc568bb10d05be46b0eb662419003ed32933b01",
+      "status": "ahead",
+      "ahead_by": 31,
+      "behind_by": 0,
+      "total_commits": 31,
+      "too_large": null,
+      "base_commit": {
+        "sha": "f559ad874155166cec6b0447f820ff3fc00793a3",
+        "url": "https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/commits/f559ad874155166cec6b0447f820ff3fc00793a3",
+        "html_url": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/commit/f559ad874155166cec6b0447f820ff3fc00793a3"
+      },
+      "merge_base_commit": {
+        "sha": "f559ad874155166cec6b0447f820ff3fc00793a3",
+        "url": "https://api.github.com/repos/Mr-Monologue/Agent_CompoundInterest_Plan/commits/f559ad874155166cec6b0447f820ff3fc00793a3",
+        "html_url": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/commit/f559ad874155166cec6b0447f820ff3fc00793a3"
+      },
+      "files": []
+    }
+  },
+  "jobs": [
+    {
+      "id": 113625991303,
+      "name": "validate (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "run_id": 37870112209,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Run uv sync --locked --all-extras --python 3.11",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Run uv run pytest",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Run uv run ruff check .",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Run uv run mypy src",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Parse Windows PowerShell scripts",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17
+        }
+      ]
+    },
+    {
+      "id": 113625991536,
+      "name": "validate (windows-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "run_id": 37870112209,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run astral-sh/setup-uv@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Run uv sync --locked --all-extras --python 3.11",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Run uv run pytest",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Run uv run ruff check .",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Run uv run mypy src",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Parse Windows PowerShell scripts",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Post Run astral-sh/setup-uv@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17
+        }
+      ]
+    }
+  ],
+  "logs": [
+    {
+      "job_id": 113625991303,
+      "path": "R11_CI_325_UBUNTU.txt",
+      "format": "Complete UTF-8 decoded connector job log, unchanged",
+      "pytest": "673 passed, 4 skipped, 1 warning in 525.87s"
+    },
+    {
+      "job_id": 113625991536,
+      "path": "R11_CI_325_WINDOWS.txt",
+      "format": "Complete UTF-8 decoded connector job log, unchanged",
+      "pytest": "677 passed, 1 warning in 1019.69s"
+    }
+  ],
+  "success_evidence": "Official workflow/job/step conclusions and full command logs; no independent numeric exit code field was returned. Do not relabel legacy local process exit code.",
+  "legacy_fifth_run_exit_code": "UNKNOWN",
+  "limitations": [
+    "Not production acceptance, release, installation, real model observation or promotion evidence.",
+    "No qualified real F starting point; ACTIVE unreachable; v1.6 boundary unchanged.",
+    "Starlette TestClient/httpx, Actions Node.js 20 forced to 24, and punycode deprecation warnings retained.",
+    "Historical cloud API Forbidden cause and local cold-start/performance variation remain unknown."
+  ]
+}

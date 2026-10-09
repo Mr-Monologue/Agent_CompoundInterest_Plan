@@ -931,9 +931,9 @@ cd /workspace/Agent_CompoundInterest_Plan
 <a id="shadow-current-stage"></a>
 ## 当前阶段：C/D最小影子系统与E治理（R1.1已批准隔离研发）
 
-阶段名称：C/D最小影子系统与E治理（R1.1）｜阶段状态：外部受阻
+阶段名称：C/D最小影子系统与E治理（R1.1）｜阶段状态：进行中
 
-快照日期2026-10-08。治理与报告规则先前已获用户验收；R1.1方法于10:05 UTC获准，仅用于隔离研发，原定义与参数冻结。当前云端实现及已发现缺陷修复已完成：受测源码9c88d1d的完整pytest终态为673通过/4项Windows跳过/1条既有警告，原退出码因工具会话失联保持UNKNOWN；C实现与最终HTTP测试增量独审均通过。该轮pytest已结束。约定双平台CI证据仍缺，阶段外部受阻，尚不能申请K3待验收或结项。最新原日志、审查范围、源指纹、剩余门禁及恢复动作见[本节末尾](#r11-final-evidence)，不再使用历史“运行中”检查点。后续遵循[AGENTS长期规则](../AGENTS.md#autonomy-and-acceptance)。
+快照日期2026-10-09。原R1.1批准、冻结规则和既有独审不变；归档前PR #221为feature→develop、draft、未合并，head f559。CI #325两平台success：Ubuntu673通过/4跳过/1警告，Windows677通过/1警告；Ruff/mypy96及Windows PowerShell解析通过。两job实际checkout PR merge 0dc，与f559完整文件树无差异；9c88→f559仅文档证据，最终工程源码/测试等价。第五轮原退出码永远保留UNKNOWN，不用CI回写。当前工程证据已补、验收材料已备，但本次归档后最新head CI、受控合并发布及K3关键验收仍需依原条件接续，阶段不结项。本任务按“暂不合并”安排仅归档文档；普通维护自验无需新增用户节点。最新入口见[本节末尾](#r11-ci-evidence)，历史检查点不覆盖最新事实。
 
 ### 范围、授权与唯一方案依据
 
@@ -950,8 +950,8 @@ cd /workspace/Agent_CompoundInterest_Plan
 |K0：方法决定|已完成：10:05 UTC批准精确1d0b7ea|仅隔离研发假设，不等于实际晋级/部署|用户决定由父对话转交；定义指纹未改|
 |K1：输入与计算闭环|C/D计算、完整集合/逐字段绑定、Core映射/账户快照及旧版本回放已实现并自验/独审|真实输入/独立来源缺口继续单列，不扩池调参|Neo；最终全量、08e20集合独审及资料矩阵|
 |K2：E治理与证据分层|预注册、H/F/K、敏感性/压力、原件回执、健康阻断/降级/新证据恢复已实现；完整SYNTHETIC链通过|真实域无合格观察起点/晋级资格，ACTIVE不可达|Neo；最终全量完整E单项766.63秒、冻结方案|
-|K3：工程交付验收|云端实现、本地673断言和独审已齐；原退出码UNKNOWN、Ubuntu/Windows CI未验证|账号方提供最终候选同SHA双平台CI证据或恢复原API读取；完整门禁齐备后才报待验收|Neo核验；Ryan关键验收不能由自验替代|
-|受控源码合并/版本发布|仅feature源码推送，本阶段未合入develop/release/main，未正式发布0.45.0|沿feature→develop→release→main及单一release/tag规则，逐次核对双平台CI与远端树|Neo；API Forbidden不重试/绕过，门禁前不合并或发布|
+|K3：工程交付验收|云端实现、既有独审及f559双平台CI #325已齐；原第五轮退出码UNKNOWN保留；验收材料已备|归档后最新head CI另核验；原固定结束条件保持，当前未申请K3或结项|Neo核验；Ryan关键验收不能由自验替代|
+|受控源码合并/版本发布|PR #221为draft，本阶段未合入develop/release/main，未正式发布0.45.0|本任务暂不合并；后续由父对话按最新具体授权及feature→develop→release→main规则接续，每次核对双平台CI与远端树|Neo；不将本次CI或文档归档当作合并/发布/部署|
 
 批准R1.1后K1→K2→K3中的小任务、实现选择、失败修复、遗漏工程、文档和衔接均自动连续推进，不再逐项询问。只有重大方案/范围变化、必须解除的阻塞、具体未授权操作和约定关键验收交用户；局部阻塞不停止独立工作。关键用户节点为K0方法决定与K3完整工程交付验收；K1/K2为工程自验和独审证据节点，常规通过后无需等用户回复。
 
@@ -979,16 +979,16 @@ R1.1中的至少13周F真实前瞻、104/52周H历史结构诊断、K当时可�
 
 |类别|事项与影响|下一步/责任方|
 |---|---|---|
-|实现闭环必须完成|K1/K2实现及本地断言/独审已完成；原退出码可核验证据、双平台CI、受控合并发布与关键工程验收门禁未齐，尚未达K3|父对话/账号方提供最终候选CI证据；Neo核验后沿原流程继续，不请求重复方法/开发批准|
+|实现闭环必须完成|K1/K2实现、独审和f559双平台CI已完成；归档后新head CI、受控合并发布及K3关键验收仍需接续|Neo按准确head核验终态，父对话依最新授权接续；不新增日常文档用户验收，不自行改后置或结项|
 
-|外部阻塞|GitHub API此前Forbidden，原因未知；远端Ubuntu/Windows CI、PR/合并/Release证据不可用|父对话/账号管理方提供可用授权或可信CI证据；Neo不重试拒绝接口、不绕过，门禁前不合并|
+|历史外部阻塞|原云端GitHub API Forbidden原因未知；本次正常连接已读到PR及双平台真实CI，当前不能再称该证据不可用|保留旧失败，不绕过原拒绝；原任务通信故障独立，不在本机或新环境跑代码替代|
 |外部阻塞|C历史/时点数据、D独立上游/基准/费用等覆盖及真实观察时间不足|Neo在已有合法公开来源内有限核查并保留缺口；真实时间自然积累，不能测试替代|
 |外部阻塞|离线Windows现用安装和生产配置/业务状态UNKNOWN|需要真实验收时由Ryan恢复可访问环境；Neo核验实际状态，部署仍单独授权|
 |已约定后置|模型长期观察/实际晋级相对工程交付单列，不免除其自身门槛；生产部署/真实六步本机验收独立保留|工程交付后仍由本清单进入证据与授权；Neo维护，Ryan确认关键节点|
 |可保留限制后延|支付宝自动获取交易、新通知渠道、真实投资配置/策略转换|不阻塞当前隔离工程；另有明确范围及授权才启动，仍由本清单跟踪|
 |需要用户决定|当前没有新的方法或阶段顺序决定；将来实际晋级、部署与策略转换必须对具体范围确认|届时集中提交准确版本/变更/验证/持续授权范围；此时不请求预先授权|
 
-恢复目录`/workspace/Agent_CompoundInterest_Plan`，分支feature。旧session22384已退出且日志归档。当前R1.1已批准并实现，本地可独立收尾已完成；当前无运行中全量，已知代码/独审阻断已关闭，后续受双平台CI证据阻塞。最新源码SHA、终态及下一外部动作见本节末尾检查点，不读取上方旧“等待方法批准”作为当前状态。
+恢复目录`/workspace/Agent_CompoundInterest_Plan`，分支feature。旧session22384已退出且日志归档。当前R1.1已批准并实现，旧本地全量已结束、已知代码/独审阻断已关闭；f559双平台CI已成功。本轮通过已连接GitHub工具进行文档归档，不在原目录或另一环境启动执行器。新文档head CI须只读跟踪，不循环归档。最新SHA关联、终态和恢复动作见文末，不使用历史“等待方法批准/CI不可读”作为当前状态。
 
 ### 验收报告与证据索引
 
@@ -1337,7 +1337,7 @@ release-manifest.json只修正notes中“数值计算尚不存在”的过时说
 
 
 <a id="r11-final-evidence"></a>
-### 第五轮终态归档及最终增量独审通过（最新恢复入口）
+### 第五轮终态归档及最终增量独审通过（2026-10-08历史快照；最新见下方CI核验）
 
 2026-10-08 18:45:57 UTC恢复只读核验：原PID30981已不存在，原日志具有完整100%与pytest终态摘要，**673通过、4项Windows跳过、1条既有警告，3089.22秒（51:29）**。原日志最后写入18:14:24 UTC。[原始完整日志](R11_FINAL_FULL_ATTEMPT_5.txt)、[受测源码/命令/哈希/限制](R11_FINAL_RUN_EVIDENCE.json)已原样归档，日志SHA256为`e1cf3aacffbbc94f3a1ee29a8ea699cfb7d3a8f6754438317337b704a9a9c183`。四项跳过均为Windows executable updater test，没有人工跳过。完整E模拟单项766.63秒；原第四轮失败的日常HTTP及MCP相关用例在本轮通过。
 
@@ -1357,3 +1357,17 @@ release-manifest.json只修正notes中“数值计算尚不存在”的过时说
 本地读取[CI定义](../.github/workflows/ci.yml)进一步明确恢复条件：触发器为pull_request或main推送，**feature单独推送不保证触发CI**；若已有对应PR，需核实其同步事件和准确head SHA，不能猜测PR存在或CI已运行。按既有授权通过可用通道建立/确认feature→develop的draft PR后，核对validate的ubuntu-latest与windows-latest两项：Python3.11锁定依赖同步、完整pytest、Ruff、mypy，以及Windows PowerShell解析。未改工作流或向main推送来触发任务，也未调用被拒API。原第五轮退出码永远按已知证据保留UNKNOWN；同版本CI真实命令结果补足的是工程门禁，不是伪造/追补原退出码。
 
 供原通道恢复后直接复用的draft PR标题：`Implement isolated R1.1 C/D research and E governance`。正文应说明既有注册/阻断基础缺少计算闭环，本次增加冻结规则计算、原件/全成分绑定、历史版本回放及受控E证据流程；不影响v1.6金额/财务或激活策略。附本报告、9c88受测源码、673通过/4项Windows未验证/原退出码UNKNOWN及全部独审关闭范围；由实际CI证据补齐门禁。此为原清单内的可审说明，**没有创建或发送PR**，不形成平行实施清单。
+
+
+<a id="r11-ci-evidence"></a>
+### 2026-10-09双平台CI已核验，文档原子归档（最新恢复入口）
+
+阶段名称：C/D最小影子系统与E治理（R1.1）｜阶段状态：进行中
+
+1. **准确候选与差异。** [PR #221](https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/pull/221)在归档前为draft/open/未合并，head `f559ad874155166cec6b0447f820ff3fc00793a3`，base develop `669c9d7a308fb30f0d14e5ce6870266589f4ce1e`。9c88→f559共3提交，仅PROJECT_STATUS、ROADMAP、原清单、第五轮原日志、原轮JSON和报告6文件；src/tests/依赖/CI/manifest未变。
+2. **真实CI证据。** [run #325](https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/actions/runs/37870112209) completed/success，attempt1。Ubuntu job113625991303：673通过/4跳过/1警告，525.87秒；Windows job113625991536：677通过/无跳过/1警告，1019.69秒。uv锁定同步、完整pytest、Ruff、mypy96均success，Windows PowerShell解析success。Ubuntu解析步骤按平台条件skipped，不能写成Ubuntu执行通过。
+3. **覆盖对象。** 两份job原日志都记录checkout `0dc568bb10d05be46b0eb662419003ed32933b01`，不是直接checkout f559；GitHub compare f559→0dc files=[]，证明其完整文件树等价。#325补的是最终工程源码验证与4项Windows执行器覆盖，不证明生产验收，也不更改原第五轮UNKNOWN。
+4. **证据索引。** [CI元记录/逐步终态](R11_CI_325_EVIDENCE.json)、[Ubuntu完整解码原日志](R11_CI_325_UBUNTU.txt)、[Windows完整解码原日志](R11_CI_325_WINDOWS.txt)、[八节报告](SHADOW_STAGE_ACCEPTANCE.md)。日志保留Starlette、Actions Node.js 20/24和punycode弃用提醒。此前冷启动/耗时原因未知保留。原日志与R11_FINAL_RUN_EVIDENCE.json不改写。
+5. **本次变更与自验。** 仅feature的一次文档/证据提交，以f559为唯一父提交；报告八节、数字/来源、原清单唯一入口、源码差异范围与限制进行自验。不修改代码、测试、CI或权限，不新建第二清单，不在本机或新环境运行代码。正常GitHub读取已取得实证；原云端Forbidden原因及通信故障仍按历史记录保留。
+6. **剩余门槛与恢复。** 归档后先核验最新PR head与仅文档diff，再只读跟踪该head关联的双平台CI及实际merge checkout。#325仅声明已验证f559等价树，不能冒充未来文档head已通过。没有新缺陷时不为回填自身SHA/CI重复文档提交。受控合并发布与K3用户关键验收尚未完成；固定结束条件不变，发布/部署/验收分列，不把必要欠项改后置。本任务按暂不合并安排保留draft，后续由父对话依最新授权与各次门禁接续，不新增普通文档用户决策。
+7. **真实能力边界。** 有限真实资料及完整JSON适配限制不变，F无合格起点、无真实晋级资格，ACTIVE不可达，策略v1.6边界保持。当前生产安装/业务状态UNKNOWN。本轮未合并、Tag、Release、部署或写入真实投资配置/财务事实；真实资料、观察和Windows生产六步仍依原分类单列。
