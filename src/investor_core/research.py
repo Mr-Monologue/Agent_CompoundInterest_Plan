@@ -2086,12 +2086,25 @@ class ResearchService:
                     **payload,
                     "facts": {k: v for k, v in facts.items() if k != "retrieved_at"},
                 }
+                if "r11_original" in facts.get("facts", {}):
+                    from investor_core.r11_source_archive import capture_identity
+
+                    identity = {**payload, "facts": capture_identity(facts)}
             facts_hash = _hash(identity)
             existing = connection.execute(
                 "SELECT * FROM market_research_evidence WHERE facts_hash=?",
                 (facts_hash,),
             ).fetchone()
             if existing is not None:
+                if (
+                    facts.get("kind") == "EXECUTION_SOURCE_V1"
+                    and "r11_original" in facts.get("facts", {})
+                ):
+                    from investor_core.r11_source_archive import read_envelope
+
+                    prior = read_envelope(json.loads(existing["facts_json"]))
+                    if read_envelope(facts).first_retrieved_at < prior.first_retrieved_at:
+                        raise ValueError("cannot backdate an existing original")
                 return self._evidence_data(connection, existing, idempotent_replay=True)
             previous = connection.execute(
                 """

@@ -1,3 +1,11 @@
+## v0.46.0 — source release candidate
+
+- Preserve complete original bytes and retrieval/publication/vintage metadata in existing source facts; display excerpts do not replace originals. No database migration.
+- Bind official native JSON pagination to a bounded collection and retain each response separately; completeness checks do not certify atomic snapshots or source independence.
+- Extract observed PMI HTML and PBC HTML/XLSX with versioned locators. New v2 preparation rejects ambiguous rows, headers and cell values; v1 remains historical replay only.
+- Keep R1.1 formulas, parameters, comparison pools, old independent receipts and promotion gates unchanged. Partial real evidence is not a qualified C/D run or effective forward observation.
+- Clarify continuing project engineering authorization separately from phase scope and production deployment authorization. No production upgrade, mapping approval, preregistration or investment action is included.
+
 ## v0.41.1
 
 - Keep every peer candidate in one Markdown table; show scope explanations after it.

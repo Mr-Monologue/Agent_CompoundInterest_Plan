@@ -1,0 +1,1852 @@
+{
+  "base_sha": "dcfb2e20a9a813da588d5444b38dbdce13d0acf9",
+  "scope": "SOURCE_PREPARATION_ONLY",
+  "platform": "Windows isolated task workspace",
+  "source_sha256": {
+    "src/investor_core/research.py": "7746a642da9f45450a991702f219729ea538c2652407fec27d51ac649a76f38b",
+    "src/investor_core/r11_source_archive.py": "301aedef457759b4cfb95b81c130f5b1ab2787de4d8ecfffbf63ce34928c3410",
+    "src/investor_core/r11_source_json.py": "353846abd8feb2d7148d2fccbf90aeccf6337686ed307e4f2e6fc3e671c51563",
+    "src/investor_core/r11_source_monthly.py": "801664ce92f3df34453aa603042477ee9720ab1d9b36e996bb6030e744a38c59",
+    "src/investor_core/r11_source_preparation.py": "27d829d7f5404b2ad74083f0bc671ebafb65ef2283731f856998b237326ad668",
+    "tests/test_r11_source_archive.py": "8827a9468e0b6937cecafcd4b1989356d4585216b86a4dbd257b2fabbfc40093",
+    "tests/test_r11_source_monthly.py": "301003b9c010479bd665b4021952d2ee4c1c4e2f8c5c846fc66fba237824e9cd",
+    "src/investor_core/r11_legacy/source_monthly_v1.py": "b7b49a6a5f4b4b7e6748159986a471c4c274b96d59583b43d0c1e21b6bdbaed0"
+  },
+  "captures": [
+    {
+      "name": "pmi_202609.html",
+      "url": "https://www.stats.gov.cn/zwfwck/sjfb/202609/t20260930_1965449.html",
+      "started_at": "2026-10-09T04:26:51.520089+00:00",
+      "retrieved_at": "2026-10-09T04:26:51.803577+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.stats.gov.cn/zwfwck/sjfb/202609/t20260930_1965449.html",
+      "bytes": 186255,
+      "sha256": "047cf98e1029862267438906eafa9d6f4aa7a0653d2c5857b1d37b7707df813e"
+    },
+    {
+      "name": "pmi_202608.html",
+      "url": "https://www.stats.gov.cn/sj/zxfb/202608/t20260831_1965154.html",
+      "started_at": "2026-10-09T04:26:52.014481+00:00",
+      "retrieved_at": "2026-10-09T04:26:52.433341+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.stats.gov.cn/sj/zxfb/202608/t20260831_1965154.html",
+      "bytes": 398531,
+      "sha256": "a561911c92b4ea4ea58ed808d5fe4ef61a1dfb79a31f593ba46ad4692aa5af46"
+    },
+    {
+      "name": "pmi_202607.html",
+      "url": "https://www.stats.gov.cn/zwfwck/sjfb/202607/t20260731_1964253.html",
+      "started_at": "2026-10-09T04:26:52.747812+00:00",
+      "retrieved_at": "2026-10-09T04:26:53.248860+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.stats.gov.cn/zwfwck/sjfb/202607/t20260731_1964253.html",
+      "bytes": 174710,
+      "sha256": "013fe0cd839e4b90d3af3dbba7ba2adf1c6a5ef082d2da76cf5928310ae3ab16"
+    },
+    {
+      "name": "pmi_202606.html",
+      "url": "https://www.stats.gov.cn/sj/zxfbhjd/202606/t20260630_1964032.html",
+      "started_at": "2026-10-09T04:26:53.541915+00:00",
+      "retrieved_at": "2026-10-09T04:26:54.123256+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.stats.gov.cn/sj/zxfbhjd/202606/t20260630_1964032.html",
+      "bytes": 422866,
+      "sha256": "559d302fc6de2e85a21451c82ba580ada803b5521a975df276d7d480bb680884"
+    },
+    {
+      "name": "afre_release_202608.html",
+      "url": "https://www.pbc.gov.cn/diaochatongjisi/116219/116225/2026091417020862747/index.html",
+      "started_at": "2026-10-09T04:26:54.407355+00:00",
+      "retrieved_at": "2026-10-09T04:26:54.883010+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.pbc.gov.cn/diaochatongjisi/116219/116225/2026091417020862747/index.html",
+      "bytes": 44710,
+      "sha256": "2be3b50ac4c72068c9b17e28b184cb2186b3f6a6ffe606c2a5b58334bf642998"
+    },
+    {
+      "name": "afre_release_202607.html",
+      "url": "https://www.pbc.gov.cn/diaochatongjisi/116219/116225/2026081416320925645/index.html",
+      "started_at": "2026-10-09T04:26:55.324567+00:00",
+      "retrieved_at": "2026-10-09T04:26:55.450178+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.pbc.gov.cn/diaochatongjisi/116219/116225/2026081416320925645/index.html",
+      "bytes": 44692,
+      "sha256": "933f3546fc3f8232014dc9e2cab854a331ff5da5a9509d3063ada2d3678dfcef"
+    },
+    {
+      "name": "afre_release_202606.html",
+      "url": "https://www.pbc.gov.cn/diaochatongjisi/116219/116225/2026071515025183948/index.html",
+      "started_at": "2026-10-09T04:26:55.783677+00:00",
+      "retrieved_at": "2026-10-09T04:26:55.925463+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.pbc.gov.cn/diaochatongjisi/116219/116225/2026071515025183948/index.html",
+      "bytes": 44903,
+      "sha256": "9ebce7e21c93d92980814be8f754dcc255ebe29dbbdf2531973e09361832c168"
+    },
+    {
+      "name": "afre_release_202605.html",
+      "url": "https://www.pbc.gov.cn/diaochatongjisi/116219/116225/2026061217051611931/index.html",
+      "started_at": "2026-10-09T04:26:56.353952+00:00",
+      "retrieved_at": "2026-10-09T04:26:56.475566+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.pbc.gov.cn/diaochatongjisi/116219/116225/2026061217051611931/index.html",
+      "bytes": 44651,
+      "sha256": "8f71dd1e651d2e5d8e7120555a000c54a517c41fb01d94b39948183badab9769"
+    },
+    {
+      "name": "afre_stock_202608.xlsx",
+      "url": "https://www.pbc.gov.cn/diaochatongjisi/attachDir/2026/09/2026091418132334323.xlsx",
+      "started_at": "2026-10-09T04:26:56.850986+00:00",
+      "retrieved_at": "2026-10-09T04:26:57.020666+00:00",
+      "command_exit": 0,
+      "stderr": "",
+      "client": "Windows curl Schannel; default certificate validation; no redirects",
+      "final_url": "https://www.pbc.gov.cn/diaochatongjisi/attachDir/2026/09/2026091418132334323.xlsx",
+      "bytes": 15785,
+      "sha256": "66dc7ce81b1e98142e20ea2baad3ce11f94cb573e52059d447cb18e9698befc5"
+    },
+    {
+      "name": "getFundNavPage.json",
+      "url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=1&pageSize=500&startDate=&endDate=&isPreview=&siteno=main",
+      "final_url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=1&pageSize=500&startDate=&endDate=&isPreview=&siteno=main",
+      "status": 200,
+      "started_at": "2026-10-09T04:25:08.732479+00:00",
+      "retrieved_at": "2026-10-09T04:25:09.070150+00:00",
+      "bytes": 139169,
+      "sha256": "85559ff7372433f3d6a98cd32bc27b7d4393af723fdbb9fbc29c6c6a7cea896e",
+      "content_type": "application/json;charset=UTF-8"
+    }
+  ],
+  "pagination_captures": [
+    {
+      "name": "fg_nav_250_page1.json",
+      "url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=1&pageSize=250&startDate=&endDate=&isPreview=&siteno=main",
+      "final_url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=1&pageSize=250&startDate=&endDate=&isPreview=&siteno=main",
+      "status": 200,
+      "retrieved_at": "2026-10-09T04:36:38.707496+00:00",
+      "bytes": 75426,
+      "sha256": "bb2d4c77eec8ac77f08836ad7c62860acb58bf139d81109af4e945ce99605f14"
+    },
+    {
+      "name": "fg_nav_250_page2.json",
+      "url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=2&pageSize=250&startDate=&endDate=&isPreview=&siteno=main",
+      "final_url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=2&pageSize=250&startDate=&endDate=&isPreview=&siteno=main",
+      "status": 200,
+      "retrieved_at": "2026-10-09T04:36:38.990957+00:00",
+      "bytes": 63841,
+      "sha256": "0b3f3f3b717ce3258e70f4471cc7593ac08416e133d85008783f0e745309108b"
+    }
+  ],
+  "results": [
+    {
+      "name": "pmi_202609.html",
+      "sha256": "047cf98e1029862267438906eafa9d6f4aa7a0653d2c5857b1d37b7707df813e",
+      "first_retrieved_at": "2026-10-09T04:26:51.803577+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-nbs-pbc-html-v1",
+            "original_sha256": "047cf98e1029862267438906eafa9d6f4aa7a0653d2c5857b1d37b7707df813e",
+            "publication_title": "2026年9月中国采购经理指数运行情况",
+            "publication": {
+              "date": "2026-09-30",
+              "precision": "DATE",
+              "timezone": null,
+              "absolute_time": null
+            },
+            "publication_source_texts": [
+              "2026-09-30 09:30"
+            ],
+            "normalization": "HTML_ENTITY_DECODE_AND_WHITESPACE_REMOVAL; NO_NUMERIC_ROUNDING",
+            "identity": "NBS_MANUFACTURING_PMI",
+            "unit": "PMI_POINTS",
+            "day": "2026-09-30",
+            "value": "50.1",
+            "locator": {
+              "table_index": 0,
+              "row_index": 15,
+              "column_index": 1,
+              "period_cell": "2026年9月",
+              "header": "PMI"
+            },
+            "publication_timezone_verified": false,
+            "vintage": "047cf98e1029862267438906eafa9d6f4aa7a0653d2c5857b1d37b7707df813e",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "PUBLICATION_TIMEZONE_AND_VINTAGE_NOT_AUTHENTICATED"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [
+              "2026-09-30"
+            ],
+            "L": []
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "pmi_202608.html",
+      "sha256": "a561911c92b4ea4ea58ed808d5fe4ef61a1dfb79a31f593ba46ad4692aa5af46",
+      "first_retrieved_at": "2026-10-09T04:26:52.433341+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-nbs-pbc-html-v1",
+            "original_sha256": "a561911c92b4ea4ea58ed808d5fe4ef61a1dfb79a31f593ba46ad4692aa5af46",
+            "publication_title": "2026年8月中国采购经理指数运行情况-国家统计局",
+            "publication": {
+              "date": "2026-08-31",
+              "precision": "DATE",
+              "timezone": null,
+              "absolute_time": null
+            },
+            "publication_source_texts": [
+              "2026/08/31 09:30"
+            ],
+            "normalization": "HTML_ENTITY_DECODE_AND_WHITESPACE_REMOVAL; NO_NUMERIC_ROUNDING",
+            "identity": "NBS_MANUFACTURING_PMI",
+            "unit": "PMI_POINTS",
+            "day": "2026-08-31",
+            "value": "49.8",
+            "locator": {
+              "table_index": 0,
+              "row_index": 15,
+              "column_index": 1,
+              "period_cell": "2026年8月",
+              "header": "PMI"
+            },
+            "duplicate_locations": [
+              {
+                "table_index": 4,
+                "row_index": 15,
+                "column_index": 1,
+                "period_cell": "2026年8月",
+                "header": "PMI"
+              }
+            ],
+            "publication_timezone_verified": false,
+            "vintage": "a561911c92b4ea4ea58ed808d5fe4ef61a1dfb79a31f593ba46ad4692aa5af46",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "PUBLICATION_TIMEZONE_AND_VINTAGE_NOT_AUTHENTICATED"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [
+              "2026-08-31"
+            ],
+            "L": []
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "pmi_202607.html",
+      "sha256": "013fe0cd839e4b90d3af3dbba7ba2adf1c6a5ef082d2da76cf5928310ae3ab16",
+      "first_retrieved_at": "2026-10-09T04:26:53.248860+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-nbs-pbc-html-v1",
+            "original_sha256": "013fe0cd839e4b90d3af3dbba7ba2adf1c6a5ef082d2da76cf5928310ae3ab16",
+            "publication_title": "2026年7月中国采购经理指数运行情况",
+            "publication": {
+              "date": "2026-07-31",
+              "precision": "DATE",
+              "timezone": null,
+              "absolute_time": null
+            },
+            "publication_source_texts": [
+              "2026-07-31 09:30"
+            ],
+            "normalization": "HTML_ENTITY_DECODE_AND_WHITESPACE_REMOVAL; NO_NUMERIC_ROUNDING",
+            "identity": "NBS_MANUFACTURING_PMI",
+            "unit": "PMI_POINTS",
+            "day": "2026-07-31",
+            "value": "49.2",
+            "locator": {
+              "table_index": 0,
+              "row_index": 15,
+              "column_index": 1,
+              "period_cell": "2026年7月",
+              "header": "PMI"
+            },
+            "publication_timezone_verified": false,
+            "vintage": "013fe0cd839e4b90d3af3dbba7ba2adf1c6a5ef082d2da76cf5928310ae3ab16",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "PUBLICATION_TIMEZONE_AND_VINTAGE_NOT_AUTHENTICATED"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [
+              "2026-07-31"
+            ],
+            "L": []
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "pmi_202606.html",
+      "sha256": "559d302fc6de2e85a21451c82ba580ada803b5521a975df276d7d480bb680884",
+      "first_retrieved_at": "2026-10-09T04:26:54.123256+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-nbs-pbc-html-v1",
+            "original_sha256": "559d302fc6de2e85a21451c82ba580ada803b5521a975df276d7d480bb680884",
+            "publication_title": "2026年6月中国采购经理指数运行情况-国家统计局",
+            "publication": {
+              "date": "2026-06-30",
+              "precision": "DATE",
+              "timezone": null,
+              "absolute_time": null
+            },
+            "publication_source_texts": [
+              "2026/06/30 09:30"
+            ],
+            "normalization": "HTML_ENTITY_DECODE_AND_WHITESPACE_REMOVAL; NO_NUMERIC_ROUNDING",
+            "identity": "NBS_MANUFACTURING_PMI",
+            "unit": "PMI_POINTS",
+            "day": "2026-06-30",
+            "value": "50.3",
+            "locator": {
+              "table_index": 0,
+              "row_index": 15,
+              "column_index": 1,
+              "period_cell": "2026年6月",
+              "header": "PMI"
+            },
+            "duplicate_locations": [
+              {
+                "table_index": 4,
+                "row_index": 15,
+                "column_index": 1,
+                "period_cell": "2026年6月",
+                "header": "PMI"
+              }
+            ],
+            "publication_timezone_verified": false,
+            "vintage": "559d302fc6de2e85a21451c82ba580ada803b5521a975df276d7d480bb680884",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "PUBLICATION_TIMEZONE_AND_VINTAGE_NOT_AUTHENTICATED"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [
+              "2026-06-30"
+            ],
+            "L": []
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "afre_release_202608.html",
+      "sha256": "2be3b50ac4c72068c9b17e28b184cb2186b3f6a6ffe606c2a5b58334bf642998",
+      "first_retrieved_at": "2026-10-09T04:26:54.883010+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-nbs-pbc-html-v1",
+            "original_sha256": "2be3b50ac4c72068c9b17e28b184cb2186b3f6a6ffe606c2a5b58334bf642998",
+            "publication_title": "2026年8月金融统计数据报告",
+            "publication": {
+              "date": "2026-09-14",
+              "precision": "DATE",
+              "timezone": null,
+              "absolute_time": null
+            },
+            "publication_source_texts": [
+              "2026-09-14"
+            ],
+            "normalization": "HTML_ENTITY_DECODE_AND_WHITESPACE_REMOVAL; NO_NUMERIC_ROUNDING",
+            "identity": "PBC_TSF_STOCK_YOY_SAME_BASIS",
+            "unit": "PERCENT",
+            "day": "2026-08-31",
+            "value": "7.2",
+            "stock_trillion_cny": "464.8",
+            "locator": {
+              "start_line": 354,
+              "start_column": 14
+            },
+            "publication_timezone_verified": false,
+            "vintage": "2be3b50ac4c72068c9b17e28b184cb2186b3f6a6ffe606c2a5b58334bf642998",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "PUBLICATION_TIMEZONE_AND_VINTAGE_NOT_AUTHENTICATED"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [],
+            "L": [
+              "2026-08-31"
+            ]
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "afre_release_202607.html",
+      "sha256": "933f3546fc3f8232014dc9e2cab854a331ff5da5a9509d3063ada2d3678dfcef",
+      "first_retrieved_at": "2026-10-09T04:26:55.450178+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-nbs-pbc-html-v1",
+            "original_sha256": "933f3546fc3f8232014dc9e2cab854a331ff5da5a9509d3063ada2d3678dfcef",
+            "publication_title": "2026年7月金融统计数据报告",
+            "publication": {
+              "date": "2026-08-14",
+              "precision": "DATE",
+              "timezone": null,
+              "absolute_time": null
+            },
+            "publication_source_texts": [
+              "2026-08-14"
+            ],
+            "normalization": "HTML_ENTITY_DECODE_AND_WHITESPACE_REMOVAL; NO_NUMERIC_ROUNDING",
+            "identity": "PBC_TSF_STOCK_YOY_SAME_BASIS",
+            "unit": "PERCENT",
+            "day": "2026-07-31",
+            "value": "7.4",
+            "stock_trillion_cny": "463.27",
+            "locator": {
+              "start_line": 354,
+              "start_column": 14
+            },
+            "publication_timezone_verified": false,
+            "vintage": "933f3546fc3f8232014dc9e2cab854a331ff5da5a9509d3063ada2d3678dfcef",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "PUBLICATION_TIMEZONE_AND_VINTAGE_NOT_AUTHENTICATED"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [],
+            "L": [
+              "2026-07-31"
+            ]
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "afre_release_202606.html",
+      "sha256": "9ebce7e21c93d92980814be8f754dcc255ebe29dbbdf2531973e09361832c168",
+      "first_retrieved_at": "2026-10-09T04:26:55.925463+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-nbs-pbc-html-v1",
+            "original_sha256": "9ebce7e21c93d92980814be8f754dcc255ebe29dbbdf2531973e09361832c168",
+            "publication_title": "2026年上半年金融统计数据报告",
+            "publication": {
+              "date": "2026-07-15",
+              "precision": "DATE",
+              "timezone": null,
+              "absolute_time": null
+            },
+            "publication_source_texts": [
+              "2026-07-15"
+            ],
+            "normalization": "HTML_ENTITY_DECODE_AND_WHITESPACE_REMOVAL; NO_NUMERIC_ROUNDING",
+            "identity": "PBC_TSF_STOCK_YOY_SAME_BASIS",
+            "unit": "PERCENT",
+            "day": "2026-06-30",
+            "value": "7.4",
+            "stock_trillion_cny": "462.06",
+            "locator": {
+              "start_line": 354,
+              "start_column": 14
+            },
+            "publication_timezone_verified": false,
+            "vintage": "9ebce7e21c93d92980814be8f754dcc255ebe29dbbdf2531973e09361832c168",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "PUBLICATION_TIMEZONE_AND_VINTAGE_NOT_AUTHENTICATED"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [],
+            "L": [
+              "2026-06-30"
+            ]
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "afre_release_202605.html",
+      "sha256": "8f71dd1e651d2e5d8e7120555a000c54a517c41fb01d94b39948183badab9769",
+      "first_retrieved_at": "2026-10-09T04:26:56.475566+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-nbs-pbc-html-v1",
+            "original_sha256": "8f71dd1e651d2e5d8e7120555a000c54a517c41fb01d94b39948183badab9769",
+            "publication_title": "2026年5月金融统计数据报告",
+            "publication": {
+              "date": "2026-06-12",
+              "precision": "DATE",
+              "timezone": null,
+              "absolute_time": null
+            },
+            "publication_source_texts": [
+              "2026-06-12"
+            ],
+            "normalization": "HTML_ENTITY_DECODE_AND_WHITESPACE_REMOVAL; NO_NUMERIC_ROUNDING",
+            "identity": "PBC_TSF_STOCK_YOY_SAME_BASIS",
+            "unit": "PERCENT",
+            "day": "2026-05-31",
+            "value": "7.7",
+            "stock_trillion_cny": "458.81",
+            "locator": {
+              "start_line": 354,
+              "start_column": 14
+            },
+            "publication_timezone_verified": false,
+            "vintage": "8f71dd1e651d2e5d8e7120555a000c54a517c41fb01d94b39948183badab9769",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "PUBLICATION_TIMEZONE_AND_VINTAGE_NOT_AUTHENTICATED"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [],
+            "L": [
+              "2026-05-31"
+            ]
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "afre_stock_202608.xlsx",
+      "sha256": "66dc7ce81b1e98142e20ea2baad3ce11f94cb573e52059d447cb18e9698befc5",
+      "first_retrieved_at": "2026-10-09T04:26:57.020666+00:00",
+      "output": {
+        "extractions": [
+          {
+            "extractor_version": "r11-pbc-stock-xlsx-v1",
+            "original_sha256": "66dc7ce81b1e98142e20ea2baad3ce11f94cb573e52059d447cb18e9698befc5",
+            "identity": "PBC_TSF_STOCK_YOY_SAME_BASIS",
+            "unit": "PERCENT",
+            "points": [
+              {
+                "day": "2026-01-31",
+                "value": "8.2",
+                "stock_trillion_cny": "449.11",
+                "locator": {
+                  "sheet_name": "Sheet1",
+                  "sheet_part": "xl/worksheets/sheet1.xml",
+                  "cell": "C8",
+                  "stock_cell": "B8",
+                  "period_cell": "B5",
+                  "unit_cell": "C6"
+                }
+              },
+              {
+                "day": "2026-02-28",
+                "value": "8.2",
+                "stock_trillion_cny": "451.4",
+                "locator": {
+                  "sheet_name": "Sheet1",
+                  "sheet_part": "xl/worksheets/sheet1.xml",
+                  "cell": "E8",
+                  "stock_cell": "D8",
+                  "period_cell": "D5",
+                  "unit_cell": "E6"
+                }
+              },
+              {
+                "day": "2026-03-31",
+                "value": "7.9",
+                "stock_trillion_cny": "456.46",
+                "locator": {
+                  "sheet_name": "Sheet1",
+                  "sheet_part": "xl/worksheets/sheet1.xml",
+                  "cell": "G8",
+                  "stock_cell": "F8",
+                  "period_cell": "F5",
+                  "unit_cell": "G6"
+                }
+              },
+              {
+                "day": "2026-04-30",
+                "value": "7.8",
+                "stock_trillion_cny": "456.88",
+                "locator": {
+                  "sheet_name": "Sheet1",
+                  "sheet_part": "xl/worksheets/sheet1.xml",
+                  "cell": "I8",
+                  "stock_cell": "H8",
+                  "period_cell": "H5",
+                  "unit_cell": "I6"
+                }
+              },
+              {
+                "day": "2026-05-31",
+                "value": "7.7",
+                "stock_trillion_cny": "458.81",
+                "locator": {
+                  "sheet_name": "Sheet1",
+                  "sheet_part": "xl/worksheets/sheet1.xml",
+                  "cell": "K8",
+                  "stock_cell": "J8",
+                  "period_cell": "J5",
+                  "unit_cell": "K6"
+                }
+              },
+              {
+                "day": "2026-06-30",
+                "value": "7.4",
+                "stock_trillion_cny": "462.06",
+                "locator": {
+                  "sheet_name": "Sheet1",
+                  "sheet_part": "xl/worksheets/sheet1.xml",
+                  "cell": "M8",
+                  "stock_cell": "L8",
+                  "period_cell": "L5",
+                  "unit_cell": "M6"
+                }
+              },
+              {
+                "day": "2026-07-31",
+                "value": "7.4",
+                "stock_trillion_cny": "463.28",
+                "locator": {
+                  "sheet_name": "Sheet1",
+                  "sheet_part": "xl/worksheets/sheet1.xml",
+                  "cell": "O8",
+                  "stock_cell": "N8",
+                  "period_cell": "N5",
+                  "unit_cell": "O6"
+                }
+              },
+              {
+                "day": "2026-08-31",
+                "value": "7.2",
+                "stock_trillion_cny": "464.8",
+                "locator": {
+                  "sheet_name": "Sheet1",
+                  "sheet_part": "xl/worksheets/sheet1.xml",
+                  "cell": "Q8",
+                  "stock_cell": "P8",
+                  "period_cell": "P5",
+                  "unit_cell": "Q6"
+                }
+              }
+            ],
+            "empty_periods": [
+              "2026-09-30",
+              "2026-10-31",
+              "2026-11-30",
+              "2026-12-31"
+            ],
+            "vintage": "66dc7ce81b1e98142e20ea2baad3ce11f94cb573e52059d447cb18e9698befc5",
+            "limitations": [
+              "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+              "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+              "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+              "LATER_YEAR_TABLE_IS_NOT_EACH_MONTHS_ORIGINAL_VINTAGE"
+            ]
+          }
+        ],
+        "status": "PARTIAL_SOURCE_PREPARATION",
+        "conditional_arithmetic": {
+          "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+          "values": {
+            "F": null,
+            "L": null
+          },
+          "periods": {
+            "F": [],
+            "L": []
+          },
+          "formal_dimension_scores": null,
+          "season": "UNKNOWN",
+          "effective_forward_weeks": 0,
+          "limitations": [
+            "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+            "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+            "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+          ]
+        }
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "getFundNavPage.json",
+      "sha256": "85559ff7372433f3d6a98cd32bc27b7d4393af723fdbb9fbc29c6c6a7cea896e",
+      "first_retrieved_at": "2026-10-09T04:25:09.070150+00:00",
+      "output": {
+        "collection_version": "r11-fullgoal-nav-collection-v1",
+        "filters": {
+          "productCode": "022463",
+          "pageSize": "500",
+          "startDate": "",
+          "endDate": "",
+          "isPreview": "",
+          "siteno": "main"
+        },
+        "pages": [
+          {
+            "page": 1,
+            "original_sha256": "85559ff7372433f3d6a98cd32bc27b7d4393af723fdbb9fbc29c6c6a7cea896e",
+            "first_retrieved_at": "2026-10-09T04:25:09.070150+00:00",
+            "request_url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=1&pageSize=500&startDate=&endDate=&isPreview=&siteno=main"
+          }
+        ],
+        "total": 462,
+        "manifest_hash": "c7932d05073a1d9a0b13cb81b34e588ead0afa38db6ef66a0afd035fadf75898",
+        "status": "CONSISTENT_RESPONSE_COLLECTION",
+        "atomic_snapshot_verified": false,
+        "calendar_coverage_verified": false,
+        "limitations": [
+          "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+          "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+          "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+          "PAGINATION_CONSISTENCY_IS_NOT_ATOMIC_SNAPSHOT_PROOF"
+        ],
+        "date_from": "2024-10-24",
+        "date_to": "2026-10-08",
+        "pre_inception_rows": [
+          {
+            "day": "2024-11-07",
+            "value": "1.0000",
+            "original_sha256": "85559ff7372433f3d6a98cd32bc27b7d4393af723fdbb9fbc29c6c6a7cea896e",
+            "day_pointer": "/data/list/459/navDate",
+            "value_pointer": "/data/list/459/relatePrice",
+            "identity_pointer": "/data/list/459/productCode",
+            "page": 1
+          },
+          {
+            "day": "2024-11-06",
+            "value": "1.0000",
+            "original_sha256": "85559ff7372433f3d6a98cd32bc27b7d4393af723fdbb9fbc29c6c6a7cea896e",
+            "day_pointer": "/data/list/460/navDate",
+            "value_pointer": "/data/list/460/relatePrice",
+            "identity_pointer": "/data/list/460/productCode",
+            "page": 1
+          },
+          {
+            "day": "2024-10-24",
+            "value": "1.0000",
+            "original_sha256": "85559ff7372433f3d6a98cd32bc27b7d4393af723fdbb9fbc29c6c6a7cea896e",
+            "day_pointer": "/data/list/461/navDate",
+            "value_pointer": "/data/list/461/relatePrice",
+            "identity_pointer": "/data/list/461/productCode",
+            "page": 1
+          }
+        ],
+        "inception_check": "2024-11-08 FROM PARENT REPORT; not an independently bound eligibility rule"
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      },
+      "business_rows_unchanged": true
+    },
+    {
+      "name": "combined-monthly",
+      "output": {
+        "formula_definition_hash": "a4166f92efbe8162ef9e78b463f5a7c9c644335864584a76530e77c325ed4a05",
+        "values": {
+          "F": "-0.025",
+          "L": "-0.25"
+        },
+        "periods": {
+          "F": [
+            "2026-06-30",
+            "2026-07-31",
+            "2026-08-31",
+            "2026-09-30"
+          ],
+          "L": [
+            "2026-05-31",
+            "2026-06-30",
+            "2026-07-31",
+            "2026-08-31"
+          ]
+        },
+        "formal_dimension_scores": null,
+        "season": "UNKNOWN",
+        "effective_forward_weeks": 0,
+        "limitations": [
+          "CONDITIONAL_ARITHMETIC_ONLY; NOT_A_QUALIFIED_MODEL_RUN",
+          "SOURCE_TIMEZONE_VINTAGE_SAME_BASIS_AND_CUTOFF_NOT_VALIDATED",
+          "C_IDENTITY_CALENDAR_V_B_P_STILL_MISSING"
+        ]
+      },
+      "replay": {
+        "checks": {
+          "report": true,
+          "source": true,
+          "deterministic": true
+        },
+        "result": "REPRODUCED",
+        "eligible_forward_observation": false,
+        "promotion_eligible": false
+      }
+    }
+  ],
+  "pagination": {
+    "collection_version": "r11-fullgoal-nav-collection-v1",
+    "filters": {
+      "productCode": "022463",
+      "pageSize": "250",
+      "startDate": "",
+      "endDate": "",
+      "isPreview": "",
+      "siteno": "main"
+    },
+    "pages": [
+      {
+        "page": 1,
+        "original_sha256": "bb2d4c77eec8ac77f08836ad7c62860acb58bf139d81109af4e945ce99605f14",
+        "first_retrieved_at": "2026-10-09T04:36:38.707496+00:00",
+        "request_url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=1&pageSize=250&startDate=&endDate=&isPreview=&siteno=main"
+      },
+      {
+        "page": 2,
+        "original_sha256": "0b3f3f3b717ce3258e70f4471cc7593ac08416e133d85008783f0e745309108b",
+        "first_retrieved_at": "2026-10-09T04:36:38.990957+00:00",
+        "request_url": "https://www.fullgoal.com.cn/ws-business-server/fund/getFundNavPage?productCode=022463&pageNum=2&pageSize=250&startDate=&endDate=&isPreview=&siteno=main"
+      }
+    ],
+    "total": 462,
+    "manifest_hash": "60ef488e6a68ffaaf29f02bb5babb7e1170069ce4cb7d76c0b23cc9775eaa4c0",
+    "status": "CONSISTENT_RESPONSE_COLLECTION",
+    "atomic_snapshot_verified": false,
+    "calendar_coverage_verified": false,
+    "limitations": [
+      "EXTRACTION_IS_NOT_PUBLISHER_AUTHENTICATION",
+      "INDEPENDENT_UPSTREAM_NOT_VERIFIED",
+      "NOT_AN_R11_OBSERVATION_OR_PROMOTION_RECEIPT",
+      "PAGINATION_CONSISTENCY_IS_NOT_ATOMIC_SNAPSHOT_PROOF"
+    ],
+    "matches_earlier_single_response_values": true
+  },
+  "test_receipt": {
+    "command": [
+      ".venv/Scripts/python.exe",
+      "-m",
+      "pytest",
+      "-o",
+      "addopts=",
+      "-q",
+      "tests/test_r11_source_archive.py",
+      "tests/test_r11_source_monthly.py",
+      "--tb=short"
+    ],
+    "started_at": "2026-10-09T04:45:08.736241+00:00",
+    "finished_at": "2026-10-09T04:45:12.343953+00:00",
+    "exit_code": 0,
+    "log_sha256": "de3d6e0d52038a5467f6189cc3a88501ca558b097ba534fff343dccf35870b28"
+  },
+  "checks": [
+    {
+      "log": "source-regression-6.log",
+      "exit_code": 0,
+      "sha256": "31207a49814386a0075cf0765783ad3647b097fa6a70bb60a962fc440e2e3bcb",
+      "bytes": 923
+    },
+    {
+      "log": "source-tests-recorded.log",
+      "exit_code": 0,
+      "sha256": "de3d6e0d52038a5467f6189cc3a88501ca558b097ba534fff343dccf35870b28",
+      "bytes": 967
+    },
+    {
+      "log": "real-preparation-final.log",
+      "exit_code": 0,
+      "sha256": "ca1a8891a3d1ab3520f78f705b11864d4145b324b0eaa243eaf13d09a68264a7",
+      "bytes": 8563
+    },
+    {
+      "log": "real-pagination.log",
+      "exit_code": 0,
+      "sha256": "7543929ab145b5798bdd0bdd8624c4acffab0c5d75d4054fafdbbcd8df929022",
+      "bytes": 79
+    },
+    {
+      "log": "source-lint-final2.log",
+      "exit_code": 0,
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "bytes": 20
+    },
+    {
+      "log": "source-mypy-final2.log",
+      "exit_code": 0,
+      "sha256": "718df785efbbd4b57e63b5f64aff2c5b5592e433447681f759b307f97a3ec96a",
+      "bytes": 44
+    },
+    {
+      "log": "source-tests-7.log",
+      "exit_code": null,
+      "sha256": "6fc12251c4804780e608e628013061e6d2e123d04bc940b48c7d38733c12baa4",
+      "bytes": 967
+    },
+    {
+      "log": "source-tests-1.log",
+      "exit_code": 1,
+      "sha256": "0a181a101c512a97c97293cfecd1c68ca9dbc395451f895574e3024fbe528dda",
+      "bytes": 803090
+    },
+    {
+      "log": "real-preparation.log",
+      "exit_code": 1,
+      "sha256": "97d1b1d8e954f9ce223922b5f8fd1803215fd6797cb18dfb9e3636677b35b9ec",
+      "bytes": 11247
+    },
+    {
+      "log": "real-preparation-2.log",
+      "exit_code": 1,
+      "sha256": "932c4c6006e00efa1bb8182b2c6d4732b4864c05d49d76a7d3451de006af74d3",
+      "bytes": 10371
+    },
+    {
+      "log": "real-preparation-3.log",
+      "exit_code": 1,
+      "sha256": "94e64facfa2b05e55a86df08554548fa5e7464991919d57f2a3507f0b5d757cc",
+      "bytes": 9503
+    }
+  ],
+  "frozen_files_diff_exit": 0,
+  "full_regression_run": false,
+  "ci_run": false,
+  "production_accessed": false,
+  "real_forward_records_created": false,
+  "independent_review": "NOT_YET_REVIEWED",
+  "initial_checkpoint_source_sha256": {
+    "src/investor_core/research.py": "7746a642da9f45450a991702f219729ea538c2652407fec27d51ac649a76f38b",
+    "src/investor_core/r11_source_archive.py": "301aedef457759b4cfb95b81c130f5b1ab2787de4d8ecfffbf63ce34928c3410",
+    "src/investor_core/r11_source_json.py": "353846abd8feb2d7148d2fccbf90aeccf6337686ed307e4f2e6fc3e671c51563",
+    "src/investor_core/r11_source_monthly.py": "b7b49a6a5f4b4b7e6748159986a471c4c274b96d59583b43d0c1e21b6bdbaed0",
+    "src/investor_core/r11_source_preparation.py": "c161c885077bbc782a9a5d1cc0d788a3c72d10021130fe58d619139ba445065d",
+    "tests/test_r11_source_archive.py": "8827a9468e0b6937cecafcd4b1989356d4585216b86a4dbd257b2fabbfc40093",
+    "tests/test_r11_source_monthly.py": "7e041f63bc6f5ed866ea251a4cf4dd971f0707108a31d44e155c581b3e1f7c2c"
+  },
+  "review2": {
+    "fixes": [
+      "Reject repeated target months within one PMI table, including identical duplicates",
+      "Require unique PMI header at observed column 1; shifted layouts fail closed",
+      "Reject multiple direct XLSX value nodes, including identical duplicates"
+    ],
+    "parser_versions": [
+      "r11-nbs-pbc-html-v2",
+      "r11-pbc-stock-xlsx-v2"
+    ],
+    "preparation_version": "r11-source-preparation-v2",
+    "legacy": "Exact initial monthly parser frozen for v1 historical replay only; no qualification",
+    "verification": [
+      {
+        "name": "targeted",
+        "command": [
+          ".venv/Scripts/python.exe",
+          "-m",
+          "pytest",
+          "-o",
+          "addopts=",
+          "-q",
+          "tests/test_r11_source_monthly.py",
+          "tests/test_r11_source_archive.py"
+        ],
+        "exit_code": 0,
+        "log_sha256": "ccf1e70415e184d57c5b00c4ce0c8c3854c17b266d49a2e55fa0a4e6c56a3d5a"
+      },
+      {
+        "name": "ruff",
+        "command": [
+          ".venv/Scripts/ruff.exe",
+          "check",
+          "."
+        ],
+        "exit_code": 0,
+        "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+      },
+      {
+        "name": "mypy",
+        "command": [
+          ".venv/Scripts/mypy.exe",
+          "src"
+        ],
+        "exit_code": 0,
+        "log_sha256": "7938299f8237259943d15e2fafb6d54530566e5239d62fb47709d89279d40b82"
+      },
+      {
+        "name": "offline_replay_v1_after_fix.py",
+        "command": [
+          ".venv/Scripts/python.exe",
+          "..\\evidence\\offline_replay_v1_after_fix.py"
+        ],
+        "exit_code": 0,
+        "log_sha256": "32633a7cbb5eeb7ad64b7c92508931c2d617c17c3f82950799d9b7ef9c410d14"
+      },
+      {
+        "name": "freeze_real_preparation_v2.py",
+        "command": [
+          ".venv/Scripts/python.exe",
+          "..\\evidence\\freeze_real_preparation_v2.py"
+        ],
+        "exit_code": 0,
+        "log_sha256": "ca1a8891a3d1ab3520f78f705b11864d4145b324b0eaa243eaf13d09a68264a7"
+      },
+      {
+        "name": "offline_replay_v2.py",
+        "command": [
+          ".venv/Scripts/python.exe",
+          "..\\evidence\\offline_replay_v2.py"
+        ],
+        "exit_code": 0,
+        "log_sha256": "32633a7cbb5eeb7ad64b7c92508931c2d617c17c3f82950799d9b7ef9c410d14"
+      },
+      {
+        "name": "make_patch_review2.py",
+        "command": [
+          ".venv/Scripts/python.exe",
+          "..\\evidence\\make_patch_review2.py"
+        ],
+        "exit_code": 0,
+        "log_sha256": "af49fc30b9e879728b995913f86e4c5a5f0f1bccc45a37dbe7cbd0d1b6df686f"
+      }
+    ],
+    "initial_full_run": {
+      "patch_sha256": "0a60fdaaba2cda7df8e4497b927b12c89fb3bd34529dcbe550b31b358271a1e5",
+      "exit_code": 0,
+      "finished_at": "2026-10-09T05:01:28.787548+00:00",
+      "source_unchanged": true,
+      "log_sha256": "9a3331dc3cf98ae37dcff8546d96931e8c97c6c0b0b553974e6ca4fe127388dc"
+    },
+    "final_full_run": {
+      "patch_sha256": "e18539355cd94b8a44b186ff1822ad00246679d5ff3ff35a6fe2e2b92eb886cb",
+      "status": "FINISHED",
+      "exit_code": 0,
+      "finished_at": "2026-10-09T05:16:11.808997+00:00",
+      "source_unchanged": true,
+      "log_sha256": "156b95f0aff14fbb428d4243f856fcc662fd8de6f5126ad17fad2dad231d96c1"
+    },
+    "old_failure_evidence_preserved": true,
+    "remote_mutation": "NOT_EXECUTED; AUTO_REVIEW_REJECTED_TWICE"
+  },
+  "closeout": {
+    "status": "外部受阻",
+    "independent_tests": 80,
+    "independent_exit_codes": [
+      0,
+      0,
+      0
+    ],
+    "p2_closed": 3,
+    "independent_full_rerun": false,
+    "reviewed_patch_sha256": "b90dbd6920810a8b735c9df7a8ab19ed8b9ddf9fc43fbafe4b52a08bb6f082ab",
+    "source_files": 174,
+    "source_manifest_sha256": "eb0bc17f6b48e3b02ac652460e94beec65d8111d565807369d1efc8e78c3c4ca",
+    "source_manifest_encoding": "UTF-8 JSON sort_keys=True separators comma/colon",
+    "source_hashes": {
+      "pyproject.toml": "ba38a97780148820287aeb2270d30efd402997e518a404890ae5ddcf1b8e84c8",
+      "src/investor_core/__init__.py": "5c962909ea13600a14637f0925f1afde9303fe204401fc7e828e5822a222b93f",
+      "src/investor_core/api/__init__.py": "ada82d96f31584e717a9d8733590728a1f9f4d2e0238c92c90923aa6aa2cb332",
+      "src/investor_core/api/app.py": "28b9a3a8ffc620339f5bc208b605ec4ed00568bbaea648aa077074308fa7fd70",
+      "src/investor_core/api/schemas.py": "f3488fb4832ca65e9e939a6c3181f8c80a0c429796a5ad3c9dd1efd339e59a20",
+      "src/investor_core/api/shadow.py": "956818f8d68b633a7a682bcf422d1f675d1501ad984abebe142f6e070acae83f",
+      "src/investor_core/background_worker.py": "39f203551e626643788fbba7be22de358612d522f4c2f30a59b065f1c86b9052",
+      "src/investor_core/benchmarks.py": "8c255c67528052239ff4d2b11ea0b35158e5271ff663e267581bba50a0505763",
+      "src/investor_core/capital.py": "de2fdf7c46e31ca3a800073b156c64e9353b7e5d9a93db20685669539a2c4cec",
+      "src/investor_core/cli/__init__.py": "e1d8ba458599a06425ec5db72136274d292c44f9fd437db311f37e885c28487a",
+      "src/investor_core/cli/app.py": "8377dc864f632d6d3fda438ff68edfcf7dc1ef3f52efbc7cc3f242fd7e5dafdf",
+      "src/investor_core/commitments.py": "826fb4a5757dec52a42d93945f2d628b44a3616693375a5c4ce12a340c57e36d",
+      "src/investor_core/config.py": "c1340bb2d082c62f29e1a4cd8dbe85f32fcfb27334326c17ab8eb2b47c9353b3",
+      "src/investor_core/daily_client.py": "1e2fa318c927db3dd0d0b88327c4d7cacd9657b55ad132bd2caf01dba87cb9c9",
+      "src/investor_core/database.py": "3b21ecf73e13850cf0373b1e4e1fc0ed71ba06a83d2315d4c1187936c585733c",
+      "src/investor_core/decision_context.py": "d3d602fbe05e63ce7d34e2ff791d74bcb7ebeac69150c47e083d79633988150d",
+      "src/investor_core/delta_presentation.py": "71b6cfd8b5a030e450609d8b218bd4c06ef2d939585410de13f60c23d5a3edd4",
+      "src/investor_core/delta_review_service.py": "bba6a8cd46d87250c8e0d2e1ff2f2f9a1bc8027891f13ee369df1bac91af9e4e",
+      "src/investor_core/execution.py": "78d75b8b9dc29f1f9f883422315d7f32fac9196cbd8fc13c67d7bec1a61e8e88",
+      "src/investor_core/health.py": "d8c90a304510726301ae1bc93f117000eb12d7e4d5679919d2a4973806baf888",
+      "src/investor_core/hermes_config.py": "2b67ea3ab1c29d03cc57684adce3c8b1d0a9f2d75b67873892f7a1115fb1d96d",
+      "src/investor_core/hermes_delivery.py": "3a12a480fa53c3375df8d9382aa5aa350ae35eeafe36f17d69553f3af3c89fd6",
+      "src/investor_core/holding_review.py": "bf45c8a8137cd833867dcc987832bb0d121623d429290b2cb002edf4b076e2a1",
+      "src/investor_core/index_peers.py": "1aab041503db0ece2d7e3af02784aafa79aa896954bbc6c4d2e26ea7e5a714d3",
+      "src/investor_core/ledger.py": "bc562c5fe78efe08755f2cfb7affc66b0f233390c21ff4dd403bcc9248a2ba98",
+      "src/investor_core/logging_config.py": "6a61792fd3ab83c698fc5e74cd68aa64abc7dd11f4b36d6f77ffa7319acc4777",
+      "src/investor_core/market_data.py": "8b694a446a3e977e9d7477e5b1534069e5fa450a3c4cb49c0bb252521f29efaa",
+      "src/investor_core/market_providers.py": "61adbade8d7e25e405b8be82df1b0755819d1a2132b4ee21e6895471a0b628c8",
+      "src/investor_core/market_sync.py": "55d0e2ed25083447ef2b132d5ca482d60227d146b8bef6d3e61f61d96e614ad6",
+      "src/investor_core/notebook.py": "40ad47b8ab1303081618e8506044a3e6c518d4b6c061b29b7ea7af2c1a2d7867",
+      "src/investor_core/operations.py": "d4c8fcb94564087e732371f6bcd2bf798ad1aa7b692ecda38df19f098adb841d",
+      "src/investor_core/peer_models.py": "ce352156b7235c3f433f3ed60162c758bf05f93b339dd63c4ec5082274a8e922",
+      "src/investor_core/peer_presentation.py": "5f0126b63ff96072ef9a395e18a3343bae374380b82d6b23e863ca74f67e9930",
+      "src/investor_core/peer_research.py": "46ebd1c0ab54737948785dc554eb3da64ef76d1e7daea2da08a3e438135afa5d",
+      "src/investor_core/peer_validation.py": "460e8414717b65980b38028b669ec4e4eaf8e071495d7359855febe4e6bbbb07",
+      "src/investor_core/performance.py": "9d05c3edbf9ff4f9221957372f3ba408059ede784987310f050f183e293292dc",
+      "src/investor_core/planning.py": "7ed733564762fa91e898bc3f5cd2380c5d6fffb365b005046e720f3ca2646829",
+      "src/investor_core/r11_candidates.py": "40c83b5184917757362f1f85e48289ae1fdfb4d8499333bd9586da9b9a582498",
+      "src/investor_core/r11_constituents.py": "80a598350a33268a662441ee39bcbe24baa8c441e8af72222ae45bebdcafd7fa",
+      "src/investor_core/r11_core_bindings.py": "bdf2c8257324e2cbc68e0ffd0fc24122fea49cd626096d7605ecba09e6307133",
+      "src/investor_core/r11_governance.py": "358333bdd441d682b0c314dd04c015acacd82b5a416580995bed014483a51e5e",
+      "src/investor_core/r11_inputs.py": "2daf1aa83b3660fec1780b9adccaa4009343764b82b35248be64463e3f7518fe",
+      "src/investor_core/r11_legacy/__init__.py": "6aa9716d53f4b3a82d4b35ca7707a185d3ad653cc8ddac48af6074f0846a140b",
+      "src/investor_core/r11_legacy/candidates.py": "3caac5ea599e51f3fe62af820ea96f2adc4e514355d04250ffcbf7a49fa17457",
+      "src/investor_core/r11_legacy/inputs.py": "cef78c6d1812d9918676d60f076a84af7793f6de23105c87727b2343daf0b0cb",
+      "src/investor_core/r11_legacy/macro.py": "217dd5512d181ed7898152fd57882d9d8e028fa10437e295a27c2a935a27f314",
+      "src/investor_core/r11_legacy/source_monthly_v1.py": "b7b49a6a5f4b4b7e6748159986a471c4c274b96d59583b43d0c1e21b6bdbaed0",
+      "src/investor_core/r11_legacy/v2/__init__.py": "cdf7ea9f2f986338704369024558726490c5bf106a3533cf6ce843baf52ca2e2",
+      "src/investor_core/r11_legacy/v2/candidates.py": "3f6ef41f4240fdce549c2bb4dae68cb69d60323ab5eb89befe7ad81bb60b0959",
+      "src/investor_core/r11_legacy/v2/inputs.py": "98d66c84fcde5cf4eb6096299ac229bc1b80245238d8b476e6ca7852b5449392",
+      "src/investor_core/r11_legacy/v2/macro.py": "20000846cbebba991ec41c6e5ed02bd2fe6122419e97f2172b9af57e7d82c61e",
+      "src/investor_core/r11_legacy/v2/provenance.py": "4ab4a5d5567c85aabf9cc36ff9c5d9f65526e93676ffdbf5b35f42d8f5acfd63",
+      "src/investor_core/r11_legacy/v2/replacement.py": "75023e38ad06e6be0aa3ab8e6a29ee786f8f5fa4a8005ba6d9a6402dc1bb1c07",
+      "src/investor_core/r11_legacy/v2/rules.py": "900145fc2d9dc39feadb102a5df828e3cce91c03f3d7116a9ffbd68e98a7756c",
+      "src/investor_core/r11_legacy/v3/__init__.py": "a3aa63d23ddefba806e86ec2fe4b1d9bf4b4907bfd32bed54507f942a11d3ac1",
+      "src/investor_core/r11_legacy/v3/candidates.py": "48f5da2db458432272c51be3baffe0c9353e5893d7dc6ffb19d2a19ab506a0b7",
+      "src/investor_core/r11_legacy/v3/core_bindings.py": "b678afbfbd732c236c1a2ec598c514433032b119c38cee5f8cebea33b4b78811",
+      "src/investor_core/r11_legacy/v3/inputs.py": "68d18a649dcdd529fb1a6ae4099d0939c816f992d08bdb9e2b686737afd940d7",
+      "src/investor_core/r11_legacy/v3/macro.py": "0c1b423b80180a0d5665b4f22b310f91dc7936fc04abdec6123c9042ce76dd15",
+      "src/investor_core/r11_legacy/v3/provenance.py": "3e0ba8e6627994ac7327bf19b9c0976a31b7e702af5edde8ec97bb9c105f0da2",
+      "src/investor_core/r11_legacy/v3/quality.py": "d7a919b97912c79a4eb8cf73b46a971a4253a95406df27486896f0c27d8defb0",
+      "src/investor_core/r11_legacy/v3/replacement.py": "53e5632ee9631f41ebbcc325c8c40f64993b840d03ff5cbc25a59ca7c9bb5385",
+      "src/investor_core/r11_legacy/v3/rules.py": "cf2e675d420861dedc638b51a701c788c9000c24f111767d3cf96f18dfa0cd6b",
+      "src/investor_core/r11_macro.py": "924182bff44b7e4ce558f0befbd15730eb36bbebf8e5e0bf92797c97beef5160",
+      "src/investor_core/r11_provenance.py": "5b9be3eef838d140ed0bb0b3f0b66bd39ea7799c321c1e839bfc89fd4bf6cc1e",
+      "src/investor_core/r11_quality.py": "c07133f8c2845ff014896c71e16c6342ae0a40efefa413ff4eff0855e1569381",
+      "src/investor_core/r11_receipts.py": "f957ef10e8daa0310e006d261f1191fd4e4aa53bc34b78b8c86988d89b7c7dc8",
+      "src/investor_core/r11_replacement.py": "b64949d921abc4159bb3904fcea3a9d930e362fcb1b809b0894057e2b477d5f7",
+      "src/investor_core/r11_rules.py": "cf2e675d420861dedc638b51a701c788c9000c24f111767d3cf96f18dfa0cd6b",
+      "src/investor_core/r11_sensitivity.py": "bccd92a51d54be5e63537cf4545d045e83dadf513f516daeec1c755e84d06222",
+      "src/investor_core/r11_service.py": "dac41106b66ec7c35b245463917b14176ce35d7c1c3672db3013c0c36f6b04e0",
+      "src/investor_core/r11_source_archive.py": "301aedef457759b4cfb95b81c130f5b1ab2787de4d8ecfffbf63ce34928c3410",
+      "src/investor_core/r11_source_json.py": "353846abd8feb2d7148d2fccbf90aeccf6337686ed307e4f2e6fc3e671c51563",
+      "src/investor_core/r11_source_monthly.py": "801664ce92f3df34453aa603042477ee9720ab1d9b36e996bb6030e744a38c59",
+      "src/investor_core/r11_source_preparation.py": "27d829d7f5404b2ad74083f0bc671ebafb65ef2283731f856998b237326ad668",
+      "src/investor_core/r11_validation.py": "326338ae3d22f693d1167ebb74c684fa9f3f05ea7f1681dfe84c81b2aabf161c",
+      "src/investor_core/research.py": "7746a642da9f45450a991702f219729ea538c2652407fec27d51ac649a76f38b",
+      "src/investor_core/research_coverage.py": "d3068e03e21a0d919132a3170b85c64bdf88c758a6fd273c8b89c74f26f25a08",
+      "src/investor_core/research_read_notices.py": "990d5ba6f4c1d856b96c6917f799e46ffb28c3a0728f9878c248b3915c15bcb7",
+      "src/investor_core/research_summary.py": "e17384ce7a6b3ea2e21f9f3f12a4d63ea6aed5059bb55841770b83e3854cfff7",
+      "src/investor_core/research_update_build.py": "26e3d83cc904d19a53e478d4532baac9a0fd22d84fe3cb304f08c98d0e84dbc2",
+      "src/investor_core/research_update_sources.py": "d7fa985b689393be1e06afcfe1573609d9fdc46f9510d212addb97bb3ef7aa51",
+      "src/investor_core/research_updates.py": "3d102c5ecd5e3ce3e61b690eb2c3985cc81226c80b16090623d13d0d29273e31",
+      "src/investor_core/review_delta.py": "fddf289483ee4297d20c017b5b9c11ba5f03377915cd90fefda58508eaaa9e04",
+      "src/investor_core/review_presentation.py": "b769913376629facb7c357737d18c7c6082a8d8ac1d07e9a9d0146149ebaa686",
+      "src/investor_core/risk.py": "e94e5bef10387568837ab8261dfa308e936db13f998f1a2ee499ddac9fc5ef60",
+      "src/investor_core/scheduler.py": "78531bba515bed8b211d4fb3f4464ae42cead5367599f99736673bee0252d478",
+      "src/investor_core/scheduler_admin.py": "ff839a46a12c778f8bb274ef72c3b515e6678a489c2ba8a8ce577b6a78f45622",
+      "src/investor_core/shadow_models.py": "024b0a682a9cd8f97eb2944dfc51b5b6d0116ce1fbfaaa59ab08fd98e00801da",
+      "src/investor_core/signals.py": "b60c8d1b34889e3d7281c2984a42e1752e64903d2d4f5d7c5f4490e3bcb0a972",
+      "src/investor_core/source_lineage.py": "4d5beb5b41ea22cb5a6c3baac23d93047d72772e9ac39c575f34df8ea723aee0",
+      "src/investor_core/strategy.py": "f80d9a9aad84d9269202e03a833548c6e318d9ec8adb8c5c5e13a08cbc687f04",
+      "src/investor_core/subscriptions.py": "f7645e3e643392e1abd2ef185b63469ffb558eef82b12040f84dd955eb46a1b3",
+      "src/investor_core/thesis.py": "09512807efd72e8de67fd5ca21c9177d8eb0640d78e496ae5abd3741adf48205",
+      "src/investor_core/version.py": "57f0abf3d4c6600b564a81525e8c4b3e246cdca3dd77eb954cd9628ba1e5f4eb",
+      "src/investor_core/weekly_reports.py": "8700f012f4b6298d71ebb7e8ad394160df5411481b4747c0225dcb4d84734414",
+      "src/investor_core/workspace.py": "da5c1eeedbb238681c7fd78ede8c8dbd6376517bc6dba430328c89702b8ac58f",
+      "src/investor_mcp/__init__.py": "d0a85cb350d45f8db3f5591ecdc975dfb320c217ad47ca2dfe5cfd076814fc3d",
+      "src/investor_mcp/check.py": "73a2b00a9e6aab530b1dc6786836d9ddb98bc73df6cc0a62c3222537a848b8e5",
+      "src/investor_mcp/instructions.py": "5dc253d9c3c2f5a133a38afc2c797889106547560a468c190919e1050c2c575a",
+      "src/investor_mcp/runtime.py": "18e93cf339a981a57452cc8bd2cfdba5e57780ced9311593ad2e910da68db53e",
+      "src/investor_mcp/server.py": "89e78df5c03030cef36f63da2ed3a0016020cedf23729593df32fe655d9fa757",
+      "tests/conftest.py": "c6583cfd2adff34a4febfcce1a3f247354b2758ef303f0b245a57d8f1322b2a8",
+      "tests/http_process_support.py": "2060b84fc14a7b50aef72b71f82250ae412def377f1888a2c7ec3d03a2f4fa0b",
+      "tests/manual_delta_review.py": "ac5ce2c0e23389203b7d352c31d2e421108110988955ab0394f9abfadaf5c9bd",
+      "tests/manual_stage_flow.py": "f9fd1cd4213f3edae865bd3963aea7d8874f76cb0c305fcca3168c4239e2a052",
+      "tests/manual_thesis_flow.py": "a1b6d66485590e994d537d4f3f3b048eaa77ae5f14683a86087a6c54a402103f",
+      "tests/test_api.py": "2a86d7c3cdf134a5b8d35338ce7063830ec6b8a2e26777f0d895a6de5ea538f1",
+      "tests/test_background_scheduler.py": "eee7be56ad0a7e7a8a62c79f8dc6374f54e8c13d977171b940336e67d1cd203e",
+      "tests/test_background_scheduler_http_process.py": "0c4df3c996a9d3066c1dac7dce26aa6486a900a8b94a85867d05d6a25b7be560",
+      "tests/test_benchmarks.py": "7a461486e3510dcd44306135eedff46b94975cc61875672e0b29db4ec702262a",
+      "tests/test_capital.py": "32521a6b18e31e58462e7b7db1620169c119733cc031c2ca040b4ea732290ab2",
+      "tests/test_cli.py": "b52f21b19f016e468162c7515489984cb104a54fb5f90ee23a33023d245448e4",
+      "tests/test_codex_mcp.py": "51d44ef49d3ab4254da09e5fb01a5fef7573e953b4e9c53075f3857f6b8fe2f9",
+      "tests/test_daily_client.py": "21f4b647bb236adda65c7e80d032dd8e00403af900f3a5509d7ae63968ee4342",
+      "tests/test_decision_context.py": "3fbc2951caba1d22aaeefbc698da05b47bccd9cb13a60a7fc1d9f825a8f8900a",
+      "tests/test_dividend_investigation.py": "6d10263bffa3d4a511f1339c1ba2e730e9be6bf22d56f6fd25ea36032a268f14",
+      "tests/test_execution.py": "d48cd24c778524a80a25b2b244fa3e1964839d191d50da10fbbdd4a329100861",
+      "tests/test_hermes_config.py": "bba86f8762fa001b4ab4cc430f9150ef7ac05f117fba44f626e322663305cd75",
+      "tests/test_hermes_delivery.py": "8d21660dac34251ff1d1b5a9a88b4b2e46929b4e0a680dc278b1037403d2de19",
+      "tests/test_holding_review.py": "d5e2babbe5b11fa047a13d913e34f1c60bc34e3f54aac43337d31256f2ab3c56",
+      "tests/test_index_coverage.py": "510c649a666384a025012985ef1d0e56b62d7f7aba181ba55f6e919b98f96c39",
+      "tests/test_ledger.py": "efafb3b9d5f8db4e3425d6819c6e47807e8ca4b781a6e5cff24d30a730005a1d",
+      "tests/test_logging_config.py": "9766f45c2ebb384ba5df15e43d7c877105058ac62ffc7ff8d45024ca35650680",
+      "tests/test_market_data.py": "7f8773451fc1d1ac71549e413d501848414006ae9611fa4011c08e186f874307",
+      "tests/test_market_providers.py": "3de98c9595da755129ed8a621fc677a9f9d4d5b4d307d417cfc5b6435d5a6063",
+      "tests/test_market_sync.py": "a854e6d6ac80f3208528381633ad6480e516c3c16aafd38e2e857de733360ccf",
+      "tests/test_mcp_cleanup_error.py": "65ba8eeb91be236c1c80481b44a0d51f5186ce2c9acb118f8bad871ff859c7ff",
+      "tests/test_mcp_contract.py": "511c85574a46a85f9c72995403790db0d5ff2c8c0cb1faba48598ae891cbdd62",
+      "tests/test_mcp_runtime.py": "2108c6601a658ed1e9376d13adaedb8f9eaba906453b21b75e9f5fc36e25b77d",
+      "tests/test_migrations.py": "f328133a359405a6af6c791111849a75e46852a2353744221547c8f6d3a2701e",
+      "tests/test_notebook.py": "e4b73b4d56767550f8dd96f5f9a33b83b8ff3a0f853ea17e356d4be3c8d37c90",
+      "tests/test_operations.py": "ce0fcfd584ff548ec8edbb4353470abff484f6a172335520572b36b83198767d",
+      "tests/test_peer_research.py": "b0841e40268b375e65321cdc2fd7f4772e66b1b628490209975c91d54361aef7",
+      "tests/test_peer_validation.py": "e71d3aefd93f7ddc46c096e8086ff323d8b21d37035b916b53cef212c632bb99",
+      "tests/test_performance.py": "263ab64d20ae62f15866566048b69404a6396708d4de570fc5f981de2ace1d36",
+      "tests/test_planning.py": "55c7f02f974b4250e5bc1ad9e1eb0b44f04a4dc21a7e56d000beb0f53a42dd23",
+      "tests/test_process_readiness_deadline.py": "40deea74b615e22212b58673f86547fe6d2c5f479963e6effd221b272503eb00",
+      "tests/test_r11_calculators.py": "9c23edb2dcdfdb01b83b3f1826cc7073640f25854235315d9bf4f58f60af7dbd",
+      "tests/test_r11_complete_simulation.py": "6bf0f195da8e5150b2b33b96e8ba2a0131d2d23753fbc9bc59c984feaee4672e",
+      "tests/test_r11_constituent_completeness.py": "4345cfbf0d427b13806228a3969dc0d7ee419ed908e464e3bc3d2b65ea9187d4",
+      "tests/test_r11_constituent_receipts.py": "a1ca36820af71dcb4d93d92b9362e1fa120384177d4a77542d61d121ae026ea8",
+      "tests/test_r11_core_bindings.py": "1353ae381133780f7348791be2b05da5cee0b6fdaec043bbf633b129928858e8",
+      "tests/test_r11_final_gates.py": "fdcb686a7e3be9d75729bf7c15c6da4fa90988217f822d822ff5a555496a08cf",
+      "tests/test_r11_governance.py": "5b019391375fd73a4b0ac8f9e12178d42ea6b29765a146e8ef8c1b0eb0310ec7",
+      "tests/test_r11_mapping_expiry.py": "10f4278d3211eef30e36df17df10030181b8c48fd0e6336466957844c876efe7",
+      "tests/test_r11_receipts.py": "ceddbe6cd7d2428e4a8f69b2faaea34e5f34c4f55dbf543a1eccaa0bdc3a2aea",
+      "tests/test_r11_review_boundaries.py": "f9cf924208e12a440281068a24ae5847793cd4c1a891ac2690a555590d3c6bc2",
+      "tests/test_r11_review_fixes.py": "26f469cc30cc0547b5bbac6001cb867e5dab7dec0ba2ed4ef21347a1f25561c3",
+      "tests/test_r11_second_review.py": "861d4d07fd49f8f293c59aa2d5913eb9e7d5adf1391fa3d457cff3178b1de556",
+      "tests/test_r11_service.py": "77ea054784be7b608a7c54cb466e8842ce738ca98078cc3ab6d4296eed7230ce",
+      "tests/test_r11_source_archive.py": "8827a9468e0b6937cecafcd4b1989356d4585216b86a4dbd257b2fabbfc40093",
+      "tests/test_r11_source_monthly.py": "301003b9c010479bd665b4021952d2ee4c1c4e2f8c5c846fc66fba237824e9cd",
+      "tests/test_r11_validation.py": "0294b512c62da5fd24c0084fd21621dc054319fe77b64f4a9ede2b783098c7d7",
+      "tests/test_research.py": "60e380f5416afba40fd5d953e681edd880c487bfcdc9a4f4ed946459f1df113b",
+      "tests/test_research_summary.py": "31c07edffd7498ee53a5d23c91993ca2f6f33510e2965bbee77909f4836f82e5",
+      "tests/test_research_updates.py": "7314efcb37f97df3264b5af8ddb2fe99457f2e212679404e625ee6bea5133c47",
+      "tests/test_review_delta.py": "8a882efdb542d6a45c6ba7759ad7fd681c60131097ad4043f1911954ee656291",
+      "tests/test_review_presentation.py": "424c09d6de9ddd3404617f3f5cf289ea633bcb0817326c1bb41f78a39e65dec8",
+      "tests/test_risk.py": "dc12d1bd84b44aaed4ba1d8fa722736bed4522e4817215351e7c284bc72b0bd4",
+      "tests/test_rollback_preflight.py": "0715ce6df5a740784ea44f7ea11fa6b08cb8d586e986bd4ca5177bb9e69e3ec9",
+      "tests/test_safety_contracts.py": "214bc51847c3367372aa97e94ff9fecbf26123a47f60a24f9ffe7017e98dceaa",
+      "tests/test_shadow_models.py": "6fe97e360f1d31866b40930c30b1d891bcbcd004c8da20608b357dfcafb2759a",
+      "tests/test_signals.py": "a1875329762be0506efcfe66c48635bf62c935c64602a5cffa1d911a593c5954",
+      "tests/test_six_step_isolated_flow.py": "ef3be7a92368d68585d262b016a769387eed12bd5d3773b5195f3d5d5a13f8c4",
+      "tests/test_stage_business_flow.py": "eafb9aa846e279c5d36a6330b8ee221d96d596c6b39e982035cb92f5434ce6ca",
+      "tests/test_strategy.py": "3a11dabf51f404bd68cee78b20b8970e894dd1cf1a062b03b7add03857c9f66b",
+      "tests/test_subscriptions.py": "6de8917c89b48149f3b1aa959944a2aadf6a6eccfe56f232e71aed4273c5ea0d",
+      "tests/test_thesis_governance.py": "138b79dd9c2ad2d89be2f3eb0b99b567995102c53e5edaeb4d87709bf29f7ce5",
+      "tests/test_update_safety.py": "6e6e14cda36cd0a5548a1a7829fe2a34d435f60d0ad82931b18ef67b5daf11e5",
+      "tests/test_weekly_reports.py": "2555f705d4a0fc91c0c804b9b94be28601bf91ab71e2726a44689c7a3400a615",
+      "tests/test_windows_runtime_contract.py": "4a14157672b6524ec8e45673ef3a99671d68a98864bdda4dab2e737a181b7b94",
+      "tests/test_workspace.py": "46e3980b537c25ae3aed50df0ca262092d5f9c77bb862ac3f295090d07f98de6",
+      "uv.lock": "80ef8c8af91cc5b2fa9ef6e9cdf42676863107e801694a5b05ba482c2451a862"
+    },
+    "reviewer_raw_matches": 167,
+    "reviewer_line_ending_only_differences": 7,
+    "reviewer_evidence": [
+      {
+        "path": "C:\\Users\\15123\\Documents\\Codex\\2026-10-09\\task-4\\REVIEW_REPORT.txt",
+        "sha256": "0d4fbb54e1ffd8c49d34d036dba974e15c280f99e3fd5b27af05aeadc745cb6d"
+      },
+      {
+        "path": "C:\\Users\\15123\\Documents\\Codex\\2026-10-09\\task-4\\REVIEW2_REPORT.txt",
+        "sha256": "c0e04527c1e208410a2f0cde6f869fa68d70ed2999809ea8161ac2fd2190f653"
+      },
+      {
+        "path": "C:\\Users\\15123\\Documents\\Codex\\2026-10-09\\task-4\\review2-evidence\\hash-audit.json",
+        "sha256": "13a22409263c9cafe45ba86314bdbda001f17ccbe149bc11ee3024985a7de637"
+      },
+      {
+        "path": "C:\\Users\\15123\\Documents\\Codex\\2026-10-09\\task-4\\review-logs\\boundaries_final.log",
+        "sha256": "ff510e417fa80972daa974dec428a21ce5b4374dbb6aeefffbd635c383f2dcc0"
+      },
+      {
+        "path": "C:\\Users\\15123\\Documents\\Codex\\2026-10-09\\task-4\\review-logs\\review2_regression.json",
+        "sha256": "01ccc511721310d1dbd3dd3cde22ed55d4efb2ea53285462a5629fd917694791"
+      },
+      {
+        "path": "C:\\Users\\15123\\Documents\\Codex\\2026-10-09\\task-4\\review-logs\\review2_boundaries.json",
+        "sha256": "98de46e688f891a79f2200a8e4405acdbde9dff32b178ae2a16f997804d8cafa"
+      },
+      {
+        "path": "C:\\Users\\15123\\Documents\\Codex\\2026-10-09\\task-4\\review-logs\\review2_public.json",
+        "sha256": "e38b9e2b53aca4c7f8fa0718dc8a4dcf7ac2353634f19556b8435dbfcb58ec4d"
+      }
+    ],
+    "remote_ci": "NOT_RUN",
+    "remote_writes": "NOT_ATTEMPTED",
+    "production": "NOT_ACCESSED"
+  },
+  "authorization_update": {
+    "source": "Sentinel_69ef17d10ad08191a3e03fd2c7e35c01（2026-10-09 06:16 UTC）",
+    "status": "进行中",
+    "project_engineering": "CONTINUING_UNTIL_REVOKED",
+    "stage_scope": "UNCHANGED",
+    "production_deployment": "NOT_AUTHORIZED",
+    "prior_denials": "PRESERVED_HISTORICAL",
+    "source_unchanged": true,
+    "remote_action_results": "Recorded after execution; not preclaimed"
+  },
+  "release_preparation": {
+    "version": "0.46.0",
+    "started_at": "2026-10-09T06:25:56.943873+00:00",
+    "commands": [
+      {
+        "name": "lock",
+        "command": [
+          "uv",
+          "lock",
+          "--check",
+          "--offline",
+          "--cache-dir",
+          ".task-cache"
+        ],
+        "exit_code": 0,
+        "log_sha256": "0c6e9691a56a478b6ecfd4da8da4fd7f6b359845d5c02a694573f2ea97cf887d"
+      },
+      {
+        "name": "contracts",
+        "command": [
+          ".venv/Scripts/python.exe",
+          "-m",
+          "pytest",
+          "-o",
+          "addopts=",
+          "-q",
+          "tests/test_windows_runtime_contract.py"
+        ],
+        "exit_code": 0,
+        "log_sha256": "a02842062b5740b8bbed3b40bfe60f8a4911c8c8bf95fb0c5de804505c47e8c4"
+      },
+      {
+        "name": "lint",
+        "command": [
+          ".venv/Scripts/ruff.exe",
+          "check",
+          "src/investor_core/version.py"
+        ],
+        "exit_code": 0,
+        "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+      },
+      {
+        "name": "build",
+        "command": [
+          "uv",
+          "build",
+          "--offline",
+          "--cache-dir",
+          ".task-cache",
+          "--out-dir",
+          "..\\evidence\\release-artifacts-0.46.0"
+        ],
+        "exit_code": 2,
+        "log_sha256": "73f6d3266608fcf27a4570bed005eb9efe984448d068f8efd30f9fa3dc590fcd"
+      },
+      {
+        "name": "build-external-cache",
+        "command": [
+          "uv",
+          "build",
+          "--cache-dir",
+          "..\\evidence\\build-cache",
+          "--out-dir",
+          "..\\evidence\\release-artifacts-0.46.0"
+        ],
+        "exit_code": 4294967295,
+        "log_sha256": "88f54d323224f99e28903eff60a7a890a3161fdbb6cdcea2e513e70d01e44905"
+      },
+      {
+        "name": "build-system-certs",
+        "command": [
+          "uv",
+          "build",
+          "--system-certs",
+          "--cache-dir",
+          "..\\evidence\\build-cache",
+          "--out-dir",
+          "..\\evidence\\release-artifacts-0.46.0"
+        ],
+        "exit_code": 0,
+        "log_sha256": "24d95d92fbe0bbc5c91aafee0ef54a1bdbb80a41255fa2ff36a210852d94f4f4"
+      },
+      {
+        "name": "build-cache-excluded",
+        "command": [
+          "uv",
+          "build",
+          "--offline",
+          "--cache-dir",
+          "..\\evidence\\build-cache",
+          "--out-dir",
+          "..\\evidence\\release-artifacts-0.46.0-clean"
+        ],
+        "exit_code": 0,
+        "log_sha256": "96fb77c9b53609e6382baae7b5bb6c5db7227acae661bdaee52520eead7d9f70"
+      }
+    ],
+    "changed_from_full_run": [
+      "pyproject.toml",
+      "src/investor_core/version.py",
+      "uv.lock"
+    ],
+    "remaining_171_source_test_dependency_files_unchanged": true,
+    "dependencies_unchanged": true,
+    "migrations_unchanged": true,
+    "model_definition_unchanged": true,
+    "package_source_files_verified": 102,
+    "packages_no_originals_or_databases": true,
+    "artifacts": [
+      {
+        "file": "value_dca_agent-0.46.0-py3-none-any.whl",
+        "bytes": 515620,
+        "sha256": "dc93eb321eb85f63e1174e6dbd06afe369790d48ac970d3ad18427efc1f975b1"
+      },
+      {
+        "file": "value_dca_agent-0.46.0.tar.gz",
+        "bytes": 1114438,
+        "sha256": "0d4cca673c7a62f24b4aab647a9b486808be6e07c8fb3199ea471cf45025b41f"
+      }
+    ],
+    "finished_at": "2026-10-09T06:31:22.347665+00:00",
+    "result": "PASSED",
+    "remote_ci": "NEW_HEAD_REQUIRED",
+    "deployed": false,
+    "pre_exclusion_artifacts": [
+      {
+        "file": "value_dca_agent-0.46.0-py3-none-any.whl",
+        "bytes": 515620,
+        "sha256": "dc93eb321eb85f63e1174e6dbd06afe369790d48ac970d3ad18427efc1f975b1"
+      },
+      {
+        "file": "value_dca_agent-0.46.0.tar.gz",
+        "bytes": 60505952,
+        "sha256": "ac7bcf3c06b380611c3eef8589138c1e98a158148b6608fdf6c257f8582e35df"
+      }
+    ],
+    "pre_exclusion_result": "Build passed but sdist contained local dependency cache; never uploaded. Add .task-cache/ exclusion and rebuild.",
+    "version_only_project_runtime_changes": true,
+    "source_hashes": {
+      "pyproject.toml": "ee272e721e8dc2aa7520674f89b32c53ad584f31d04a2f8134985760f557aa46",
+      "src/investor_core/__init__.py": "5c962909ea13600a14637f0925f1afde9303fe204401fc7e828e5822a222b93f",
+      "src/investor_core/api/__init__.py": "ada82d96f31584e717a9d8733590728a1f9f4d2e0238c92c90923aa6aa2cb332",
+      "src/investor_core/api/app.py": "28b9a3a8ffc620339f5bc208b605ec4ed00568bbaea648aa077074308fa7fd70",
+      "src/investor_core/api/schemas.py": "f3488fb4832ca65e9e939a6c3181f8c80a0c429796a5ad3c9dd1efd339e59a20",
+      "src/investor_core/api/shadow.py": "956818f8d68b633a7a682bcf422d1f675d1501ad984abebe142f6e070acae83f",
+      "src/investor_core/background_worker.py": "39f203551e626643788fbba7be22de358612d522f4c2f30a59b065f1c86b9052",
+      "src/investor_core/benchmarks.py": "8c255c67528052239ff4d2b11ea0b35158e5271ff663e267581bba50a0505763",
+      "src/investor_core/capital.py": "de2fdf7c46e31ca3a800073b156c64e9353b7e5d9a93db20685669539a2c4cec",
+      "src/investor_core/cli/__init__.py": "e1d8ba458599a06425ec5db72136274d292c44f9fd437db311f37e885c28487a",
+      "src/investor_core/cli/app.py": "8377dc864f632d6d3fda438ff68edfcf7dc1ef3f52efbc7cc3f242fd7e5dafdf",
+      "src/investor_core/commitments.py": "826fb4a5757dec52a42d93945f2d628b44a3616693375a5c4ce12a340c57e36d",
+      "src/investor_core/config.py": "c1340bb2d082c62f29e1a4cd8dbe85f32fcfb27334326c17ab8eb2b47c9353b3",
+      "src/investor_core/daily_client.py": "1e2fa318c927db3dd0d0b88327c4d7cacd9657b55ad132bd2caf01dba87cb9c9",
+      "src/investor_core/database.py": "3b21ecf73e13850cf0373b1e4e1fc0ed71ba06a83d2315d4c1187936c585733c",
+      "src/investor_core/decision_context.py": "d3d602fbe05e63ce7d34e2ff791d74bcb7ebeac69150c47e083d79633988150d",
+      "src/investor_core/delta_presentation.py": "71b6cfd8b5a030e450609d8b218bd4c06ef2d939585410de13f60c23d5a3edd4",
+      "src/investor_core/delta_review_service.py": "bba6a8cd46d87250c8e0d2e1ff2f2f9a1bc8027891f13ee369df1bac91af9e4e",
+      "src/investor_core/execution.py": "78d75b8b9dc29f1f9f883422315d7f32fac9196cbd8fc13c67d7bec1a61e8e88",
+      "src/investor_core/health.py": "d8c90a304510726301ae1bc93f117000eb12d7e4d5679919d2a4973806baf888",
+      "src/investor_core/hermes_config.py": "2b67ea3ab1c29d03cc57684adce3c8b1d0a9f2d75b67873892f7a1115fb1d96d",
+      "src/investor_core/hermes_delivery.py": "3a12a480fa53c3375df8d9382aa5aa350ae35eeafe36f17d69553f3af3c89fd6",
+      "src/investor_core/holding_review.py": "bf45c8a8137cd833867dcc987832bb0d121623d429290b2cb002edf4b076e2a1",
+      "src/investor_core/index_peers.py": "1aab041503db0ece2d7e3af02784aafa79aa896954bbc6c4d2e26ea7e5a714d3",
+      "src/investor_core/ledger.py": "bc562c5fe78efe08755f2cfb7affc66b0f233390c21ff4dd403bcc9248a2ba98",
+      "src/investor_core/logging_config.py": "6a61792fd3ab83c698fc5e74cd68aa64abc7dd11f4b36d6f77ffa7319acc4777",
+      "src/investor_core/market_data.py": "8b694a446a3e977e9d7477e5b1534069e5fa450a3c4cb49c0bb252521f29efaa",
+      "src/investor_core/market_providers.py": "61adbade8d7e25e405b8be82df1b0755819d1a2132b4ee21e6895471a0b628c8",
+      "src/investor_core/market_sync.py": "55d0e2ed25083447ef2b132d5ca482d60227d146b8bef6d3e61f61d96e614ad6",
+      "src/investor_core/notebook.py": "40ad47b8ab1303081618e8506044a3e6c518d4b6c061b29b7ea7af2c1a2d7867",
+      "src/investor_core/operations.py": "d4c8fcb94564087e732371f6bcd2bf798ad1aa7b692ecda38df19f098adb841d",
+      "src/investor_core/peer_models.py": "ce352156b7235c3f433f3ed60162c758bf05f93b339dd63c4ec5082274a8e922",
+      "src/investor_core/peer_presentation.py": "5f0126b63ff96072ef9a395e18a3343bae374380b82d6b23e863ca74f67e9930",
+      "src/investor_core/peer_research.py": "46ebd1c0ab54737948785dc554eb3da64ef76d1e7daea2da08a3e438135afa5d",
+      "src/investor_core/peer_validation.py": "460e8414717b65980b38028b669ec4e4eaf8e071495d7359855febe4e6bbbb07",
+      "src/investor_core/performance.py": "9d05c3edbf9ff4f9221957372f3ba408059ede784987310f050f183e293292dc",
+      "src/investor_core/planning.py": "7ed733564762fa91e898bc3f5cd2380c5d6fffb365b005046e720f3ca2646829",
+      "src/investor_core/r11_candidates.py": "40c83b5184917757362f1f85e48289ae1fdfb4d8499333bd9586da9b9a582498",
+      "src/investor_core/r11_constituents.py": "80a598350a33268a662441ee39bcbe24baa8c441e8af72222ae45bebdcafd7fa",
+      "src/investor_core/r11_core_bindings.py": "bdf2c8257324e2cbc68e0ffd0fc24122fea49cd626096d7605ecba09e6307133",
+      "src/investor_core/r11_governance.py": "358333bdd441d682b0c314dd04c015acacd82b5a416580995bed014483a51e5e",
+      "src/investor_core/r11_inputs.py": "2daf1aa83b3660fec1780b9adccaa4009343764b82b35248be64463e3f7518fe",
+      "src/investor_core/r11_legacy/__init__.py": "6aa9716d53f4b3a82d4b35ca7707a185d3ad653cc8ddac48af6074f0846a140b",
+      "src/investor_core/r11_legacy/candidates.py": "3caac5ea599e51f3fe62af820ea96f2adc4e514355d04250ffcbf7a49fa17457",
+      "src/investor_core/r11_legacy/inputs.py": "cef78c6d1812d9918676d60f076a84af7793f6de23105c87727b2343daf0b0cb",
+      "src/investor_core/r11_legacy/macro.py": "217dd5512d181ed7898152fd57882d9d8e028fa10437e295a27c2a935a27f314",
+      "src/investor_core/r11_legacy/source_monthly_v1.py": "b7b49a6a5f4b4b7e6748159986a471c4c274b96d59583b43d0c1e21b6bdbaed0",
+      "src/investor_core/r11_legacy/v2/__init__.py": "cdf7ea9f2f986338704369024558726490c5bf106a3533cf6ce843baf52ca2e2",
+      "src/investor_core/r11_legacy/v2/candidates.py": "3f6ef41f4240fdce549c2bb4dae68cb69d60323ab5eb89befe7ad81bb60b0959",
+      "src/investor_core/r11_legacy/v2/inputs.py": "98d66c84fcde5cf4eb6096299ac229bc1b80245238d8b476e6ca7852b5449392",
+      "src/investor_core/r11_legacy/v2/macro.py": "20000846cbebba991ec41c6e5ed02bd2fe6122419e97f2172b9af57e7d82c61e",
+      "src/investor_core/r11_legacy/v2/provenance.py": "4ab4a5d5567c85aabf9cc36ff9c5d9f65526e93676ffdbf5b35f42d8f5acfd63",
+      "src/investor_core/r11_legacy/v2/replacement.py": "75023e38ad06e6be0aa3ab8e6a29ee786f8f5fa4a8005ba6d9a6402dc1bb1c07",
+      "src/investor_core/r11_legacy/v2/rules.py": "900145fc2d9dc39feadb102a5df828e3cce91c03f3d7116a9ffbd68e98a7756c",
+      "src/investor_core/r11_legacy/v3/__init__.py": "a3aa63d23ddefba806e86ec2fe4b1d9bf4b4907bfd32bed54507f942a11d3ac1",
+      "src/investor_core/r11_legacy/v3/candidates.py": "48f5da2db458432272c51be3baffe0c9353e5893d7dc6ffb19d2a19ab506a0b7",
+      "src/investor_core/r11_legacy/v3/core_bindings.py": "b678afbfbd732c236c1a2ec598c514433032b119c38cee5f8cebea33b4b78811",
+      "src/investor_core/r11_legacy/v3/inputs.py": "68d18a649dcdd529fb1a6ae4099d0939c816f992d08bdb9e2b686737afd940d7",
+      "src/investor_core/r11_legacy/v3/macro.py": "0c1b423b80180a0d5665b4f22b310f91dc7936fc04abdec6123c9042ce76dd15",
+      "src/investor_core/r11_legacy/v3/provenance.py": "3e0ba8e6627994ac7327bf19b9c0976a31b7e702af5edde8ec97bb9c105f0da2",
+      "src/investor_core/r11_legacy/v3/quality.py": "d7a919b97912c79a4eb8cf73b46a971a4253a95406df27486896f0c27d8defb0",
+      "src/investor_core/r11_legacy/v3/replacement.py": "53e5632ee9631f41ebbcc325c8c40f64993b840d03ff5cbc25a59ca7c9bb5385",
+      "src/investor_core/r11_legacy/v3/rules.py": "cf2e675d420861dedc638b51a701c788c9000c24f111767d3cf96f18dfa0cd6b",
+      "src/investor_core/r11_macro.py": "924182bff44b7e4ce558f0befbd15730eb36bbebf8e5e0bf92797c97beef5160",
+      "src/investor_core/r11_provenance.py": "5b9be3eef838d140ed0bb0b3f0b66bd39ea7799c321c1e839bfc89fd4bf6cc1e",
+      "src/investor_core/r11_quality.py": "c07133f8c2845ff014896c71e16c6342ae0a40efefa413ff4eff0855e1569381",
+      "src/investor_core/r11_receipts.py": "f957ef10e8daa0310e006d261f1191fd4e4aa53bc34b78b8c86988d89b7c7dc8",
+      "src/investor_core/r11_replacement.py": "b64949d921abc4159bb3904fcea3a9d930e362fcb1b809b0894057e2b477d5f7",
+      "src/investor_core/r11_rules.py": "cf2e675d420861dedc638b51a701c788c9000c24f111767d3cf96f18dfa0cd6b",
+      "src/investor_core/r11_sensitivity.py": "bccd92a51d54be5e63537cf4545d045e83dadf513f516daeec1c755e84d06222",
+      "src/investor_core/r11_service.py": "dac41106b66ec7c35b245463917b14176ce35d7c1c3672db3013c0c36f6b04e0",
+      "src/investor_core/r11_source_archive.py": "301aedef457759b4cfb95b81c130f5b1ab2787de4d8ecfffbf63ce34928c3410",
+      "src/investor_core/r11_source_json.py": "353846abd8feb2d7148d2fccbf90aeccf6337686ed307e4f2e6fc3e671c51563",
+      "src/investor_core/r11_source_monthly.py": "801664ce92f3df34453aa603042477ee9720ab1d9b36e996bb6030e744a38c59",
+      "src/investor_core/r11_source_preparation.py": "27d829d7f5404b2ad74083f0bc671ebafb65ef2283731f856998b237326ad668",
+      "src/investor_core/r11_validation.py": "326338ae3d22f693d1167ebb74c684fa9f3f05ea7f1681dfe84c81b2aabf161c",
+      "src/investor_core/research.py": "7746a642da9f45450a991702f219729ea538c2652407fec27d51ac649a76f38b",
+      "src/investor_core/research_coverage.py": "d3068e03e21a0d919132a3170b85c64bdf88c758a6fd273c8b89c74f26f25a08",
+      "src/investor_core/research_read_notices.py": "990d5ba6f4c1d856b96c6917f799e46ffb28c3a0728f9878c248b3915c15bcb7",
+      "src/investor_core/research_summary.py": "e17384ce7a6b3ea2e21f9f3f12a4d63ea6aed5059bb55841770b83e3854cfff7",
+      "src/investor_core/research_update_build.py": "26e3d83cc904d19a53e478d4532baac9a0fd22d84fe3cb304f08c98d0e84dbc2",
+      "src/investor_core/research_update_sources.py": "d7fa985b689393be1e06afcfe1573609d9fdc46f9510d212addb97bb3ef7aa51",
+      "src/investor_core/research_updates.py": "3d102c5ecd5e3ce3e61b690eb2c3985cc81226c80b16090623d13d0d29273e31",
+      "src/investor_core/review_delta.py": "fddf289483ee4297d20c017b5b9c11ba5f03377915cd90fefda58508eaaa9e04",
+      "src/investor_core/review_presentation.py": "b769913376629facb7c357737d18c7c6082a8d8ac1d07e9a9d0146149ebaa686",
+      "src/investor_core/risk.py": "e94e5bef10387568837ab8261dfa308e936db13f998f1a2ee499ddac9fc5ef60",
+      "src/investor_core/scheduler.py": "78531bba515bed8b211d4fb3f4464ae42cead5367599f99736673bee0252d478",
+      "src/investor_core/scheduler_admin.py": "ff839a46a12c778f8bb274ef72c3b515e6678a489c2ba8a8ce577b6a78f45622",
+      "src/investor_core/shadow_models.py": "024b0a682a9cd8f97eb2944dfc51b5b6d0116ce1fbfaaa59ab08fd98e00801da",
+      "src/investor_core/signals.py": "b60c8d1b34889e3d7281c2984a42e1752e64903d2d4f5d7c5f4490e3bcb0a972",
+      "src/investor_core/source_lineage.py": "4d5beb5b41ea22cb5a6c3baac23d93047d72772e9ac39c575f34df8ea723aee0",
+      "src/investor_core/strategy.py": "f80d9a9aad84d9269202e03a833548c6e318d9ec8adb8c5c5e13a08cbc687f04",
+      "src/investor_core/subscriptions.py": "f7645e3e643392e1abd2ef185b63469ffb558eef82b12040f84dd955eb46a1b3",
+      "src/investor_core/thesis.py": "09512807efd72e8de67fd5ca21c9177d8eb0640d78e496ae5abd3741adf48205",
+      "src/investor_core/version.py": "6803841d3a9ab7d890b6f11d13199803d45fb45c2abbfb897ec10c3a057fae7e",
+      "src/investor_core/weekly_reports.py": "8700f012f4b6298d71ebb7e8ad394160df5411481b4747c0225dcb4d84734414",
+      "src/investor_core/workspace.py": "da5c1eeedbb238681c7fd78ede8c8dbd6376517bc6dba430328c89702b8ac58f",
+      "src/investor_mcp/__init__.py": "d0a85cb350d45f8db3f5591ecdc975dfb320c217ad47ca2dfe5cfd076814fc3d",
+      "src/investor_mcp/check.py": "73a2b00a9e6aab530b1dc6786836d9ddb98bc73df6cc0a62c3222537a848b8e5",
+      "src/investor_mcp/instructions.py": "5dc253d9c3c2f5a133a38afc2c797889106547560a468c190919e1050c2c575a",
+      "src/investor_mcp/runtime.py": "18e93cf339a981a57452cc8bd2cfdba5e57780ced9311593ad2e910da68db53e",
+      "src/investor_mcp/server.py": "89e78df5c03030cef36f63da2ed3a0016020cedf23729593df32fe655d9fa757",
+      "tests/conftest.py": "c6583cfd2adff34a4febfcce1a3f247354b2758ef303f0b245a57d8f1322b2a8",
+      "tests/http_process_support.py": "2060b84fc14a7b50aef72b71f82250ae412def377f1888a2c7ec3d03a2f4fa0b",
+      "tests/manual_delta_review.py": "ac5ce2c0e23389203b7d352c31d2e421108110988955ab0394f9abfadaf5c9bd",
+      "tests/manual_stage_flow.py": "f9fd1cd4213f3edae865bd3963aea7d8874f76cb0c305fcca3168c4239e2a052",
+      "tests/manual_thesis_flow.py": "a1b6d66485590e994d537d4f3f3b048eaa77ae5f14683a86087a6c54a402103f",
+      "tests/test_api.py": "2a86d7c3cdf134a5b8d35338ce7063830ec6b8a2e26777f0d895a6de5ea538f1",
+      "tests/test_background_scheduler.py": "eee7be56ad0a7e7a8a62c79f8dc6374f54e8c13d977171b940336e67d1cd203e",
+      "tests/test_background_scheduler_http_process.py": "0c4df3c996a9d3066c1dac7dce26aa6486a900a8b94a85867d05d6a25b7be560",
+      "tests/test_benchmarks.py": "7a461486e3510dcd44306135eedff46b94975cc61875672e0b29db4ec702262a",
+      "tests/test_capital.py": "32521a6b18e31e58462e7b7db1620169c119733cc031c2ca040b4ea732290ab2",
+      "tests/test_cli.py": "b52f21b19f016e468162c7515489984cb104a54fb5f90ee23a33023d245448e4",
+      "tests/test_codex_mcp.py": "51d44ef49d3ab4254da09e5fb01a5fef7573e953b4e9c53075f3857f6b8fe2f9",
+      "tests/test_daily_client.py": "21f4b647bb236adda65c7e80d032dd8e00403af900f3a5509d7ae63968ee4342",
+      "tests/test_decision_context.py": "3fbc2951caba1d22aaeefbc698da05b47bccd9cb13a60a7fc1d9f825a8f8900a",
+      "tests/test_dividend_investigation.py": "6d10263bffa3d4a511f1339c1ba2e730e9be6bf22d56f6fd25ea36032a268f14",
+      "tests/test_execution.py": "d48cd24c778524a80a25b2b244fa3e1964839d191d50da10fbbdd4a329100861",
+      "tests/test_hermes_config.py": "bba86f8762fa001b4ab4cc430f9150ef7ac05f117fba44f626e322663305cd75",
+      "tests/test_hermes_delivery.py": "8d21660dac34251ff1d1b5a9a88b4b2e46929b4e0a680dc278b1037403d2de19",
+      "tests/test_holding_review.py": "d5e2babbe5b11fa047a13d913e34f1c60bc34e3f54aac43337d31256f2ab3c56",
+      "tests/test_index_coverage.py": "510c649a666384a025012985ef1d0e56b62d7f7aba181ba55f6e919b98f96c39",
+      "tests/test_ledger.py": "efafb3b9d5f8db4e3425d6819c6e47807e8ca4b781a6e5cff24d30a730005a1d",
+      "tests/test_logging_config.py": "9766f45c2ebb384ba5df15e43d7c877105058ac62ffc7ff8d45024ca35650680",
+      "tests/test_market_data.py": "7f8773451fc1d1ac71549e413d501848414006ae9611fa4011c08e186f874307",
+      "tests/test_market_providers.py": "3de98c9595da755129ed8a621fc677a9f9d4d5b4d307d417cfc5b6435d5a6063",
+      "tests/test_market_sync.py": "a854e6d6ac80f3208528381633ad6480e516c3c16aafd38e2e857de733360ccf",
+      "tests/test_mcp_cleanup_error.py": "65ba8eeb91be236c1c80481b44a0d51f5186ce2c9acb118f8bad871ff859c7ff",
+      "tests/test_mcp_contract.py": "511c85574a46a85f9c72995403790db0d5ff2c8c0cb1faba48598ae891cbdd62",
+      "tests/test_mcp_runtime.py": "2108c6601a658ed1e9376d13adaedb8f9eaba906453b21b75e9f5fc36e25b77d",
+      "tests/test_migrations.py": "f328133a359405a6af6c791111849a75e46852a2353744221547c8f6d3a2701e",
+      "tests/test_notebook.py": "e4b73b4d56767550f8dd96f5f9a33b83b8ff3a0f853ea17e356d4be3c8d37c90",
+      "tests/test_operations.py": "ce0fcfd584ff548ec8edbb4353470abff484f6a172335520572b36b83198767d",
+      "tests/test_peer_research.py": "b0841e40268b375e65321cdc2fd7f4772e66b1b628490209975c91d54361aef7",
+      "tests/test_peer_validation.py": "e71d3aefd93f7ddc46c096e8086ff323d8b21d37035b916b53cef212c632bb99",
+      "tests/test_performance.py": "263ab64d20ae62f15866566048b69404a6396708d4de570fc5f981de2ace1d36",
+      "tests/test_planning.py": "55c7f02f974b4250e5bc1ad9e1eb0b44f04a4dc21a7e56d000beb0f53a42dd23",
+      "tests/test_process_readiness_deadline.py": "40deea74b615e22212b58673f86547fe6d2c5f479963e6effd221b272503eb00",
+      "tests/test_r11_calculators.py": "9c23edb2dcdfdb01b83b3f1826cc7073640f25854235315d9bf4f58f60af7dbd",
+      "tests/test_r11_complete_simulation.py": "6bf0f195da8e5150b2b33b96e8ba2a0131d2d23753fbc9bc59c984feaee4672e",
+      "tests/test_r11_constituent_completeness.py": "4345cfbf0d427b13806228a3969dc0d7ee419ed908e464e3bc3d2b65ea9187d4",
+      "tests/test_r11_constituent_receipts.py": "a1ca36820af71dcb4d93d92b9362e1fa120384177d4a77542d61d121ae026ea8",
+      "tests/test_r11_core_bindings.py": "1353ae381133780f7348791be2b05da5cee0b6fdaec043bbf633b129928858e8",
+      "tests/test_r11_final_gates.py": "fdcb686a7e3be9d75729bf7c15c6da4fa90988217f822d822ff5a555496a08cf",
+      "tests/test_r11_governance.py": "5b019391375fd73a4b0ac8f9e12178d42ea6b29765a146e8ef8c1b0eb0310ec7",
+      "tests/test_r11_mapping_expiry.py": "10f4278d3211eef30e36df17df10030181b8c48fd0e6336466957844c876efe7",
+      "tests/test_r11_receipts.py": "ceddbe6cd7d2428e4a8f69b2faaea34e5f34c4f55dbf543a1eccaa0bdc3a2aea",
+      "tests/test_r11_review_boundaries.py": "f9cf924208e12a440281068a24ae5847793cd4c1a891ac2690a555590d3c6bc2",
+      "tests/test_r11_review_fixes.py": "26f469cc30cc0547b5bbac6001cb867e5dab7dec0ba2ed4ef21347a1f25561c3",
+      "tests/test_r11_second_review.py": "861d4d07fd49f8f293c59aa2d5913eb9e7d5adf1391fa3d457cff3178b1de556",
+      "tests/test_r11_service.py": "77ea054784be7b608a7c54cb466e8842ce738ca98078cc3ab6d4296eed7230ce",
+      "tests/test_r11_source_archive.py": "8827a9468e0b6937cecafcd4b1989356d4585216b86a4dbd257b2fabbfc40093",
+      "tests/test_r11_source_monthly.py": "301003b9c010479bd665b4021952d2ee4c1c4e2f8c5c846fc66fba237824e9cd",
+      "tests/test_r11_validation.py": "0294b512c62da5fd24c0084fd21621dc054319fe77b64f4a9ede2b783098c7d7",
+      "tests/test_research.py": "60e380f5416afba40fd5d953e681edd880c487bfcdc9a4f4ed946459f1df113b",
+      "tests/test_research_summary.py": "31c07edffd7498ee53a5d23c91993ca2f6f33510e2965bbee77909f4836f82e5",
+      "tests/test_research_updates.py": "7314efcb37f97df3264b5af8ddb2fe99457f2e212679404e625ee6bea5133c47",
+      "tests/test_review_delta.py": "8a882efdb542d6a45c6ba7759ad7fd681c60131097ad4043f1911954ee656291",
+      "tests/test_review_presentation.py": "424c09d6de9ddd3404617f3f5cf289ea633bcb0817326c1bb41f78a39e65dec8",
+      "tests/test_risk.py": "dc12d1bd84b44aaed4ba1d8fa722736bed4522e4817215351e7c284bc72b0bd4",
+      "tests/test_rollback_preflight.py": "0715ce6df5a740784ea44f7ea11fa6b08cb8d586e986bd4ca5177bb9e69e3ec9",
+      "tests/test_safety_contracts.py": "214bc51847c3367372aa97e94ff9fecbf26123a47f60a24f9ffe7017e98dceaa",
+      "tests/test_shadow_models.py": "6fe97e360f1d31866b40930c30b1d891bcbcd004c8da20608b357dfcafb2759a",
+      "tests/test_signals.py": "a1875329762be0506efcfe66c48635bf62c935c64602a5cffa1d911a593c5954",
+      "tests/test_six_step_isolated_flow.py": "ef3be7a92368d68585d262b016a769387eed12bd5d3773b5195f3d5d5a13f8c4",
+      "tests/test_stage_business_flow.py": "eafb9aa846e279c5d36a6330b8ee221d96d596c6b39e982035cb92f5434ce6ca",
+      "tests/test_strategy.py": "3a11dabf51f404bd68cee78b20b8970e894dd1cf1a062b03b7add03857c9f66b",
+      "tests/test_subscriptions.py": "6de8917c89b48149f3b1aa959944a2aadf6a6eccfe56f232e71aed4273c5ea0d",
+      "tests/test_thesis_governance.py": "138b79dd9c2ad2d89be2f3eb0b99b567995102c53e5edaeb4d87709bf29f7ce5",
+      "tests/test_update_safety.py": "6e6e14cda36cd0a5548a1a7829fe2a34d435f60d0ad82931b18ef67b5daf11e5",
+      "tests/test_weekly_reports.py": "2555f705d4a0fc91c0c804b9b94be28601bf91ab71e2726a44689c7a3400a615",
+      "tests/test_windows_runtime_contract.py": "4a14157672b6524ec8e45673ef3a99671d68a98864bdda4dab2e737a181b7b94",
+      "tests/test_workspace.py": "46e3980b537c25ae3aed50df0ca262092d5f9c77bb862ac3f295090d07f98de6",
+      "uv.lock": "c17421ef652592a96476c2a66c6bb83e9ad7dbe19304843bb3ba45fca245f116"
+    },
+    "artifact_scope": "Local build verification snapshot before this evidence/document append, not final published assets; source and metadata bytes were verified. GitHub source archives are generated at the future tag."
+  }
+}

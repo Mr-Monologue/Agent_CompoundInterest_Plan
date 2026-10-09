@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.45.0",
+  "version": "0.46.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
   "database_revision": "0045_shadow_models",
   "minimum_current_version": "0.5.3",
-  "notes": "Research-only R1.1 C/D calculations, source-bound snapshot replay and guarded E evidence workflows. Actual model promotion and ACTIVE remain unauthorized; production strategy stays v1.6 with no money or scheduler changes. Additive shadow-only schema 0045."
+  "notes": "Research-only complete-source byte archives, bounded native JSON pagination, versioned observed PMI/PBC extraction and read-only preparation replay. No new schema migration, R1.1 model or qualification change, mapping approval or forward observation. Source release does not authorize production deployment."
 }
