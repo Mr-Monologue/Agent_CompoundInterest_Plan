@@ -1,0 +1,63 @@
+{
+  "repository": "Mr-Monologue/Agent_CompoundInterest_Plan",
+  "tested_commit": "9c88d1d7dd995204d6f6225d0531428ece23352f",
+  "command": ".venv/bin/pytest -o addopts='' -q -ra --tb=short --durations=20 > /tmp/r11-final-full-regression-5.log 2>&1",
+  "observed_at_utc": "2026-10-08T18:47:59.684562+00:00",
+  "original_pytest_pid": 30981,
+  "original_pid_present": false,
+  "original_tool_session": 6921,
+  "original_exit_code": "UNKNOWN",
+  "exit_code_reason": "Original tool session lost during environment reconnection; observer exit status is not pytest exit status.",
+  "pytest_summary": {
+    "passed": 673,
+    "skipped": 4,
+    "warnings": 1,
+    "seconds": 3089.22,
+    "failed": 0
+  },
+  "skips": "Four Linux-inapplicable Windows executable updater tests; Windows execution remains unverified.",
+  "log_bytes": 3903,
+  "log_sha256": "e1cf3aacffbbc94f3a1ee29a8ea699cfb7d3a8f6754438317337b704a9a9c183",
+  "log_last_modified_utc": "2026-10-08T18:14:24.244684+00:00",
+  "current_source_test_and_manifest_diff_from_tested_commit": "EMPTY; later commits are documentation only",
+  "prior_wheel_byte_matched_source_files": 97,
+  "wheel_sha256": "079b5fa5b1d756a4d5b46cda11853bfb288cf6d18e232c8a7e9a451908468b48",
+  "limits": "Local archived evidence, not a CI artifact or model qualification receipt. Original command exit code, dual-platform CI, real input/observation and production acceptance remain unverified.",
+  "independent_reviews": [
+    {
+      "commit": "08e20f8b06303bdd151aa184a62483bc278fb59d",
+      "scope": "C complete constituent set binding",
+      "reported_tests_passed": 49,
+      "result": "closed; no new blocker",
+      "evidence_origin": "parent-provided independent review"
+    },
+    {
+      "commit": "9c88d1d7dd995204d6f6225d0531428ece23352f",
+      "scope": "Daily HTTP test readiness synchronization only",
+      "reported_tests_passed": 6,
+      "result": "passed; no new blocker",
+      "checks": "Readiness AST unchanged; cancellable 30s whole deadline; late 200 rejected; 9 existing business assertions retained plus health assertion; src unchanged; Ruff/diff passed; no matching residual Core/worker; clean review workspace",
+      "evidence_origin": "parent-provided independent review"
+    }
+  ],
+  "ci_contract_not_execution_evidence": {
+    "workflow": ".github/workflows/ci.yml",
+    "trigger": [
+      "pull_request",
+      "push to main"
+    ],
+    "jobs": [
+      "validate (ubuntu-latest)",
+      "validate (windows-latest)"
+    ],
+    "python": "3.11",
+    "required_steps": [
+      "uv sync --locked --all-extras --python 3.11",
+      "uv run pytest",
+      "uv run ruff check .",
+      "uv run mypy src",
+      "Windows PowerShell parse check"
+    ],
+    "note": "Feature push alone is not a workflow trigger; PR existence and actual runs are UNKNOWN."
+  }
+}

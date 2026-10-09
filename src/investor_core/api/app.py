@@ -78,6 +78,7 @@ from investor_core.api.schemas import (
     WeeklyPlanTransactionLinkRequest,
     WeeklyReportDraftCreateRequest,
 )
+from investor_core.api.shadow import register_shadow_routes
 from investor_core.benchmarks import (
     BenchmarkService,
     DiagnosticInput,
@@ -174,6 +175,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             },
         )
+
+    register_shadow_routes(app, research)
 
     @app.get("/health")
     def health() -> dict[str, str]:

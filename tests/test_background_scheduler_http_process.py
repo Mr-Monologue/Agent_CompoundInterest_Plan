@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import socket
 import subprocess
 import sys
-import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 from conftest import PROJECT_ROOT, migrate_database
+from http_process_support import wait_for_ready
 
 from investor_core.config import Environment, Settings
 from investor_core.operations import OperationsService
@@ -76,21 +77,14 @@ def test_separate_worker_http_process_and_offline_restart(tmp_path: Path) -> Non
         str(tmp_path / "worker.db"),
     ]
     try:
+
+        async def startup():
+            async with httpx.AsyncClient(base_url=url, trust_env=False) as startup_client:
+                await wait_for_ready(startup_client, process, log_path)
+
+        asyncio.run(startup())
         with httpx.Client(base_url=url, trust_env=False, timeout=0.3) as client:
-            for _ in range(40):
-                if process.poll() is not None:
-                    raise AssertionError(log_path.read_text(encoding="utf-8"))
-                try:
-                    if client.get("/health").status_code == 200:
-                        break
-                except httpx.HTTPError:
-                    pass
-                time.sleep(0.1)
-            else:
-                raise AssertionError(
-                    "isolated Core did not start: " + log_path.read_text(encoding="utf-8")
-                )
-            assert client.get("/ready").status_code == 200
+            assert client.get("/health").status_code == 200
             first = subprocess.run(
                 worker,
                 cwd=PROJECT_ROOT,
