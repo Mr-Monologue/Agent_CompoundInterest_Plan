@@ -1,0 +1,23 @@
+......F                                                                  [100%]
+=================================== FAILURES ===================================
+_ test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.0.0-versions differ] _
+tests/test_codex_mcp.py:142: in test_real_stdio_handshake_checks_health_without_business_writes
+    assert failure in exception_messages(exc.value)
+E   AssertionError: assert 'versions differ' in ''
+E    +  where '' = exception_messages(ExceptionGroup('unhandled errors in a TaskGroup', [BrokenResourceError()]))
+E    +    where ExceptionGroup('unhandled errors in a TaskGroup', [BrokenResourceError()]) = <ExceptionInfo ExceptionGroup('unhandled errors in a TaskGroup', [BrokenResourceError()]) tblen=10>.value
+============================= slowest 10 durations =============================
+59.48s call     tests/test_background_scheduler_http_process.py::test_separate_worker_http_process_and_offline_restart
+20.52s call     tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.0.0-versions differ]
+14.56s call     tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[FAIL-0.45.0-readiness failed]
+8.39s call     tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.45.0-]
+0.04s call     tests/test_codex_mcp.py::test_client_identity_preserves_draft_payload_and_confirmation[hermes]
+0.02s call     tests/test_codex_mcp.py::test_client_identity_preserves_draft_payload_and_confirmation[codex]
+0.01s setup    tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.45.0-]
+0.01s setup    tests/test_background_scheduler_http_process.py::test_separate_worker_http_process_and_offline_restart
+0.01s call     tests/test_codex_mcp.py::test_client_identity_is_configured_and_not_an_arbitrary_actor
+
+(1 durations < 0.005s hidden.  Use -vv to show these durations.)
+=========================== short test summary info ============================
+FAILED tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[PASS-0.0.0-versions differ]
+1 failed, 6 passed in 122.86s (0:02:02)

@@ -1,0 +1,57 @@
+"""A source's complete constituent set must not be reduced before breadth scoring."""
+
+import hashlib
+import json
+from copy import deepcopy
+
+from test_r11_calculators import macro
+from test_r11_second_review import new_bundle
+from test_r11_service import archive_bundle, isolated  # noqa: F401
+
+from investor_core.execution import ExecutionService, SourceArchive
+from investor_core.r11_service import R11Request
+
+
+def test_omitting_an_archived_constituent_cannot_improve_breadth(isolated):  # noqa: F811
+    _, _, service, _ = isolated
+    body = macro()
+    other = deepcopy(body['members'][0])
+    other['code'] = 'SYNTHETIC_DECLINING'
+    other['wealth']['identity'] = other['code']
+    for i, point in enumerate(other['wealth']['points']):
+        point['value'] = str(60 - i)
+    body['members'].append(other)
+    eid = archive_bundle(service, body)
+    with service.research._connect() as c:
+        archived = json.loads(service._evidence(c, body['context']['sources']['official']['archive_id'])['facts_json'])
+    document = json.loads(archived['excerpt'])
+    document['complete_constituents'] = [member['code'] for member in body['members']]
+    archived['excerpt'] = json.dumps(document, separators=(',', ':'))
+    archived['original_sha256'] = hashlib.sha256(archived['excerpt'].encode()).hexdigest()
+    archived['source_ref'] += '/complete-constituents'
+    source = ExecutionService(service.research).archive(SourceArchive.model_validate(
+        {k: v for k, v in archived.items() if k in SourceArchive.model_fields}
+    ))
+
+    def full_source(facts):
+        metadata = facts['r11_input']['context']['sources']['official']
+        metadata.update(archive_id=source['id'], url=archived['source_ref'], document_hash=archived['original_sha256'])
+
+    complete = new_bundle(service, eid, 'complete', full_source)
+    full = service.observe(R11Request(method='C', bundle_evidence_id=complete, idempotency_key='full'))
+    assert full['output']['status'] == 'CALCULATED_SHADOW'
+    assert full['output']['breadth']['total'] == 2
+
+    def omit(facts):
+        facts['r11_input']['members'].pop()
+        facts['r11_bindings'] = {
+            k: v for k, v in facts['r11_bindings'].items() if not k.startswith('/members/1/')
+        }
+
+    incomplete = new_bundle(service, complete, 'omitted', omit)
+    selected = service.observe(R11Request(
+        method='C', bundle_evidence_id=incomplete, idempotency_key='selected', supersedes=full['id'],
+    ))
+    print('FULL', full['output']['status'], full['output']['breadth'], full['output']['dimension_scores'])
+    print('OMITTED', selected['output']['status'], selected['output']['breadth'], selected['output']['dimension_scores'], selected['output']['extraction']['status'])
+    assert selected['output']['status'] != 'CALCULATED_SHADOW'

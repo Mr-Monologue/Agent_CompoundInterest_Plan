@@ -294,6 +294,9 @@ def test_update_migration_preserves_every_existing_table(tmp_path):
                     "research_update_runs",
                     "research_update_evidence",
                     "uq_research_update_active",
+                    "shadow_models",
+                    "shadow_records",
+                    "uq_shadow_model_version",
                 )
             )
         ]

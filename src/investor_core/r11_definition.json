@@ -1,0 +1,12 @@
+{
+    "definition_id": "r11-isolated-research-1.0.0",
+    "approved_at": "2026-10-08T10:05:00Z",
+    "source_commit": "1d0b7eac39ae9fb277c2ee69dd7597b1e2fd84d2",
+    "source_path": "docs/SHADOW_MODEL_MINIMUM_PLAN.md",
+    "source_git_blob": "7fdbfdd55d72837197f3e07f042f8e27ed26fce5",
+    "source_sha256": "9da7d077b4229c94ca0db859409617dff723bc3c13afa124cefd7061679a75b3",
+    "authorization": "ISOLATED_RESEARCH_ONLY",
+    "hypotheses_validated": false,
+    "actual_promotion_authorized": false,
+    "active_reachable": false
+}

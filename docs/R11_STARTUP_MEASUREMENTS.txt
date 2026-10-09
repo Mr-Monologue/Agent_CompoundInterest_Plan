@@ -1,0 +1,6 @@
+{"trial": 1, "returncode": 0, "wall_seconds": 31.971235408997018, "child": "{\"import_seconds\": 28.20916728500015, \"user_seconds\": 24.374745, \"system_seconds\": 3.764913}", "stderr": ""}
+{"trial": 2, "returncode": 0, "wall_seconds": 21.637389620998874, "child": "{\"import_seconds\": 17.590872816999763, \"user_seconds\": 18.030843, \"system_seconds\": 2.067291}", "stderr": ""}
+{"trial": 3, "returncode": 0, "wall_seconds": 17.75493490200097, "child": "{\"import_seconds\": 15.140022839001176, \"user_seconds\": 14.018801, \"system_seconds\": 1.3115350000000001}", "stderr": ""}
+{"readiness_trial": 1, "status": "PASS", "seconds": 0.2802269880012318}
+{"readiness_trial": 2, "status": "PASS", "seconds": 0.11502399399978458}
+{"readiness_trial": 3, "status": "PASS", "seconds": 0.26056125900140614}

@@ -1,0 +1,19 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /workspace/Agent_CompoundInterest_Plan/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/Agent_CompoundInterest_Plan
+configfile: pyproject.toml
+plugins: anyio-4.14.2, cov-7.1.0
+collecting ... collected 1 item
+
+tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[FAIL-0.45.0-readiness failed] INFO:mcp.server.lowlevel.server:Processing request of type ListToolsRequest
+INFO:mcp.server.lowlevel.server:Processing request of type CallToolRequest
+INFO:httpx:HTTP Request: GET http://127.0.0.1:41865/health "HTTP/1.0 200 OK"
+INFO:httpx:HTTP Request: GET http://127.0.0.1:41865/ready "HTTP/1.0 200 OK"
+PASSED
+
+============================= slowest 3 durations ==============================
+7.36s call     tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[FAIL-0.45.0-readiness failed]
+0.01s setup    tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[FAIL-0.45.0-readiness failed]
+0.00s teardown tests/test_codex_mcp.py::test_real_stdio_handshake_checks_health_without_business_writes[FAIL-0.45.0-readiness failed]
+============================== 1 passed in 15.38s ==============================

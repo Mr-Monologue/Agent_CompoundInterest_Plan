@@ -1,0 +1,97 @@
+...................................................................F.... [ 11%]
+........................................................................ [ 22%]
+........................................................................ [ 33%]
+........................................................................ [ 44%]
+........................................................................ [ 55%]
+........................................................................ [ 66%]
+........................................................................ [ 77%]
+........................................................................ [ 88%]
+.......................................ssss............................. [ 99%]
+..                                                                       [100%]
+=================================== FAILURES ===================================
+___________________ test_real_http_entry_queries_and_preview ___________________
+tests/test_daily_client.py:199: in test_real_http_entry_queries_and_preview
+    pytest.fail("isolated HTTP server did not start")
+E   Failed: isolated HTTP server did not start
+----------------------------- Captured stderr call -----------------------------
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001_phase0, Create the Phase 0 operational schema.
+INFO  [alembic.runtime.migration] Running upgrade 0001_phase0 -> 0002_phase1, Create the Phase 1 portfolio and transaction ledger.
+INFO  [alembic.runtime.migration] Running upgrade 0002_phase1 -> 0003_opening_position, Allow explicitly confirmed opening-position ledger events.
+INFO  [alembic.runtime.migration] Running upgrade 0003_opening_position -> 0004_market_nav, Add auditable market NAV snapshots.
+INFO  [alembic.runtime.migration] Running upgrade 0004_market_nav -> 0005_market_data_sync, Add market data provider health and synchronization runs.
+INFO  [alembic.runtime.migration] Running upgrade 0005_market_data_sync -> 0006_market_nav_verification, Add immutable cross-source NAV verification evidence.
+INFO  [alembic.runtime.migration] Running upgrade 0006_market_nav_verification -> 0007_source_lineage, Add normalized upstream publisher lineage to NAV evidence.
+INFO  [alembic.runtime.migration] Running upgrade 0007_source_lineage -> 0008_allocation_policy, Seed the approved versioned allocation policy for existing portfolios.
+INFO  [alembic.runtime.migration] Running upgrade 0008_allocation_policy -> 0009_strategy_instance_plan, Separate reusable strategies from portfolio instances and add plan storage.
+INFO  [alembic.runtime.migration] Running upgrade 0009_strategy_instance_plan -> 0010_strategy_governance_risk, Add confirmed strategy governance, valuation evidence and sell proposals.
+INFO  [alembic.runtime.migration] Running upgrade 0010_strategy_governance_risk -> 0011_sell_lifecycle, Complete the deterministic sell lifecycle and execution follow-up.
+INFO  [alembic.runtime.migration] Running upgrade 0011_sell_lifecycle -> 0012_operations_automation, Add governed automation runs, report bundles, alerts and notification outbox.
+INFO  [alembic.runtime.migration] Running upgrade 0012_operations_automation -> 0013_hermes_scheduler_bridge, Add auditable Hermes scheduler reconciliation snapshots.
+INFO  [alembic.runtime.migration] Running upgrade 0013_hermes_scheduler_bridge -> 0014_notification_delivery_receipts, Add auditable notification dispatch attempts and verified delivery receipts.
+INFO  [alembic.runtime.migration] Running upgrade 0014_notification_delivery_receipts -> 0015_performance_reviews, Add deterministic performance snapshots and periodic reviews.
+INFO  [alembic.runtime.migration] Running upgrade 0015_performance_reviews -> 0016_notification_test_delivery, Add controlled end-to-end notification test requests.
+INFO  [alembic.runtime.migration] Running upgrade 0016_notification_test_delivery -> 0017_capital_data_resilience, Add cash ledger, official NAV backfill and runtime degradation facts.
+INFO  [alembic.runtime.migration] Running upgrade 0017_capital_data_resilience -> 0018_review_market_discovery, Add sourced market discovery and governed review action decisions.
+INFO  [alembic.runtime.migration] Running upgrade 0018_review_market_discovery -> 0019_review_trends_discovery_changes, Add immutable discovery changes and cross-period review trends.
+INFO  [alembic.runtime.migration] Running upgrade 0019_review_trends_discovery_changes -> 0020_watchlist_research_outcomes, Add governed watchlists, research changes and review outcomes.
+INFO  [alembic.runtime.migration] Running upgrade 0020_watchlist_research_outcomes -> 0021_watchlist_review_cycles, Add deterministic research-watchlist review cycles.
+INFO  [alembic.runtime.migration] Running upgrade 0021_watchlist_review_cycles -> 0022_research_collection_review_quality, Add audited research collection runs and review-quality snapshots.
+INFO  [alembic.runtime.migration] Running upgrade 0022_research_collection_review_quality -> 0023_research_source_coverage, Add governed research-source configs and evidence-coverage snapshots.
+INFO  [alembic.runtime.migration] Running upgrade 0023_research_source_coverage -> 0024_research_collection_orchestration, Add governed research collection orchestration and connector health.
+INFO  [alembic.runtime.migration] Running upgrade 0024_research_collection_orchestration -> 0025_alert_recovery_resolution, Resolve stale failure alerts after their exact job run recovers.
+INFO  [alembic.runtime.migration] Running upgrade 0025_alert_recovery_resolution -> 0026_satellite_signal_gating, Add governed satellite valuation-signal policies and snapshots.
+INFO  [alembic.runtime.migration] Running upgrade 0026_satellite_signal_gating -> 0027_partial_plan_execution, Add incremental weekly-plan execution links and partial state.
+INFO  [alembic.runtime.migration] Running upgrade 0027_partial_plan_execution -> 0028_external_subscription_lifecycle, Add governed external subscription and confirmation facts.
+INFO  [alembic.runtime.migration] Running upgrade 0028_external_subscription_lifecycle -> 0029_weekly_plan_skip_reconfirmation, Add short-lived reconfirmation drafts for skipping frozen weekly plans.
+INFO  [alembic.runtime.migration] Running upgrade 0029_weekly_plan_skip_reconfirmation -> 0030_instrument_role_contract, Disambiguate registration and portfolio strategy roles.
+INFO  [alembic.runtime.migration] Running upgrade 0030_instrument_role_contract -> 0031_external_subscription_draft_renewal, Add audited renewal state for external subscription drafts.
+INFO  [alembic.runtime.migration] Running upgrade 0031_external_subscription_draft_renewal -> 0032_confirmation_time_precision_revision, Add confirmation time precision and audited draft revision state.
+INFO  [alembic.runtime.migration] Running upgrade 0032_confirmation_time_precision_revision -> 0033_external_subscription_gross_transaction, Use gross external-subscription cost and support governed draft correction.
+INFO  [alembic.runtime.migration] Running upgrade 0033_external_subscription_gross_transaction -> 0034_partial_plan_closure, Add governed closure for partially executed weekly plans.
+INFO  [alembic.runtime.migration] Running upgrade 0034_partial_plan_closure -> 0035_weekly_plan_reports, Add governed, versioned weekly-plan reports.
+INFO  [alembic.runtime.migration] Running upgrade 0035_weekly_plan_reports -> 0036_no_investment_week, Add governed no-investment weekly decisions.
+INFO  [alembic.runtime.migration] Running upgrade 0036_no_investment_week -> 0037_background_scheduler, Persist scheduler ownership, governed cutovers and worker observations.
+INFO  [alembic.runtime.migration] Running upgrade 0037_background_scheduler -> 0038_execution_constraints, Governed execution constraints referencing reusable research evidence.
+INFO  [alembic.runtime.migration] Running upgrade 0038_execution_constraints -> 0039_research_notebook, Append-only advisory thesis versions and decision journal.
+INFO  [alembic.runtime.migration] Running upgrade 0039_research_notebook -> 0040_research_benchmarks, Research-only versioned benchmarks; never used by investment risk actions.
+INFO  [alembic.runtime.migration] Running upgrade 0040_research_benchmarks -> 0041_thesis_governance, Append-only research governance; no investment or ledger change.
+INFO  [alembic.runtime.migration] Running upgrade 0041_thesis_governance -> 0042_holding_review, D1 append-only review snapshots, tasks and handling history.
+INFO  [alembic.runtime.migration] Running upgrade 0042_holding_review -> 0043_peer_research, Independent append-only public peer research; no investment instruments added.
+INFO  [alembic.runtime.migration] Running upgrade 0043_peer_research -> 0044_research_updates, User-triggered research refresh audit and content-addressed public staging.
+INFO  [alembic.runtime.migration] Running upgrade 0044_research_updates -> 0045_shadow_models, Append-only isolated shadow model definitions, observations and governance.
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/fastapi/testclient.py:1
+  /workspace/Agent_CompoundInterest_Plan/.venv/lib/python3.11/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 20 durations =============================
+1388.30s call     tests/test_r11_complete_simulation.py::test_complete_simulated_evidence_advisory_confirmation_downgrade_and_fresh_restore
+88.72s setup    tests/test_r11_second_review.py::test_actual_extraction_source_time_quality_and_field_association[H-True-UNVERIFIED-False]
+63.86s call     tests/test_r11_governance.py::test_each_scenario_uses_separate_frozen_h_f_denominators
+60.64s call     tests/test_api.py::test_notification_test_api_requires_explicit_confirmation
+57.97s call     tests/test_background_scheduler_http_process.py::test_separate_worker_http_process_and_offline_restart
+55.75s call     tests/test_daily_client.py::test_real_http_entry_queries_and_preview
+53.14s call     tests/test_api.py::test_strategy_api_is_read_only_and_requires_explicit_cli_assignment
+52.25s call     tests/test_research.py::test_watchlist_lifecycle_requires_confirmation_and_never_changes_strategy
+49.82s setup    tests/test_r11_review_fixes.py::test_archive_publication_contradiction_rejected[future_date]
+49.44s call     tests/test_research.py::test_sourced_research_and_discovery_are_immutable_facts
+49.25s setup    tests/test_background_scheduler.py::test_temporary_offline_then_recovery
+48.61s call     tests/test_research.py::test_external_research_collection_run_records_exact_item_outcomes
+47.06s call     tests/test_research.py::test_discovery_requires_explicit_registered_universe
+46.94s call     tests/test_r11_second_review.py::test_failed_extraction_third_week_cannot_create_or_carry_new_stable_state
+44.79s call     tests/test_api.py::test_confirmation_date_only_create_and_revision_api_contract
+44.06s call     tests/test_operations.py::test_scheduler_manifest_has_no_public_default_jobs
+43.97s call     tests/test_operations.py::test_migration_preserves_existing_job_runs_and_adds_retry_state
+43.49s setup    tests/test_background_scheduler.py::test_normal_trigger_restart_and_exact_occurrence_dedup
+43.38s call     tests/test_operations.py::test_missed_run_waits_for_grace_then_recovers_once
+41.30s call     tests/test_api.py::test_external_subscription_transaction_revision_api_contract
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_update_safety.py:53: Windows executable updater test
+SKIPPED [1] tests/test_update_safety.py:64: Windows executable updater test
+SKIPPED [1] tests/test_update_safety.py:83: Windows executable updater test
+SKIPPED [1] tests/test_update_safety.py:154: Windows executable updater test
+FAILED tests/test_daily_client.py::test_real_http_entry_queries_and_preview
+1 failed, 645 passed, 4 skipped, 1 warning in 6149.28s (1:42:29)
