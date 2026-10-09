@@ -1,0 +1,142 @@
+.....FFFF.                                                               [100%]
+=================================== FAILURES ===================================
+_ test_connection_preserves_primary_and_reports_cleanup_only_failure[True-timeout] _
+tests/test_mcp_cleanup_error.py:33: in transport
+    yield None, None
+src/investor_mcp/check.py:54: in check_connection
+    initialized = await session.initialize()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_mcp_cleanup_error.py:51: in initialize
+    raise primary
+E   TimeoutError: SYNTHETIC initialization timeout
+
+During handling of the above exception, another exception occurred:
+Traceback (most recent call last):
+  File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 33, in transport
+    yield None, None
+  File "/tmp/r11-mcp-cleanup-review/src/investor_mcp/check.py", line 54, in check_connection
+    initialized = await session.initialize()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 51, in initialize
+    raise primary
+TimeoutError: SYNTHETIC initialization timeout
+
+During handling of the above exception, another exception occurred:
+
+  + Exception Group Traceback (most recent call last):
+  |   File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 76, in test_connection_preserves_primary_and_reports_cleanup_only_failure
+  |     asyncio.run(operation)
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+  |     return runner.run(main)
+  |            ^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+  |     return self._loop.run_until_complete(task)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+  |     return future.result()
+  |            ^^^^^^^^^^^^^^^
+  |   File "/tmp/r11-mcp-cleanup-review/src/investor_mcp/check.py", line 51, in check_connection
+  |     async with stdio_client(parameters) as (reader, writer), ClientSession(
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py", line 231, in __aexit__
+  |     await self.gen.athrow(typ, value, traceback)
+  |   File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 37, in transport
+  |     raise secondary
+  | ExceptionGroup: SYNTHETIC shutdown (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | anyio.BrokenResourceError
+    +------------------------------------
+_ test_connection_preserves_primary_and_reports_cleanup_only_failure[True-group] _
+tests/test_mcp_cleanup_error.py:77: in test_connection_preserves_primary_and_reports_cleanup_only_failure
+    assert raised.value is primary
+E   AssertionError: assert ExceptionGroup('SYNTHETIC shutdown', [BrokenResourceError()]) is ExceptionGroup('SYNTHETIC session', [TimeoutError('SYNTHETIC initialization timeout')])
+E    +  where ExceptionGroup('SYNTHETIC shutdown', [BrokenResourceError()]) = <ExceptionInfo ExceptionGroup('SYNTHETIC shutdown', [BrokenResourceError()]) tblen=7>.value
+_ test_connection_preserves_primary_and_reports_cleanup_only_failure[True-cancel] _
+tests/test_mcp_cleanup_error.py:33: in transport
+    yield None, None
+src/investor_mcp/check.py:54: in check_connection
+    initialized = await session.initialize()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_mcp_cleanup_error.py:51: in initialize
+    raise primary
+E   asyncio.exceptions.CancelledError: SYNTHETIC cancellation
+
+During handling of the above exception, another exception occurred:
+Traceback (most recent call last):
+  File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 33, in transport
+    yield None, None
+  File "/tmp/r11-mcp-cleanup-review/src/investor_mcp/check.py", line 54, in check_connection
+    initialized = await session.initialize()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 51, in initialize
+    raise primary
+asyncio.exceptions.CancelledError: SYNTHETIC cancellation
+
+During handling of the above exception, another exception occurred:
+
+  + Exception Group Traceback (most recent call last):
+  |   File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 76, in test_connection_preserves_primary_and_reports_cleanup_only_failure
+  |     asyncio.run(operation)
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+  |     return runner.run(main)
+  |            ^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+  |     return self._loop.run_until_complete(task)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+  |     return future.result()
+  |            ^^^^^^^^^^^^^^^
+  |   File "/tmp/r11-mcp-cleanup-review/src/investor_mcp/check.py", line 51, in check_connection
+  |     async with stdio_client(parameters) as (reader, writer), ClientSession(
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py", line 231, in __aexit__
+  |     await self.gen.athrow(typ, value, traceback)
+  |   File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 37, in transport
+  |     raise secondary
+  | ExceptionGroup: SYNTHETIC shutdown (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | anyio.BrokenResourceError
+    +------------------------------------
+_ test_connection_preserves_primary_and_reports_cleanup_only_failure[True-readiness] _
+tests/test_mcp_cleanup_error.py:33: in transport
+    yield None, None
+src/investor_mcp/check.py:75: in check_connection
+    raise RuntimeError("Core readiness failed; inspect the managed Core diagnostics.")
+E   RuntimeError: Core readiness failed; inspect the managed Core diagnostics.
+
+During handling of the above exception, another exception occurred:
+Traceback (most recent call last):
+  File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 33, in transport
+    yield None, None
+  File "/tmp/r11-mcp-cleanup-review/src/investor_mcp/check.py", line 75, in check_connection
+    raise RuntimeError("Core readiness failed; inspect the managed Core diagnostics.")
+RuntimeError: Core readiness failed; inspect the managed Core diagnostics.
+
+During handling of the above exception, another exception occurred:
+
+  + Exception Group Traceback (most recent call last):
+  |   File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 82, in test_connection_preserves_primary_and_reports_cleanup_only_failure
+  |     asyncio.run(operation)
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 190, in run
+  |     return runner.run(main)
+  |            ^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/runners.py", line 118, in run
+  |     return self._loop.run_until_complete(task)
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+  |     return future.result()
+  |            ^^^^^^^^^^^^^^^
+  |   File "/tmp/r11-mcp-cleanup-review/src/investor_mcp/check.py", line 51, in check_connection
+  |     async with stdio_client(parameters) as (reader, writer), ClientSession(
+  |   File "/tmp/compound-python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/contextlib.py", line 231, in __aexit__
+  |     await self.gen.athrow(typ, value, traceback)
+  |   File "/tmp/r11-mcp-cleanup-review/tests/test_mcp_cleanup_error.py", line 37, in transport
+  |     raise secondary
+  | ExceptionGroup: SYNTHETIC shutdown (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | anyio.BrokenResourceError
+    +------------------------------------
+=========================== short test summary info ============================
+FAILED tests/test_mcp_cleanup_error.py::test_connection_preserves_primary_and_reports_cleanup_only_failure[True-timeout]
+FAILED tests/test_mcp_cleanup_error.py::test_connection_preserves_primary_and_reports_cleanup_only_failure[True-group]
+FAILED tests/test_mcp_cleanup_error.py::test_connection_preserves_primary_and_reports_cleanup_only_failure[True-cancel]
+FAILED tests/test_mcp_cleanup_error.py::test_connection_preserves_primary_and_reports_cleanup_only_failure[True-readiness]
+4 failed, 6 passed in 2.16s

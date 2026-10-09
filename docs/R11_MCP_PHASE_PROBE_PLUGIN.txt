@@ -1,0 +1,32 @@
+import functools
+import time
+import traceback
+import pytest
+from mcp import ClientSession
+
+@pytest.fixture(autouse=True)
+def record_startup(monkeypatch, request):
+    if request.module.__name__ != 'test_codex_mcp':
+        return
+    for name in ('initialize', 'list_tools', 'call_tool'):
+        original = getattr(ClientSession, name)
+        def instrument(fn, label):
+            @functools.wraps(fn)
+            async def wrapped(*args, **kwargs):
+                start = time.monotonic()
+                print(f'PROBE {label} begin', flush=True)
+                try:
+                    result = await fn(*args, **kwargs)
+                    print(f'PROBE {label} success {time.monotonic()-start:.3f}s', flush=True)
+                    return result
+                except BaseException:
+                    print(f'PROBE {label} failed {time.monotonic()-start:.3f}s', flush=True)
+                    traceback.print_exc()
+                    raise
+            return wrapped
+        monkeypatch.setattr(ClientSession, name, instrument(original, name))
+    original_check = request.module.check_connection
+    async def traced(*args, **kwargs):
+        kwargs['args'] = ['-c', "import faulthandler,runpy; faulthandler.dump_traceback_later(10, repeat=True); runpy.run_module('investor_mcp.server',run_name='__main__')"]
+        return await original_check(*args, **kwargs)
+    monkeypatch.setattr(request.module, 'check_connection', traced)

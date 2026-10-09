@@ -69,7 +69,7 @@ def test_release_manifest_matches_project_version() -> None:
     assert manifest["channel"] == "stable"
     assert manifest["version"] == project["project"]["version"]
     assert f'__version__ = "{project["project"]["version"]}"' in runtime_version
-    assert manifest["database_revision"] == "0044_research_updates"
+    assert manifest["database_revision"] == "0045_shadow_models"
 
 
 def test_windows_installer_copies_console_free_hermes_cron_scripts() -> None:

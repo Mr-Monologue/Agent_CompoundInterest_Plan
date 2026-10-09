@@ -7,6 +7,8 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,34 @@ REQUIRED_TOOLS = {
     "weekly_report_preview",
     "transaction_draft_commit",
 }
+
+
+def _contains_error(error: BaseException, original: BaseException) -> bool:
+    return error is original or (
+        isinstance(error, BaseExceptionGroup)
+        and any(_contains_error(child, original) for child in error.exceptions)
+    )
+
+
+@asynccontextmanager
+async def _stdio_connection(parameters: StdioServerParameters) -> AsyncIterator[Any]:
+    """Keep the operation failure if transport shutdown raises a different error."""
+    original: BaseException | None = None
+    try:
+        async with stdio_client(parameters) as streams:
+            try:
+                yield streams
+            except BaseException as exc:
+                original = exc
+                raise
+    except BaseException as closing_error:
+        if (
+            isinstance(closing_error, Exception)
+            and original is not None
+            and not _contains_error(closing_error, original)
+        ):
+            raise original from closing_error
+        raise
 
 
 async def check_connection(
@@ -48,7 +78,7 @@ async def check_connection(
     parameters = StdioServerParameters(
         command=command, args=args or [], env=environment, cwd=str(project_root)
     )
-    async with stdio_client(parameters) as (reader, writer), ClientSession(
+    async with _stdio_connection(parameters) as (reader, writer), ClientSession(
         reader, writer, read_timeout_seconds=timedelta(seconds=20)
     ) as session:
         initialized = await session.initialize()
