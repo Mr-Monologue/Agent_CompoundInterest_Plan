@@ -1,0 +1,70 @@
+阶段名称：R1.1来源适配修订候选独立复核｜阶段状态：进行中
+
+1. 结论
+本轮代码独审通过：前轮3项P2均已关闭，已测试路径无新增阻断发现。此结论仅适用于指定最终补丁，不等于整个准备阶段结项、远端双平台CI通过、源码发布或生产验收。
+无需用户新增决定。保留前轮review-repo、REVIEW_REPORT.txt和所有失败日志，不改写失败历史。
+
+2. 审查对象和范围
+基线：dcfb2e20a9a813da588d5444b38dbdce13d0acf9。
+最终补丁：r11-source-adapter-review2-final.patch。
+SHA256：b90dbd6920810a8b735c9df7a8ab19ed8b9ddf9fc43fbafe4b52a08bb6f082ab；实测匹配，137300字节。
+本人隔离副本：task-4/review2-repo，从既有baseline.zip另行解压、git apply --check后应用；没有修改task-3工作树。
+复读修订实现、测试和docs/R11_SOURCE_ADAPTER_REVIEW2.md；审查v1/v2分流、原3项反例、正反向/资源边界、旧快照、真实字节离线回放与714项全量凭据绑定。
+没有提交、推送、合并、发布、部署或接触生产、凭据、真实批准/预注册。
+
+3. 逐项验收及证据
+验收项 | 结果 | 证据及说明
+原P2同表冲突行 | 通过 | r11_source_monthly.py:161-163，候选表内重复目标月直接拒绝；同值重复也拒绝。不同表完整相同副本正例仍通过。
+原P2错位PMI表头 | 通过 | r11_source_monthly.py:151-160，仅接受唯一PMI表头且列索引1；错位明确ValueError，不误读或猜测新列。
+原P2 XLSX重复v | 通过 | r11_source_monthly.py:331-334，多个v节点无论同值或异值均拒绝；未来月空值仍保留。
+独立原3样本走当前新准备 | 通过 | review2_boundaries.py，冲突行、错位表头、XLSX冲突v均被prepare_sources拒绝，且数据库前后不变。
+v1标记不能降级新准备 | 通过 | 同一独立测试，在facts注入preparation_version=v1及historical=true仍拒绝；公开prepare_sources没有historical参数，显式传入TypeError。
+新旧快照 | 通过 | 4份明确合成v1快照由本人保留的第一版代码实际生成；新版历史回放全部REPRODUCED、historical_parser=true、qualifies_current_preparation=false、前瞻/晋级false。良好v2快照重现；篡改值MISMATCH，未知版本拒绝。坏v1快照仅改v2标签并重算报告hash仍因新解析器拒绝。
+JSON严格类型/转义重复键 | 通过 | 复用独立review_json.py的15项负例，代码未改，全部通过。
+资源、封套、旧回放及回执 | 通过 | 新版仓库来源测试、旧r11_service/r11_receipts回归，日志见下方。
+真实原件离线v2回放 | 通过 | review2_public.py：前轮本人下载且hash核验的PMI HTML、社融HTML、XLSX三份原始bytes；除extractor_version升v2外，所有输出字段与前轮记录完全一致，无新采集/造时点。
+714项凭据对应最终代码 | 通过（内容级） | 174文件完整覆盖、日志hash匹配；下节详述换行差异，不能称所有raw字节hash直接相同。
+远端双平台CI及生产验收 | 未验证/不适用 | 本轮不执行，不把本机回归当CI或生产验收。
+
+本轮独立测试（各组不重复，合计80项）：
+- review2_regression：69 passed，2 warnings，pytest原退出码0，13.26秒。
+- review2_boundaries：8 passed，1 warning，pytest原退出码0，5.70秒。
+- review2_public：3 passed，pytest原退出码0，0.99秒。
+详细日志和命令/退出码在review-logs/review2_regression.{log,json}、review2_boundaries.{log,json}、review2_public.{log,json}。
+没有重新运行714全量；该数字来源于实现者凭据，已独立核验其日志与源码绑定。
+前轮错位反例原断言期待读列2的51.7，新实现选择前轮允许的“未知布局拒绝”方案，因此本轮通过公开prepare_sources确认ValueError，未篡改前轮原测试以伪装历史通过。
+
+714项全量凭据核查：
+- 读取授权task-3/evidence/full-regression-2.json及对应.log。
+- receipt状态FINISHED、exit_code=0；日志尾部714 passed, 2 warnings in 556.59s。
+- 实测日志SHA256等于156b95f0aff14fbb428d4243f856fcc662fd8de6f5126ad17fad2dad231d96c1。
+- receipt绑定修订候选补丁e18539355cd94b8a44b186ff1822ad00246679d5ff3ff35a6fe2e2b92eb886cb，与最终补丁b90...不同，不能混称同一个补丁hash。
+- 对最终补丁独立应用后的全部src/**/*.py、tests/**/*.py、pyproject.toml、uv.lock共174个文件逐一比较：167项原始字节hash直接匹配；7项仅LF/CRLF差异，统一LF后hash全部匹配。无缺失、无未覆盖Python/依赖文件、无其他源码或测试内容差异。
+- 7项为新增月度v1副本、四个来源适配模块及两份来源测试。审查副本由git apply产生CRLF，凭据保存LF内容hash。详情完整保存在review2-evidence/hash-audit.json；明确保留raw actual、LF、CRLF及expected，不掩盖字节差别。
+- 因最终补丁运行内容与已测内容相同，714项结果可支持最终候选的源码/测试内容；没有声称测试进程实际运行过最终文档补丁本身。
+
+4. v1保留判断及实际可用范围
+保留尚未发布的v1不是旧v4兼容的必需条件，也不是模型定义要求。这里有已保存的第一轮研发取证结果；把解析器冻结用于解释/重现这些记录是合理工程选择，无需为此改变R1.1模型。
+旧月度模块与本人第一轮候选解析器逐字节相同，未偷偷修订旧行为。当前prepare_sources在r11_source_preparation.py:105之后固定生成v2，内部_extract默认historical=false；旧解析器只由显式历史分流调用。
+replay_preparation按来稿版本选择旧解析器，并非“认证真实历史记录存在”的接口：调用者可自行构造v1内容并重算公开hash。此性质未改变，且返回明确标注历史、当前准备资格false、前瞻/晋级false。因此本轮没有把REPRODUCED视为真实性或当前适格证明，也没有发现其通向新准备的升级路径。
+私有_extract(historical=True)和legacy模块在Python内部仍可调用；这不是不可调用的安全沙箱承诺。公开新准备入口没有选择旧解析器的通道。未来接入者必须保留这些限制，不能只看REPRODUCED字符串。
+可复现命令：同前轮只读解释器执行run_review2.py review2_boundaries ../review2_boundaries.py；8项通过、原退出码0。
+
+5. 交付状态
+方案批准：沿用已有来源适配范围，不新增模型定义/参数授权。
+实现：修订候选3项P2修复已复核。
+测试与独审：本轮通过；全量证据内容绑定通过，远端CI未验证。
+源码合并/发布/部署/生产验收：本任务未执行，也未授权代为操作。
+
+6. 准确剩余
+代码方面：本轮范围内没有尚未关闭的阻断发现。
+非阻断文档提醒：[P3] 修订报告docs/R11_SOURCE_ADAPTER_REVIEW2.md:1的阶段状态写成“隔离适配修订，最终回归通过，等待独立复核”，不在AGENTS.md规定的五种状态内。建议普通文档维护时改为“进行中”，把修订/复核描述移到正文；无需因此再开代码独审或用户审批。
+外部门禁：提交/推送被自动审批拒绝是实现者报告的既有阻塞。本任务没有尝试提交/推送，不代执行，也不换通道绕过；父对话需按真实授权及平台审批处理。远端Ubuntu/Windows CI仍未验证。
+覆盖限制：未独立重跑全量、未重复取得全部4个月真实原件、未复验实现者11份全部真实准备快照；本轮独立验证了4份合成新旧快照和3份真实原始bytes。未作长期资源压力或全面模糊测试，未验证完整C/D输入、正式F或生产。
+
+7. 行为与数据影响
+无生产写入、真实配置/批准、财务事实或REAL预注册。本人临时SQLite均明确合成，仅在task-4；v1合成报告是本轮测试生成，绝不冒称历史前瞻证据。
+R1.1模型、参数、确认/到账≤5交易日评分硬门槛、比较池、旧v4及独立晋级回执未修改。F/L分项仍只为条件算术，不是完整C、正式评分或有效F；新旧回放均不产生晋级资格。
+
+8. 下一步及授权
+本轮独审通过结果交父对话。可沿原阶段处理普通文档提醒、整体证据与后续合法门禁；不新增提交/推送、发布、部署或业务批准授权。当前无需用户为本轮代码复核作新决定。
