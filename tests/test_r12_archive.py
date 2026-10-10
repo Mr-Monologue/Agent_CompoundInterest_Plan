@@ -79,7 +79,7 @@ def test_original_missing_or_revision_change_blocks(archived, mode):
     [
         ("manager_team_since", "2020-01-01"),
         ("benchmark_research_approved", True),
-        ("subscription_open", True),
+        ("subscription_open", False),
     ],
 )
 def test_caller_cannot_fill_unknown_or_override_extraction(archived, field, value):
@@ -115,3 +115,14 @@ def test_other_product_calendar_source_does_not_erase_qualified_components():
     assert result["rows"][0]["total_score"] is not None
     assert result["rows"][1]["total_score"] is None
     assert result["leader"] is None
+
+
+def test_weekend_and_large_order_cap_do_not_mean_product_suspension():
+    spec = adapter.manifest()
+    assert spec["operating_scope"]["calendar_closed"] is True
+    assert spec["claims"]["subscription_open"]["value"] is True
+    assert spec["claims"]["redemption_open"]["value"] is True
+    assert spec["operating_scope"]["agency_channel_daily_cap_cny"] == "100000"
+    assert spec["operating_scope"]["account_available_amount"] is None
+    assert spec["benchmark_method_review"]["historical_coverage_status"] == "UNVERIFIED"
+    assert "benchmark_return_basis" not in spec["claims"]
