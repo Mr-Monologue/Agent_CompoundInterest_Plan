@@ -99,3 +99,20 @@ D1使用补充：`holdings-review` 默认逐基金一行，`holdings-review --de
 
 
 v0.44.2：研究入口同步显示当前归档证据判断及精确分红适用区间。历史研究查询保留当时原文，明确标为非当前结论，另列最新判断；不将旧UNRESOLVED状态套给当前研究。非跨争议日窗口不受本条影响，其他独立警告保留；查询不采集、不写入、不批准。
+
+
+## R1.2医疗H研究隔离候选（未部署）
+
+自然语言“查看医疗影子研究”映射到 `investor-assistant --core-url <临时回环地址> medical-shadow`，也支持中文同名子命令；`--details`展开来源。不得将未部署命令默认指向生产8710后宣称可用。Codex保管地址和原件路径，不要求用户复制技术标识。
+
+隔离运行准备一个本地JSON包：`base_input`为既有真实R1.2输入，`original_paths`为已审阅manifest的原件key到路径映射（相对路径以包所在目录为准）。不将包、原件或私人路径提交Git。设置`INVESTOR_MEDICAL_H_PACKET`为该包的绝对路径，然后在临时回环端口启动：
+
+```powershell
+python -m uvicorn investor_core.api.medical_shadow:create_app --factory --host 127.0.0.1 --port <临时端口>
+investor-assistant --core-url http://127.0.0.1:<临时端口> medical-shadow
+investor-assistant --core-url http://127.0.0.1:<临时端口> medical-shadow --details
+```
+
+GET `/v1/medical-shadow-research?view=SUMMARY|DETAIL`只读。独立工厂不加载生产配置、不创建业务服务、不连接数据库，无写入路由；用完停止临时进程。无外部采集，不保存新观察、不触发前瞻。不是常驻服务，也不是生产安装。
+
+本次重新校验本地原件并重算历史H观察，不将查询日期当净值日期；来源/指纹不可用则明确BLOCKED，不退回历史保存结果。保留003096历史方法范围缺口与009163自身缺口，缺失不填零、不排名。数字及中文展示由Core模块统一生成，客户端不计算。详细日期/适用范围与资料指纹按需展开。真实使用证据和剩余限制仍维护原MEDICAL_D_ONCE_FEASIBILITY报告。
