@@ -62,13 +62,15 @@ def test_no_outbound_network_or_database(packet, monkeypatch):
     assert read_research(packet)["recomputed"]
 
 
-@pytest.mark.parametrize("mode", ["missing", "tampered", "invalid", "unconfigured"])
+@pytest.mark.parametrize("mode", ["missing", "tampered", "invalid", "unconfigured", "nonobject"])
 def test_failure_never_uses_saved_result(packet, mode):
     (packet.parent / "output.json").write_text('{"total_score":99}', encoding="utf-8")
     if mode == "missing":
         (packet.parent / "zo-legal").unlink()
     elif mode == "tampered":
         (packet.parent / "zo-legal").write_bytes(b"changed")
+    elif mode == "nonobject":
+        packet.write_text("[]", encoding="utf-8")
     elif mode == "invalid":
         packet.write_text("{}", encoding="utf-8")
     result = read_research(None if mode == "unconfigured" else packet)

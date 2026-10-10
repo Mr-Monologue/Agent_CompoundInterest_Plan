@@ -29,6 +29,8 @@ def read_research(packet_path: Path | None, *, details: bool = False) -> dict[st
         if packet_path is None:
             raise ValueError("ARCHIVE_NOT_CONFIGURED")
         packet = json.loads(packet_path.read_text("utf-8"))
+        if not isinstance(packet, dict):
+            raise ValueError("ARCHIVE_PACKET_OBJECT_REQUIRED")
         if not isinstance(packet.get("original_paths"), dict):
             raise ValueError("ARCHIVE_PATH_MAPPING_INVALID")
         raw = {}

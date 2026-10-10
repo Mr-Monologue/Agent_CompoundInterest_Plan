@@ -1470,5 +1470,140 @@
     },
     "saved_result_fallback": false,
     "production_deployed": false
+  },
+  "r12_source_release_047": {
+    "scope_review": "PASS: approved R1.2 + original adapter + isolated query only; R1.1/A500/C/ledger diff empty",
+    "review_fix": "non-object JSON packet returns explicit BLOCKED; regression covered",
+    "clean_install": {
+      "version": "0.47.0",
+      "non_editable": true,
+      "originals": 20,
+      "relative_paths": true,
+      "arbitrary_cwd": true,
+      "command_http_pass": true,
+      "repeat_equal": true,
+      "missing_original_blocked": true,
+      "saved_fallback": false,
+      "rows": [
+        {
+          "code": "003096",
+          "redemption_arrival": {
+            "state": "UNKNOWN",
+            "max_trading_days": null,
+            "rule": null,
+            "reasons": [
+              "APPLICABLE_ARRIVAL_RULE_MISSING",
+              "ARRIVAL_BOUND_UNKNOWN"
+            ],
+            "overall_execution_pass": false
+          },
+          "filter_result": "UNKNOWN",
+          "gaps": [
+            "BENCHMARK_MAPPING_INCOMPLETE"
+          ],
+          "exclusions": [],
+          "metrics": {
+            "return_pct": "-3.652051770843784488813083174475950",
+            "max_drawdown_pct": "29.09226932668329177057356608478824",
+            "volatility_pct": "31.84595433899157027628217828596002",
+            "standard_external_cost_pct": "0.2500"
+          },
+          "dimension_scores": {
+            "return": "40.86987057289053877796729206381012",
+            "risk": "38.27502946671297748239932559285250",
+            "management": "41.64383561643835616438356164383561",
+            "cost": "87.5000"
+          },
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "total_score": null,
+          "rank": null,
+          "stock_range": [
+            "60",
+            "95"
+          ],
+          "warnings": [
+            "BOUNDED_OFFICIAL_NOTICE_DIRECTORY_NOT_ABSOLUTE_COMPLETENESS",
+            "CHANNEL_CAP_IS_NOT_ACCOUNT_AVAILABLE_CAPACITY",
+            "CSI_FACTSHEET_REVISION_SEPARATE_FROM_OLD_AUGUST_ARCHIVE",
+            "EXECUTION_UNKNOWN",
+            "H11009_HISTORICAL_METHOD_VERSION_COVERAGE_UNVERIFIED",
+            "INDEPENDENT_VERIFICATION_REQUIRED",
+            "MANAGER_ONLY_NO_INDEPENDENT_UPSTREAM",
+            "MAPPING_DRAFT",
+            "PUBLICATION_UNKNOWN_FOR_DYNAMIC_NAV_AND_DIRECTORY",
+            "REDEMPTION_ARRIVAL_UNKNOWN"
+          ]
+        },
+        {
+          "code": "009163",
+          "redemption_arrival": {
+            "state": "UNKNOWN",
+            "max_trading_days": null,
+            "rule": null,
+            "reasons": [
+              "APPLICABLE_ARRIVAL_RULE_MISSING",
+              "ARRIVAL_BOUND_UNKNOWN"
+            ],
+            "overall_execution_pass": false
+          },
+          "filter_result": "UNKNOWN",
+          "gaps": [
+            "BENCHMARK_MAPPING_INCOMPLETE",
+            "DIVIDEND_COVERAGE_INCOMPLETE",
+            "OUTSIDE_REVIEWED_ORIGINAL_ADAPTER",
+            "REQUIRED_SCORE_DIMENSION_MISSING",
+            "SOURCE_MISSING",
+            "TOTAL_FUND_ASSETS_MISSING",
+            "redemption_open:MISSING",
+            "subscription_open:MISSING"
+          ],
+          "exclusions": [],
+          "metrics": {},
+          "dimension_scores": {},
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "total_score": null,
+          "rank": null,
+          "stock_range": [
+            "80",
+            "95"
+          ],
+          "warnings": [
+            "EXECUTION_UNKNOWN",
+            "INDEPENDENT_VERIFICATION_REQUIRED",
+            "MAPPING_DRAFT",
+            "REDEMPTION_ARRIVAL_UNKNOWN"
+          ]
+        }
+      ],
+      "observation": "2026-10-03T12:00:00+08:00",
+      "nav_cutoff": "2026-09-30"
+    },
+    "package_checks": [
+      {
+        "package": "value_dca_agent-0.47.0-py3-none-any.whl",
+        "sha256": "63c0071639d7cfac1b4f285e264a8806f317e46bc78ce96498dedb1d73391715",
+        "entries": 113,
+        "private_original_matches": 0
+      },
+      {
+        "package": "value_dca_agent-0.47.0.tar.gz",
+        "sha256": "51f25c94d824936efd0acfecea2cbd6fca409922c4b625522b6dcbd137f188bd",
+        "entries": 395,
+        "private_original_matches": 0
+      }
+    ],
+    "source_release": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tag/v0.47.0",
+    "ci": "See linked promotion PRs and source release verification; not claimed before success",
+    "production_deployed": false
   }
 }
