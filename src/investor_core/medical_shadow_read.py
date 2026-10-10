@@ -29,6 +29,8 @@ def read_research(packet_path: Path | None, *, details: bool = False) -> dict[st
         if packet_path is None:
             raise ValueError("ARCHIVE_NOT_CONFIGURED")
         packet = json.loads(packet_path.read_text("utf-8"))
+        if not isinstance(packet.get("original_paths"), dict):
+            raise ValueError("ARCHIVE_PATH_MAPPING_INVALID")
         raw = {}
         missing = []
         for key in r12_archive.manifest()["documents"]:
@@ -92,7 +94,12 @@ def read_research(packet_path: Path | None, *, details: bool = False) -> dict[st
         )
         blockers = [GAPS.get(g, g) for g in row["gaps"]]
         if row["code"] == "003096" and "BENCHMARK_MAPPING_INCOMPLETE" in row["gaps"]:
-            blockers = ["H11009历史方法版本未覆盖完整观察窗口(不是映射批准缺失)"]
+            blockers = [
+                "H11009历史方法版本未覆盖完整观察窗口(不是映射批准缺失)"
+                if g == "BENCHMARK_MAPPING_INCOMPLETE"
+                else GAPS.get(g, g)
+                for g in row["gaps"]
+            ]
         total = "不可用" if row["total_score"] is None else str(row["total_score"])
         lines += [
             f"{row['code']} {names[row['code']]}:{scores};总分{total}。",
