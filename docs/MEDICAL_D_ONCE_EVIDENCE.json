@@ -1,0 +1,1609 @@
+{
+  "result": {
+    "purpose": "ISOLATED_CONDITIONAL_COMPONENTS_NOT_QUALIFIED_R11_RUN",
+    "window_start": "2025-09-16",
+    "window_end": "2026-10-08",
+    "endpoints": 253,
+    "returns": 252,
+    "missing_on_csi_grid": {
+      "003096": [],
+      "009163": []
+    },
+    "calendar_limitation": "CSI grid not independent proof of fund applicable valuation calendar",
+    "source_independence": "unverified",
+    "rows": [
+      {
+        "code": "003096",
+        "return_pct": "-7.620630603404855444746650549007860",
+        "max_drawdown_pct": "29.09226932668329177057356608478821",
+        "annualized_sample_volatility_pct": "32.16121248188202430769422124138046",
+        "external_cost_pct": "0.2500",
+        "conditional_dimension_scores": {
+          "return_score": "30.94842349148786138813337362748035",
+          "risk_score": "37.88095678809990994313427189857698",
+          "cost_score": "87.5000",
+          "management": null
+        },
+        "total_score": null,
+        "rank": null,
+        "dividends_in_window": {},
+        "limitations": [
+          "dividend lists agree in this window but independent complete coverage not established",
+          "manager last-change chain incomplete",
+          "redemption arrival bound unknown",
+          "fund calendar qualification unknown",
+          "exact draft benchmark identity/effective range incomplete",
+          "source publication/timezone chain incomplete"
+        ]
+      },
+      {
+        "code": "009163",
+        "return_pct": "-12.67027977149553244470484839607410",
+        "max_drawdown_pct": "25.47894583292813381308956530195450",
+        "annualized_sample_volatility_pct": "29.90489106384094349979461974163067",
+        "external_cost_pct": "0",
+        "conditional_dimension_scores": {
+          "return_score": "18.32430057126116888823787900981475",
+          "risk_score": "45.86324926601577232084306060588380",
+          "cost_score": "100",
+          "management": null
+        },
+        "total_score": null,
+        "rank": null,
+        "dividends_in_window": {},
+        "limitations": [
+          "dividend lists agree in this window but independent complete coverage not established",
+          "manager last-change chain incomplete",
+          "redemption arrival bound unknown",
+          "fund calendar qualification unknown",
+          "exact draft benchmark identity/effective range incomplete",
+          "source publication/timezone chain incomplete"
+        ]
+      }
+    ]
+  },
+  "new_public_sources": [
+    {
+      "key": "zo-nav",
+      "kind": "nav",
+      "code": "003096",
+      "url": "https://www.zofund.com/ws-business-server/fund/getFundNavList?productCode=003096&productId=391&merchantId=0&siteno=main&startDate=2022-12-30&endDate=2026-10-09",
+      "started": "2026-10-09T09:53:10.653480+00:00",
+      "retrieved_at": "2026-10-09T09:53:11.317315+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "e9cea387d8e9987bafe1e4605593c375d6aecc6c0f6632f21ac89da50a094f4b",
+      "count": 913,
+      "first": {
+        "day": "2022-12-30",
+        "value": "2.3104"
+      },
+      "last": {
+        "day": "2026-10-08",
+        "value": "1.8341"
+      }
+    },
+    {
+      "key": "gf-nav",
+      "kind": "nav",
+      "code": "009163",
+      "url": "https://www.gffunds.com.cn/apistore/JsonService?service=MarketPerformance&method=NAV&op=queryNAVByFundcode&fundcode=009163&_mode=all&startdate=20221230&enddate=20261009",
+      "started": "2026-10-09T09:53:10.653985+00:00",
+      "retrieved_at": "2026-10-09T09:53:12.539004+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "37153fa5de39984a8f038b702fbace474c08b0d91d3e8c7f78b1e2a01cf4bef8",
+      "count": 913,
+      "first": {
+        "day": "2022-12-30",
+        "value": "2.1841"
+      },
+      "last": {
+        "day": "2026-10-08",
+        "value": "1.7886"
+      }
+    },
+    {
+      "key": "zo-div",
+      "kind": "div",
+      "code": "003096",
+      "url": "https://www.zofund.com/ws-business-server/fund/getFundMelonmdPage?productId=391&productCode=003096&merchantId=0&siteno=main&pageNum=1&pageSize=5000",
+      "started": "2026-10-09T09:53:10.653985+00:00",
+      "retrieved_at": "2026-10-09T09:53:11.072869+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "2a920cfa827dc227eb39fbec7f750e8c1cdbd1c64292ae18b7c51c38d1e6797e",
+      "count": 2,
+      "first": {
+        "ex_date": "2018-06-19",
+        "cash_per_unit": "0.075"
+      },
+      "last": {
+        "ex_date": "2021-08-10",
+        "cash_per_unit": "0.12169"
+      }
+    },
+    {
+      "key": "gf-div",
+      "kind": "div",
+      "code": "009163",
+      "url": "https://www.gffunds.com.cn/apistore/JsonService?service=Equity&method=Dividend&op=queryDividendByFundcode&fundcode=009163",
+      "started": "2026-10-09T09:53:11.108034+00:00",
+      "retrieved_at": "2026-10-09T09:53:11.230758+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "b53e75447e548e01c47161989af40b27259d9ca005d1dd925fe878bdd7e3a7cd",
+      "count": 0,
+      "first": null,
+      "last": null
+    },
+    {
+      "key": "calendar",
+      "kind": "calendar",
+      "code": "000933",
+      "url": "https://www.csindex.com.cn/csindex-home/perf/index-perf?indexCode=000933&startDate=20221230&endDate=20261009",
+      "started": "2026-10-09T09:53:11.241759+00:00",
+      "retrieved_at": "2026-10-09T09:53:11.979555+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "13fe110590da5b8e28b949d2dbab268fe40b4d3df28ef198f8c2bf880ca600fc",
+      "count": 911,
+      "first": {
+        "day": "2022-12-30",
+        "value": "10280.1"
+      },
+      "last": {
+        "day": "2026-10-09",
+        "value": "7838.39"
+      }
+    },
+    {
+      "key": "zo-channel-div",
+      "url": "https://fundf10.eastmoney.com/fhsp_003096.html",
+      "retrieved_at": "2026-10-09T09:53:53.038583+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "a3ffc3ef02312f97a383c845a000329a347b1cec2e6589ce3658ff8d5b6c87c7",
+      "parsed": [
+        {
+          "ex_date": "2018-06-19",
+          "cash_per_unit": "0.075"
+        },
+        {
+          "ex_date": "2021-01-18",
+          "cash_per_unit": "0.03531"
+        },
+        {
+          "ex_date": "2021-08-10",
+          "cash_per_unit": "0.12169"
+        }
+      ]
+    },
+    {
+      "key": "gf-channel-div",
+      "url": "https://fundf10.eastmoney.com/fhsp_009163.html",
+      "retrieved_at": "2026-10-09T09:53:52.981769+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "7fb09ba099cddfb735ef23c54152a9f3d2f6b0e96f14302c48fca15e4409cdde",
+      "parsed": []
+    },
+    {
+      "key": "zo-product",
+      "url": "https://www.zofund.com/fundDetail/003096/index.html",
+      "retrieved_at": "2026-10-09T09:53:52.910650+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "0981f13c50af6f5a08d650f826a3a29c672cff4e231c114bc75d2144939ec075"
+    },
+    {
+      "key": "gf-product",
+      "url": "https://gfwx.gffunds.com.cn/funds/?fundcode=009163",
+      "retrieved_at": "2026-10-09T09:53:53.151529+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "5ed0e9f1b8f1c011aac54d980860aa1269db29807300ca6345fa94d6fa03f62f"
+    },
+    {
+      "key": "gf-prospectus",
+      "url": "https://www.gffunds.com.cn/jjgg/flwj/202505/P020250526316412126656.pdf",
+      "retrieved_at": "2026-10-09T09:53:53.506729+00:00",
+      "exit_code": 0,
+      "error": "",
+      "sha256": "f04e623bcb5c478b5ef878b741b157b7e6b838a08bff773e658686396e9f3036"
+    }
+  ],
+  "reused_legal_sources": {
+    "zo-legal": {
+      "source_ref": "https://www.zofund.com/2026/wsnotice/20260921/7dda89d63a114540ac1e0826aaebd57d.pdf",
+      "retrieved_at": "2026-09-29T02:08:01.032624Z",
+      "published_at": null,
+      "data_date": "2026-09-21",
+      "content_hash": null
+    },
+    "gf-legal": {
+      "source_ref": "https://www.gffunds.com.cn/jjgg/flwj/202607/P020260727336432205546.pdf",
+      "retrieved_at": "2026-09-29T02:07:14.008022Z",
+      "published_at": null,
+      "data_date": "2026-07-10",
+      "content_hash": null
+    },
+    "zo-half": {
+      "source_ref": "https://www.zofund.com/2026/wsnotice/20260829/673593c1c76447269a9c6e485b35e04c.pdf",
+      "retrieved_at": "2026-09-29T02:08:00.872366Z",
+      "published_at": null,
+      "data_date": "2026-06-30",
+      "content_hash": null
+    },
+    "gf-half": {
+      "source_ref": "https://www.gffunds.com.cn/jjgg/dqgg/202608/P020260831324422388065.pdf",
+      "retrieved_at": "2026-09-29T02:07:13.893644Z",
+      "published_at": null,
+      "data_date": "2026-06-30",
+      "content_hash": null
+    }
+  },
+  "archived_response_sha256": "fd5e4793e9a0ce7153a2b79eb26b6035947aaa2eeae165bca6035e2148b41a8e",
+  "definition_commit": "1d0b7ea",
+  "definition_blob": "7fdbfdd55d72837197f3e07f042f8e27ed26fce5",
+  "calculation_code_commit": "d6435790f991f3b83661894e248e33e170c79fa3",
+  "production_accessed": false,
+  "preregistration_created": false,
+  "approval_mutation": false,
+  "full_model_run": false,
+  "r12_bounded_check_20261010": {
+    "as_of": "2026-10-03T12:00:00+08:00",
+    "evidence_class": "H",
+    "actual_calculated_at": "2026-10-10T02:50:04.603264+00:00",
+    "nav_window_start": "2025-09-15",
+    "nav_window_end": "2026-09-30",
+    "endpoints": 253,
+    "returns": 252,
+    "exchange_calendar_vs_csi_missing": [],
+    "nav_retrieved_on": "2026-10-09",
+    "new_material_retrieved_on": "2026-10-10",
+    "rows": [
+      {
+        "code": "003096",
+        "return_pct": "-3.652051770843784488813083174475950",
+        "max_drawdown_pct": "29.09226932668329177057356608478824",
+        "volatility_pct": "31.84595433899157027628217828596002",
+        "external_cost_pct": "0.2500",
+        "conditional_dimension_scores": {
+          "return": "40.86987057289053877796729206381012",
+          "risk": "38.27502946671297748239932559285250",
+          "cost": "87.5000",
+          "management": "41.64383561643835616438356164383561"
+        },
+        "total_score": null,
+        "rank": null,
+        "assumptions": [
+          "no dividend in selected window; ZO annual/interim/directory corroborated, GF complete coverage unverified",
+          "calendar derived from exchange notices and fund normal-rule; exceptions/bindings not fully qualified",
+          "not a qualified full score"
+        ]
+      },
+      {
+        "code": "009163",
+        "return_pct": "-10.66078440878460270519222378435998",
+        "max_drawdown_pct": "25.69932612595142289232559266980149",
+        "volatility_pct": "29.77016630889339846942712214378589",
+        "external_cost_pct": "0",
+        "conditional_dimension_scores": {
+          "return": "23.34803897803849323701944053910005",
+          "risk": "45.71682621966693349560810779197980",
+          "cost": "100",
+          "management": null
+        },
+        "total_score": null,
+        "rank": null,
+        "assumptions": [
+          "no dividend in selected window; ZO annual/interim/directory corroborated, GF complete coverage unverified",
+          "calendar derived from exchange notices and fund normal-rule; exceptions/bindings not fully qualified",
+          "not a qualified full score"
+        ]
+      }
+    ],
+    "r12_actual_status": "INSUFFICIENT_DATA",
+    "r12_actual_rows": [
+      {
+        "code": "003096",
+        "total_score": null,
+        "rank": null,
+        "gaps": [
+          "003096:SOURCE_MISSING",
+          "009163:SOURCE_MISSING",
+          "BENCHMARK_MAPPING_INCOMPLETE",
+          "REQUIRED_SCORE_DIMENSION_MISSING",
+          "SOURCE_MISSING",
+          "redemption_open:MISSING",
+          "subscription_open:MISSING"
+        ],
+        "redemption_arrival": "UNKNOWN"
+      },
+      {
+        "code": "009163",
+        "total_score": null,
+        "rank": null,
+        "gaps": [
+          "003096:SOURCE_MISSING",
+          "009163:SOURCE_MISSING",
+          "BENCHMARK_MAPPING_INCOMPLETE",
+          "DIVIDEND_COVERAGE_INCOMPLETE",
+          "REQUIRED_SCORE_DIMENSION_MISSING",
+          "SOURCE_MISSING",
+          "TOTAL_FUND_ASSETS_MISSING",
+          "redemption_open:MISSING",
+          "subscription_open:MISSING"
+        ],
+        "redemption_arrival": "UNKNOWN"
+      }
+    ],
+    "extraction_failure_count": 2624,
+    "formal_forward_record": false,
+    "source_binding_note": "sources omitted where publication metadata and verified native original bindings unavailable; manual interpretations kept only in evidence report",
+    "input_sha256": "082ade695951504f58baba9352810088508eb2eec12fdc8916258a9267a3e08c",
+    "output_sha256": "a4200d26efbb7aa7fb11d94aa9748169981e8f674c6d8b34c23bcb425fc52763",
+    "new_sources": [
+      {
+        "key": "sse2025",
+        "url": "https://www.sse.com.cn/disclosure/dealinstruc/closed/c/c_20241223_10767110.shtml",
+        "requested_at": "2026-10-10T02:46:13.841380+00:00",
+        "sha256": "beb0957353f818f551792774f7a21816714dee7bc7be8da388de482248734378",
+        "bytes": 28511,
+        "retrieved_at": "2026-10-10T02:46:14.099781+00:00"
+      },
+      {
+        "key": "sse2026",
+        "url": "https://www.sse.com.cn/disclosure/announcement/general/c/c_20251222_10802507.shtml",
+        "requested_at": "2026-10-10T02:46:14.099781+00:00",
+        "sha256": "4e260b815ce1309175ed994e6490a4ccd51b998a5f92bcdc41cec00fc6823dc7",
+        "bytes": 29251,
+        "retrieved_at": "2026-10-10T02:46:14.555513+00:00"
+      },
+      {
+        "key": "szse2025",
+        "url": "https://www.szse.cn/disclosure/notice/t20241223_611283.html",
+        "requested_at": "2026-10-10T02:47:26.562162+00:00",
+        "sha256": "1c89289137907b6afd00c27059919dedcb8414f4402a38b995ff9eccd465874e",
+        "bytes": 33499,
+        "retrieved_at": "2026-10-10T02:47:26.732086+00:00"
+      },
+      {
+        "key": "szse2026",
+        "url": "https://www.szse.cn/disclosure/notice/general/t20251222_618087.html",
+        "requested_at": "2026-10-10T02:47:26.564164+00:00",
+        "sha256": "1656d8708d5faed33c7588538639d96128f39fdface02cfa6eb66d796c40f14e",
+        "bytes": 24946,
+        "retrieved_at": "2026-10-10T02:47:26.730080+00:00"
+      },
+      {
+        "key": "zo-annual2025",
+        "url": "https://www.zofund.com/tempdir/minisite/20260330/483cbb47-60a5-4d37-a608-8238e4586d10_1774877559058.pdf",
+        "requested_at": "2026-10-10T02:47:26.564164+00:00",
+        "sha256": "dc55bbdd4ae903fdaea7fe25ec2d3896100474b7d9c5742890e15505118950fd",
+        "bytes": 2108478,
+        "retrieved_at": "2026-10-10T02:47:28.270999+00:00"
+      }
+    ]
+  },
+  "r12_original_adapter_h_20261010": {
+    "performed_at": "2026-10-10T08:19:05.408696+00:00",
+    "entry": "r12_medical.evaluate(MedicalInput, originals=...)",
+    "definition_id": "r12-medical-research-1.0.0",
+    "computation_version": "r12-medical-v2",
+    "computation_fingerprint": "72f79e68e9235a8ea98202c564483c236e2fdf728c93a15b34efa7518d1a99b1",
+    "as_of": "2026-10-03T12:00:00+08:00",
+    "nav_window": [
+      "2025-09-15",
+      "2026-09-30"
+    ],
+    "endpoints": 253,
+    "source_review": {
+      "version": "003096-reviewed-originals-h-1",
+      "as_of": "2026-10-03T12:00:00+08:00",
+      "documents": {
+        "zo-nav": {
+          "sha256": "e9cea387d8e9987bafe1e4605593c375d6aecc6c0f6632f21ac89da50a094f4b",
+          "url": "https://www.zofund.com/ws-business-server/fund/getFundNavList?productCode=003096&productId=391&merchantId=0&siteno=main&startDate=2022-12-30&endDate=2026-10-09",
+          "retrieved_at": "2026-10-09T09:53:11.317315+00:00",
+          "published_date": null,
+          "retrieval_note": "original capture",
+          "publication_precision": "UNKNOWN"
+        },
+        "zo-legal": {
+          "sha256": "b20fef1df703cd944aa6d90b8371ed47228778e1bba6a270963bf0b31b954fb2",
+          "url": "https://www.zofund.com/2026/wsnotice/20260921/7dda89d63a114540ac1e0826aaebd57d.pdf",
+          "retrieved_at": "2026-09-23T10:31:12.795857Z",
+          "published_date": null,
+          "retrieval_note": "earliest recovered Core archive with matching whole-original SHA256; later 2026-09-29 duplicate retained separately",
+          "publication_note": "cover states September 2026 only; URL date and benchmark effective date are not publication proof",
+          "publication_precision": "UNKNOWN"
+        },
+        "zo-interim": {
+          "sha256": "b2169cc248bb7a053087d9c1dd2763b834a9bc235ea428d19260ad01daaa4757",
+          "url": "https://www.zofund.com/2026/wsnotice/20260829/673593c1c76447269a9c6e485b35e04c.pdf",
+          "retrieved_at": "2026-10-10T02:31:31.790596+00:00",
+          "published_date": "2026-08-29",
+          "retrieval_note": "original capture",
+          "publication_precision": "DATE"
+        },
+        "zo-change": {
+          "sha256": "2a1d433b7dc207804e6c18f15556d7d212357358f1362245cef1d87f5fa3bda9",
+          "url": "https://www.zofund.com/upload2010/2025/07/04/095809333_390_38a6eadf-4480-3c7e-9b10-dcb1d1599082.pdf",
+          "retrieved_at": "2026-10-10T02:28:24.210905+00:00",
+          "published_date": "2025-07-04",
+          "retrieval_note": "original capture",
+          "publication_precision": "DATE"
+        },
+        "zo-directory": {
+          "sha256": "7db23b2624cbaa0ddc50e48efdab3aa334b81cb81e1561f1c47e525b9dfc0090",
+          "url": "https://www.zofund.com/ws-business-server/fund/productAnn?productId=391&pageNum=1&pageSize=500&type=2&startDate=2025-07-04&endDate=2026-10-10&keyword=&selectTime=&merchantId=0&siteno=main",
+          "retrieved_at": "2026-10-10T02:30:28.913470+00:00",
+          "published_date": null,
+          "retrieval_note": "original capture",
+          "publication_precision": "UNKNOWN"
+        },
+        "zo-annual2025": {
+          "sha256": "dc55bbdd4ae903fdaea7fe25ec2d3896100474b7d9c5742890e15505118950fd",
+          "url": "https://www.zofund.com/tempdir/minisite/20260330/483cbb47-60a5-4d37-a608-8238e4586d10_1774877559058.pdf",
+          "retrieved_at": "2026-10-10T02:47:28.270999+00:00",
+          "published_date": "2026-03-31",
+          "retrieval_note": "original capture",
+          "publication_precision": "DATE"
+        },
+        "sse2025": {
+          "sha256": "beb0957353f818f551792774f7a21816714dee7bc7be8da388de482248734378",
+          "url": "https://www.sse.com.cn/disclosure/dealinstruc/closed/c/c_20241223_10767110.shtml",
+          "retrieved_at": "2026-10-10T02:46:14.099781+00:00",
+          "published_date": "2024-12-23",
+          "retrieval_note": "original capture",
+          "publication_precision": "DATE"
+        },
+        "sse2026": {
+          "sha256": "4e260b815ce1309175ed994e6490a4ccd51b998a5f92bcdc41cec00fc6823dc7",
+          "url": "https://www.sse.com.cn/disclosure/announcement/general/c/c_20251222_10802507.shtml",
+          "retrieved_at": "2026-10-10T02:46:14.555513+00:00",
+          "published_date": "2025-12-22",
+          "retrieval_note": "original capture",
+          "publication_precision": "DATE"
+        },
+        "szse2025": {
+          "sha256": "1c89289137907b6afd00c27059919dedcb8414f4402a38b995ff9eccd465874e",
+          "url": "https://www.szse.cn/disclosure/notice/t20241223_611283.html",
+          "retrieved_at": "2026-10-10T02:47:26.732086+00:00",
+          "published_date": "2024-12-23",
+          "retrieval_note": "original capture",
+          "publication_precision": "DATE"
+        },
+        "szse2026": {
+          "sha256": "1656d8708d5faed33c7588538639d96128f39fdface02cfa6eb66d796c40f14e",
+          "url": "https://www.szse.cn/disclosure/notice/general/t20251222_618087.html",
+          "retrieved_at": "2026-10-10T02:47:26.730080+00:00",
+          "published_date": "2025-12-22",
+          "retrieval_note": "original capture",
+          "publication_precision": "DATE"
+        },
+        "H11009factsheet": {
+          "sha256": "edb290a9003ec989324b7102f765de96cbf3a882ba097b7a7c8888e70dd7673e",
+          "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/H11009factsheet.pdf",
+          "retrieved_at": "2026-10-10T08:06:36.626551+00:00",
+          "published_date": null,
+          "data_date": "2026-09-30",
+          "previous_sha256": "fd324dc5dfcb65c72ebcd89fcdfbd1ea55daa83f815f3055fc093aec5baed430",
+          "same_original": false,
+          "publication_precision": "UNKNOWN"
+        },
+        "000933factsheet": {
+          "sha256": "e1884e1f19f42fe665518278975e5c31c3422068e9713b9620d5dbe5f068dbfb",
+          "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/000933factsheet.pdf",
+          "retrieved_at": "2026-10-10T08:06:45.604529+00:00",
+          "published_date": null,
+          "data_date": "2026-09-30",
+          "previous_sha256": "542e3b4b386e802203dfa9b74194f77f59246462d32b9acca8d03060e8af0938",
+          "same_original": false,
+          "publication_precision": "UNKNOWN"
+        },
+        "benchmark-change": {
+          "sha256": "3b96a952be26493366647dd258a091f850d3ae40505360cc77c880ec6c3125aa",
+          "url": "https://www.zofund.com/2026/wsnotice/20260821/26c5f92c40f44e4cb0d54b3c950c693c.pdf",
+          "retrieved_at": "2026-10-10T08:06:45.974546+00:00",
+          "published_date": "2026-08-21",
+          "data_date": "2026-08-21",
+          "previous_sha256": "3b96a952be26493366647dd258a091f850d3ae40505360cc77c880ec6c3125aa",
+          "same_original": true,
+          "publication_precision": "DATE"
+        }
+      },
+      "claims": {
+        "currency": {
+          "value": "CNY",
+          "documents": [
+            "zo-interim"
+          ],
+          "locator": "PDF p15 C class NAV explicitly RMB",
+          "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "share_class": {
+          "value": "C",
+          "documents": [
+            "zo-legal",
+            "zo-nav"
+          ],
+          "locator": "PDF p29 separate A/C classes; NAV JSON /data/*/productCode=003096 and productName=C",
+          "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "product_type": {
+          "value": "ACTIVE_MEDICAL",
+          "documents": [
+            "zo-legal"
+          ],
+          "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+          "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "same_class_since": {
+          "value": "2022-12-30",
+          "documents": [
+            "zo-nav"
+          ],
+          "locator": "JSON first retained exact 003096 C NAV endpoint; conservative evidenced history start, NOT fund inception",
+          "effective_scope": "verified same-class retained series 2022-12-30..2026-09-30; satisfies >=365 days, not asserted original founding date",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "stock_min_pct": {
+          "value": "60",
+          "documents": [
+            "zo-legal"
+          ],
+          "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+          "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "stock_max_pct": {
+          "value": "95",
+          "documents": [
+            "zo-legal"
+          ],
+          "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+          "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "medical_non_cash_min_pct": {
+          "value": "80",
+          "documents": [
+            "zo-legal"
+          ],
+          "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+          "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "mainland_only": {
+          "value": true,
+          "documents": [
+            "zo-legal"
+          ],
+          "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+          "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "fund_total_assets_cny": {
+          "value": "24770379722.59",
+          "documents": [
+            "zo-interim"
+          ],
+          "locator": "PDF p15 net assets total (all share classes), report cutoff",
+          "effective_scope": "2026-06-30 snapshot; 95 days old at H cutoff",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "assets_report_date": {
+          "value": "2026-06-30",
+          "documents": [
+            "zo-interim"
+          ],
+          "locator": "PDF p15 net assets total (all share classes), report cutoff",
+          "effective_scope": "2026-06-30 snapshot; 95 days old at H cutoff",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "manager_team_since": {
+          "value": "2025-07-04",
+          "documents": [
+            "zo-change",
+            "zo-interim",
+            "zo-directory"
+          ],
+          "locator": "PDF change p1; interim pp9-10; JSON /data/list bounded complete page",
+          "effective_scope": "team Ge Lan + Zhao Lei; effective 2025-07-04; bounded directory through 2026-10-10; no absolute completeness claim",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "fees": {
+          "value": {
+            "source": "zo-archive",
+            "effective_from": "2026-09-21",
+            "subscription_method": "GROSS_TIMES_RATE",
+            "subscription_value": "0",
+            "redemption_rate_pct_at_365_days": "0.25",
+            "standard_10000_365_day_scenario_supported": true
+          },
+          "documents": [
+            "zo-legal"
+          ],
+          "locator": "PDF pp34-35 C class; 365 <= N < 730; holding days from registration",
+          "effective_scope": "standard RMB10000/365 registered days; no channel discount; not retrospective fee override",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "subscription_confirmation_max_trading_days": {
+          "value": 1,
+          "documents": [
+            "zo-legal"
+          ],
+          "locator": "PDF pp8,31 normal valid application T+1 confirmation (T+2 query is different)",
+          "effective_scope": "normal fund registration, valid applications before cutoff; exceptions retained; not guaranteed account arrival",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "dividend_coverage_from": {
+          "value": "2025-01-01",
+          "documents": [
+            "zo-annual2025",
+            "zo-interim",
+            "zo-directory"
+          ],
+          "locator": "annual p10 prior three years; interim p13; directory /data/list 2025-07-04..2026-10-10",
+          "effective_scope": "bounded manager-only coverage; historical pre-window disputes excluded, not independent corroboration",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "dividend_coverage_to": {
+          "value": "2026-09-30",
+          "documents": [
+            "zo-annual2025",
+            "zo-interim",
+            "zo-directory"
+          ],
+          "locator": "annual p10 prior three years; interim p13; directory /data/list 2025-07-04..2026-10-10",
+          "effective_scope": "bounded manager-only coverage; historical pre-window disputes excluded, not independent corroboration",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "dividends": {
+          "value": [],
+          "documents": [
+            "zo-annual2025",
+            "zo-interim",
+            "zo-directory"
+          ],
+          "locator": "annual p10 prior three years; interim p13; directory /data/list 2025-07-04..2026-10-10",
+          "effective_scope": "bounded manager-only coverage; historical pre-window disputes excluded, not independent corroboration",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "benchmark_identity": {
+          "value": "CSI:000933+CSI:H11009;0.65/0.35 through 2026-09-20;0.90/0.10 from 2026-09-21",
+          "documents": [
+            "benchmark-change",
+            "000933factsheet",
+            "H11009factsheet",
+            "zo-interim",
+            "zo-legal"
+          ],
+          "locator": "benchmark_scope: change pp1,15; factsheets pp1-2; interim; prospectus p50",
+          "effective_scope": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "benchmark_currency": {
+          "value": "CNY",
+          "documents": [
+            "benchmark-change",
+            "000933factsheet",
+            "H11009factsheet",
+            "zo-interim",
+            "zo-legal"
+          ],
+          "locator": "benchmark_scope: change pp1,15; factsheets pp1-2; interim; prospectus p50",
+          "effective_scope": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "benchmark_effective_from": {
+          "value": "2025-09-15",
+          "documents": [
+            "benchmark-change",
+            "000933factsheet",
+            "H11009factsheet",
+            "zo-interim",
+            "zo-legal"
+          ],
+          "locator": "benchmark_scope: change pp1,15; factsheets pp1-2; interim; prospectus p50",
+          "effective_scope": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "benchmark_effective_to": {
+          "value": "2026-10-03",
+          "documents": [
+            "benchmark-change",
+            "000933factsheet",
+            "H11009factsheet",
+            "zo-interim",
+            "zo-legal"
+          ],
+          "locator": "benchmark_scope: change pp1,15; factsheets pp1-2; interim; prospectus p50",
+          "effective_scope": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        },
+        "legally_operating": {
+          "value": true,
+          "documents": [
+            "zo-legal",
+            "zo-nav",
+            "zo-directory"
+          ],
+          "locator": "PDF pp1-2 current registered fund, p29 contract; exact C NAV through 2026-09-30; bounded announcement directory",
+          "effective_scope": "positive current prospectus and observed NAV within H cutoff; bounded public records, not proof of all possible omissions",
+          "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+        }
+      },
+      "calendar": {
+        "from": "2025-01-01",
+        "to": "2026-10-03",
+        "documents": [
+          "sse2025",
+          "sse2026",
+          "szse2025",
+          "szse2026",
+          "zo-legal"
+        ],
+        "locator": "exchange annual holiday notices; prospectus pp8,30 normal SSE/SZSE open days; exceptions remain a separate qualification",
+        "closed_ranges": [
+          [
+            "2025-01-01",
+            "2025-01-01"
+          ],
+          [
+            "2025-01-28",
+            "2025-02-04"
+          ],
+          [
+            "2025-04-04",
+            "2025-04-06"
+          ],
+          [
+            "2025-05-01",
+            "2025-05-05"
+          ],
+          [
+            "2025-05-31",
+            "2025-06-02"
+          ],
+          [
+            "2025-10-01",
+            "2025-10-08"
+          ],
+          [
+            "2026-01-01",
+            "2026-01-03"
+          ],
+          [
+            "2026-02-15",
+            "2026-02-23"
+          ],
+          [
+            "2026-04-04",
+            "2026-04-06"
+          ],
+          [
+            "2026-05-01",
+            "2026-05-05"
+          ],
+          [
+            "2026-06-19",
+            "2026-06-21"
+          ],
+          [
+            "2026-09-25",
+            "2026-09-27"
+          ],
+          [
+            "2026-10-01",
+            "2026-10-07"
+          ]
+        ]
+      },
+      "limitations": [
+        "PUBLICATION_UNKNOWN_FOR_DYNAMIC_NAV_AND_DIRECTORY",
+        "MANAGER_ONLY_NO_INDEPENDENT_UPSTREAM",
+        "NORMAL_OPENING_CLAUSE_NOT_ASOF_OPERATION_STATUS",
+        "H11009_PUBLISHED_RETURN_METHOD_NOT_VERIFIED",
+        "CSI_FACTSHEET_REVISION_SEPARATE_FROM_OLD_AUGUST_ARCHIVE"
+      ],
+      "benchmark_scope": {
+        "components": [
+          {
+            "issuer": "CSI",
+            "code": "000933",
+            "currency": "CNY",
+            "variant": "published 000933, distinct from H00933 full return"
+          },
+          {
+            "issuer": "CSI",
+            "code": "H11009",
+            "currency": "CNY",
+            "variant": "published H11009, distinct from H01009 clean price and N11009 interest reinvestment; detailed published-return methodology not recovered"
+          }
+        ],
+        "segments": [
+          {
+            "coverage_from": "2025-09-15",
+            "through": "2026-09-20",
+            "weights": [
+              "0.65",
+              "0.35"
+            ]
+          },
+          {
+            "effective_from": "2026-09-21",
+            "coverage_through": "2026-10-03",
+            "weights": [
+              "0.90",
+              "0.10"
+            ]
+          }
+        ],
+        "locators": [
+          "change PDF pp1,15 (same historical SHA)",
+          "prospectus p50",
+          "2026 interim benchmark disclosure",
+          "CSI fact sheets pp1-2; current data date 2026-09-30; layout visually checked"
+        ],
+        "scope_note": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score"
+      }
+    },
+    "rows": [
+      {
+        "code": "003096",
+        "redemption_arrival": {
+          "state": "UNKNOWN",
+          "max_trading_days": null,
+          "rule": null,
+          "reasons": [
+            "APPLICABLE_ARRIVAL_RULE_MISSING",
+            "ARRIVAL_BOUND_UNKNOWN"
+          ],
+          "overall_execution_pass": false
+        },
+        "filter_result": "UNKNOWN",
+        "gaps": [
+          "BENCHMARK_MAPPING_INCOMPLETE",
+          "redemption_open:MISSING",
+          "subscription_open:MISSING"
+        ],
+        "exclusions": [],
+        "metrics": {
+          "return_pct": "-3.652051770843784488813083174475950",
+          "max_drawdown_pct": "29.09226932668329177057356608478824",
+          "volatility_pct": "31.84595433899157027628217828596002",
+          "standard_external_cost_pct": "0.2500"
+        },
+        "dimension_scores": {
+          "return": "40.86987057289053877796729206381012",
+          "risk": "38.27502946671297748239932559285250",
+          "management": "41.64383561643835616438356164383561",
+          "cost": "87.5000"
+        },
+        "weights": {
+          "return": "0.25",
+          "risk": "0.35",
+          "cost": "0.20",
+          "management": "0.20"
+        },
+        "total_score": null,
+        "rank": null,
+        "stock_range": [
+          "60",
+          "95"
+        ],
+        "warnings": [
+          "CSI_FACTSHEET_REVISION_SEPARATE_FROM_OLD_AUGUST_ARCHIVE",
+          "EXECUTION_UNKNOWN",
+          "H11009_PUBLISHED_RETURN_METHOD_NOT_VERIFIED",
+          "INDEPENDENT_VERIFICATION_REQUIRED",
+          "MANAGER_ONLY_NO_INDEPENDENT_UPSTREAM",
+          "MAPPING_DRAFT",
+          "NORMAL_OPENING_CLAUSE_NOT_ASOF_OPERATION_STATUS",
+          "PUBLICATION_UNKNOWN_FOR_DYNAMIC_NAV_AND_DIRECTORY",
+          "REDEMPTION_ARRIVAL_UNKNOWN"
+        ]
+      },
+      {
+        "code": "009163",
+        "redemption_arrival": {
+          "state": "UNKNOWN",
+          "max_trading_days": null,
+          "rule": null,
+          "reasons": [
+            "APPLICABLE_ARRIVAL_RULE_MISSING",
+            "ARRIVAL_BOUND_UNKNOWN"
+          ],
+          "overall_execution_pass": false
+        },
+        "filter_result": "UNKNOWN",
+        "gaps": [
+          "BENCHMARK_MAPPING_INCOMPLETE",
+          "DIVIDEND_COVERAGE_INCOMPLETE",
+          "OUTSIDE_REVIEWED_ORIGINAL_ADAPTER",
+          "REQUIRED_SCORE_DIMENSION_MISSING",
+          "SOURCE_MISSING",
+          "TOTAL_FUND_ASSETS_MISSING",
+          "redemption_open:MISSING",
+          "subscription_open:MISSING"
+        ],
+        "exclusions": [],
+        "metrics": {},
+        "dimension_scores": {},
+        "weights": {
+          "return": "0.25",
+          "risk": "0.35",
+          "cost": "0.20",
+          "management": "0.20"
+        },
+        "total_score": null,
+        "rank": null,
+        "stock_range": [
+          "80",
+          "95"
+        ],
+        "warnings": [
+          "EXECUTION_UNKNOWN",
+          "INDEPENDENT_VERIFICATION_REQUIRED",
+          "MAPPING_DRAFT",
+          "REDEMPTION_ARRIVAL_UNKNOWN"
+        ]
+      }
+    ],
+    "repeat_equal": true,
+    "input_unchanged": true,
+    "formal_forward_record": false,
+    "leader": null,
+    "replacement": "BLOCKED",
+    "files": {
+      "adapted-input.json": "dfa982f29d2edbb21a592184c7b18f99481551d74c573fe665c219afb67390f3",
+      "adapted-output.json": "54b5a8797a2d4e5b650df601de5e7c1bdb06f3a32c3ba5aea3a0f8a2e05cd729"
+    },
+    "benchmark_recovery": [
+      {
+        "key": "H11009factsheet",
+        "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/H11009factsheet.pdf",
+        "previous_sha256": "fd324dc5dfcb65c72ebcd89fcdfbd1ea55daa83f815f3055fc093aec5baed430",
+        "retrieved_at": "2026-10-10T08:06:36.626551+00:00",
+        "sha256": "edb290a9003ec989324b7102f765de96cbf3a882ba097b7a7c8888e70dd7673e",
+        "bytes": 436571,
+        "same_original": false
+      },
+      {
+        "key": "000933factsheet",
+        "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/000933factsheet.pdf",
+        "previous_sha256": "542e3b4b386e802203dfa9b74194f77f59246462d32b9acca8d03060e8af0938",
+        "retrieved_at": "2026-10-10T08:06:45.604529+00:00",
+        "sha256": "e1884e1f19f42fe665518278975e5c31c3422068e9713b9620d5dbe5f068dbfb",
+        "bytes": 436698,
+        "same_original": false
+      },
+      {
+        "key": "benchmark-change",
+        "url": "https://www.zofund.com/2026/wsnotice/20260821/26c5f92c40f44e4cb0d54b3c950c693c.pdf",
+        "previous_sha256": "3b96a952be26493366647dd258a091f850d3ae40505360cc77c880ec6c3125aa",
+        "retrieved_at": "2026-10-10T08:06:45.974546+00:00",
+        "sha256": "3b96a952be26493366647dd258a091f850d3ae40505360cc77c880ec6c3125aa",
+        "bytes": 216733,
+        "same_original": true
+      }
+    ],
+    "provenance_limit": "reviewed clause manifest pinned to exact originals, not generic PDF parser; SHA binds bytes, not independent publisher authenticity",
+    "validation": {
+      "targeted_r12": 43,
+      "existing_r11_formula_regression_reused": 14,
+      "final_adapter_regression": 13,
+      "ruff": "PASS",
+      "mypy_4_modules": "PASS",
+      "r11_source_changes": "",
+      "no_full_suite": true,
+      "no_independent_review": true,
+      "no_merge_release_deploy": true
+    }
+  },
+  "r12_last_two_gates_20261010": {
+    "performed_at": "2026-10-10T08:57:53.820463+00:00",
+    "scope": "last two gates only, fixed 2026-10-03 H",
+    "sources": [
+      {
+        "key": "h11009-method",
+        "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/H11009_Index_Methodology_cn.pdf",
+        "requested_at": "2026-10-10T08:53:55.309326+00:00",
+        "sha256": "7c79a4d772a304c9ca99dd52203cf99b20c788681060a9389e01defc9ada1e7c",
+        "bytes": 166675,
+        "retrieved_at": "2026-10-10T08:53:55.642702+00:00"
+      },
+      {
+        "key": "bond-v3",
+        "url": "https://www.sse.com.cn/market/sseindex/calculation/c/10752922/files/e197c924043e4563aa3d2930aa89b4ab.pdf",
+        "requested_at": "2026-10-10T08:53:55.642702+00:00",
+        "error": "HTTPError: HTTP Error 404: Not Found"
+      },
+      {
+        "key": "bond-v4",
+        "url": "https://www.sse.com.cn/market/sseindex/calculation/c/10803806/files/aa42d3a05d9e4fe19d6b3630b965de48.pdf",
+        "requested_at": "2026-10-10T08:53:55.859980+00:00",
+        "sha256": "ba6a76a42aa63be034e1395484a216800f140a8ee5f2fc4a2b91901e9972e7dc",
+        "bytes": 275627,
+        "retrieved_at": "2026-10-10T08:53:56.301196+00:00"
+      },
+      {
+        "key": "zo-all-temporary",
+        "url": "https://www.zofund.com/ws-business-server/fund/productAnn?productId=391&pageNum=1&pageSize=500&type=2&startDate=2016-09-29&endDate=2026-10-03&keyword=&selectTime=&merchantId=0&siteno=main",
+        "requested_at": "2026-10-10T08:53:56.301196+00:00",
+        "sha256": "19ed484a4ff59014d1395b012f4cf6b09ccff8b0184c416bb633e7a3c5bc4c8d",
+        "bytes": 70803,
+        "retrieved_at": "2026-10-10T08:53:56.987459+00:00"
+      },
+      {
+        "key": "notice-18032",
+        "url": "https://www.zofund.com/tempdir/minisite/20161027/c3eeff1e-2388-449a-908d-67d5fa2210a0_1477557707534.pdf",
+        "published_date": "2016-10-28",
+        "title": "中欧医疗健康混合型证券投资基金开放日常申购、赎回、转换和定期定额投资业务公告",
+        "retrieved_at": "2026-10-10T08:54:40.379386+00:00",
+        "sha256": "711caaf4cf12af8f07d6159ad5b434d9ac97cc96802e2755fce4ba7a02a349da",
+        "bytes": 233224
+      },
+      {
+        "key": "notice-11318",
+        "url": "https://www.zofund.com/tempdir/minisite/20210809/c0a73d7a-d50f-4bb8-9ec7-240b0435428b_1628510873665.pdf",
+        "published_date": "2021-08-10",
+        "title": "关于调整中欧医疗健康混合型证券投资基金在直销渠道大额申购、转换转入和定期定额投资限额的公告",
+        "retrieved_at": "2026-10-10T08:54:40.636217+00:00",
+        "sha256": "53d768f5623bdd953e1065d66f49a205e7e64ef4e7b998e2106f8512326e8797",
+        "bytes": 57471
+      },
+      {
+        "key": "notice-12009",
+        "url": "https://www.zofund.com/tempdir/minisite/20210126/69728376-c4ee-4ab1-b5c9-3a543fbcae89_1611659666897.pdf",
+        "published_date": "2021-01-27",
+        "title": "中欧基金管理有限公司关于中欧医疗健康混合型证券投资基金调整代销渠道大额申购等交易限额的公告",
+        "retrieved_at": "2026-10-10T08:54:40.958628+00:00",
+        "sha256": "5df94cd28a018a19bc5ecaadc84ab50341afec8a34565d11a6738c7eaec01e4b",
+        "bytes": 142434
+      },
+      {
+        "key": "notice-21261",
+        "url": "https://www.zofund.com/2026/wsnotice/20260914/7d8b70b0f4ab4e5eb3654367777874cb.pdf",
+        "published_date": "2026-09-14",
+        "title": "中欧基金管理有限公司关于调整旗下部分基金最低交易限额的公告",
+        "retrieved_at": "2026-10-10T08:54:41.290630+00:00",
+        "sha256": "7ba096b8c58369883e0662233e1edc7325e781746ed61828a2c4166f6457224a",
+        "bytes": 155237
+      }
+    ],
+    "method": {
+      "method_version": "H11009 V1.1 2026-08",
+      "maintenance_version": "CSI bond V4.0 2025-12",
+      "locators": [
+        "H11009 method pp1-2",
+        "V4 physical pp7-8 sections3.1.1/3.1.3",
+        "V4 physical pp12-13 section3.3.3"
+      ],
+      "formula": "(sum((clean_price+accrued_interest)*issue_amount)+cash_coupons)/divisor*100",
+      "coupon_handling": "cash during month, not daily reinvestment at index return; month-end remove accumulated cash and adjust divisor to preserve continuity",
+      "not_substitutes": [
+        "H01009",
+        "N11009",
+        "H11009CNY030"
+      ],
+      "historical_coverage_status": "UNVERIFIED",
+      "missing": "applicable pre-August2026 H11009 methodology and change/effective-date bridge across 2025-09-15..2026-09-30; historical V3 bytes HTTP404; current document version month alone is not exact effective date",
+      "return_basis_input": null
+    },
+    "operating_status": {
+      "as_of": "2026-10-03",
+      "calendar_closed": true,
+      "last_market_day": "2026-09-30",
+      "open_business_since": "2016-10-31",
+      "directory_count": 138,
+      "product_full_suspension_found": false,
+      "bounded_coverage_not_absolute_completeness": true,
+      "direct_channel_daily_cap_cny": "5000000",
+      "agency_channel_daily_cap_cny": "100000",
+      "account_available_amount": null,
+      "interpretation": "R1.1 lines117/121/128 separate product operating status, calendar and channel executability; no demand to transact on Saturday; no pending change to model definition"
+    },
+    "entry": "r12_medical.evaluate originals",
+    "computation_fingerprint": "998fab90d4f2fe2f9b9f349587a48bd02aa0604fb429374125a3a7af29906d08",
+    "rows": [
+      {
+        "code": "003096",
+        "redemption_arrival": {
+          "state": "UNKNOWN",
+          "max_trading_days": null,
+          "rule": null,
+          "reasons": [
+            "APPLICABLE_ARRIVAL_RULE_MISSING",
+            "ARRIVAL_BOUND_UNKNOWN"
+          ],
+          "overall_execution_pass": false
+        },
+        "filter_result": "UNKNOWN",
+        "gaps": [
+          "BENCHMARK_MAPPING_INCOMPLETE"
+        ],
+        "exclusions": [],
+        "metrics": {
+          "return_pct": "-3.652051770843784488813083174475950",
+          "max_drawdown_pct": "29.09226932668329177057356608478824",
+          "volatility_pct": "31.84595433899157027628217828596002",
+          "standard_external_cost_pct": "0.2500"
+        },
+        "dimension_scores": {
+          "return": "40.86987057289053877796729206381012",
+          "risk": "38.27502946671297748239932559285250",
+          "management": "41.64383561643835616438356164383561",
+          "cost": "87.5000"
+        },
+        "weights": {
+          "return": "0.25",
+          "risk": "0.35",
+          "cost": "0.20",
+          "management": "0.20"
+        },
+        "total_score": null,
+        "rank": null,
+        "stock_range": [
+          "60",
+          "95"
+        ],
+        "warnings": [
+          "BOUNDED_OFFICIAL_NOTICE_DIRECTORY_NOT_ABSOLUTE_COMPLETENESS",
+          "CHANNEL_CAP_IS_NOT_ACCOUNT_AVAILABLE_CAPACITY",
+          "CSI_FACTSHEET_REVISION_SEPARATE_FROM_OLD_AUGUST_ARCHIVE",
+          "EXECUTION_UNKNOWN",
+          "H11009_HISTORICAL_METHOD_VERSION_COVERAGE_UNVERIFIED",
+          "INDEPENDENT_VERIFICATION_REQUIRED",
+          "MANAGER_ONLY_NO_INDEPENDENT_UPSTREAM",
+          "MAPPING_DRAFT",
+          "PUBLICATION_UNKNOWN_FOR_DYNAMIC_NAV_AND_DIRECTORY",
+          "REDEMPTION_ARRIVAL_UNKNOWN"
+        ]
+      },
+      {
+        "code": "009163",
+        "redemption_arrival": {
+          "state": "UNKNOWN",
+          "max_trading_days": null,
+          "rule": null,
+          "reasons": [
+            "APPLICABLE_ARRIVAL_RULE_MISSING",
+            "ARRIVAL_BOUND_UNKNOWN"
+          ],
+          "overall_execution_pass": false
+        },
+        "filter_result": "UNKNOWN",
+        "gaps": [
+          "BENCHMARK_MAPPING_INCOMPLETE",
+          "DIVIDEND_COVERAGE_INCOMPLETE",
+          "OUTSIDE_REVIEWED_ORIGINAL_ADAPTER",
+          "REQUIRED_SCORE_DIMENSION_MISSING",
+          "SOURCE_MISSING",
+          "TOTAL_FUND_ASSETS_MISSING",
+          "redemption_open:MISSING",
+          "subscription_open:MISSING"
+        ],
+        "exclusions": [],
+        "metrics": {},
+        "dimension_scores": {},
+        "weights": {
+          "return": "0.25",
+          "risk": "0.35",
+          "cost": "0.20",
+          "management": "0.20"
+        },
+        "total_score": null,
+        "rank": null,
+        "stock_range": [
+          "80",
+          "95"
+        ],
+        "warnings": [
+          "EXECUTION_UNKNOWN",
+          "INDEPENDENT_VERIFICATION_REQUIRED",
+          "MAPPING_DRAFT",
+          "REDEMPTION_ARRIVAL_UNKNOWN"
+        ]
+      }
+    ],
+    "repeat_equal": true,
+    "input_unchanged": true,
+    "tests": "14 targeted adapter tests and Ruff PASS; no unrelated suite",
+    "definition_change": false,
+    "source_code_change": false,
+    "artifact_hashes": {
+      "input.json": "19d1fb7da59bde4772d51f2ddd473fb70f88b3f8e868cee5612f034ca5ae86f0",
+      "output.json": "2a2117f8f479a39bef29bdda2f9d262ed12e95e98f1daacda51a3ed00f951d24"
+    },
+    "research_search_boundary": "official H11009 methodology, CSI V4 maintenance, old SSE V3 link404, three bounded search batches; official manager temporary directory2016-09-29..2026-10-03 onepage138 plus four relevant notices; no GF405 calls",
+    "remaining": "historical H11009 method version/effective bridge; not missing current formula and not weekend trading requirement"
+  },
+  "r12_isolated_http_daily_20261010": {
+    "isolated": true,
+    "real_original_count": 20,
+    "repeated_http_equal": true,
+    "repeated_command_equal": true,
+    "rows_equal_prior_real_calculation": true,
+    "all_table_counts_before": {
+      "alembic_version": 1,
+      "schema_meta": 1,
+      "settings": 0,
+      "job_runs": 0,
+      "audit_events": 0,
+      "backups": 0,
+      "portfolios": 0,
+      "accounts": 0,
+      "holding_snapshots": 0,
+      "transactions": 0,
+      "market_data_source_health": 0,
+      "market_sync_runs": 0,
+      "market_nav_verifications": 0,
+      "market_nav_snapshots": 0,
+      "strategy_definitions": 1,
+      "strategy_versions": 1,
+      "strategy_assignments": 0,
+      "plan_revisions": 0,
+      "plan_items": 0,
+      "strategy_instrument_configs": 0,
+      "strategy_config_drafts": 0,
+      "valuation_observations": 0,
+      "valuation_snapshots": 0,
+      "sell_diagnostics": 0,
+      "sell_decision_drafts": 0,
+      "sell_decisions": 0,
+      "instrument_lifecycle_observations": 0,
+      "sell_proposals": 0,
+      "sell_execution_links": 0,
+      "sell_followups": 0,
+      "automation_policy_drafts": 0,
+      "automation_policies": 0,
+      "report_bundles": 0,
+      "alerts": 0,
+      "automation_scheduler_snapshots": 0,
+      "notification_delivery_attempts": 0,
+      "performance_snapshots": 0,
+      "periodic_reviews": 0,
+      "review_action_items": 0,
+      "notification_test_requests": 0,
+      "notification_outbox": 0,
+      "cash_ledger_events": 0,
+      "cash_event_drafts": 0,
+      "official_nav_backfill_batches": 0,
+      "runtime_mode_snapshots": 0,
+      "market_research_evidence": 0,
+      "market_discovery_runs": 0,
+      "market_discovery_items": 0,
+      "review_action_decision_drafts": 0,
+      "review_action_decisions": 0,
+      "market_discovery_changes": 0,
+      "review_trend_snapshots": 0,
+      "rule_hits": 0,
+      "research_evidence_changes": 0,
+      "research_watchlist_entries": 0,
+      "research_watchlist_transition_drafts": 0,
+      "research_watchlist_transitions": 0,
+      "review_action_outcome_drafts": 0,
+      "review_action_outcomes": 0,
+      "research_watchlist_review_snapshots": 0,
+      "research_collection_runs": 0,
+      "research_collection_items": 0,
+      "review_quality_snapshots": 0,
+      "research_source_config_drafts": 0,
+      "research_source_configs": 0,
+      "research_coverage_snapshots": 0,
+      "research_collection_tasks": 0,
+      "research_collection_claims": 0,
+      "research_collection_task_receipts": 0,
+      "research_connector_health_receipts": 0,
+      "research_coverage_changes": 0,
+      "satellite_signal_policy_drafts": 0,
+      "satellite_signal_policies": 0,
+      "satellite_signal_snapshots": 0,
+      "plan_execution_links": 0,
+      "external_subscriptions": 0,
+      "weekly_plan_skip_drafts": 0,
+      "instruments": 0,
+      "external_subscription_confirmations": 0,
+      "external_subscription_drafts": 0,
+      "transaction_drafts": 0,
+      "subscription_confirmation_transaction_links": 0,
+      "weekly_plan_partial_close_drafts": 0,
+      "weekly_report_drafts": 0,
+      "weekly_reports": 0,
+      "investment_plans": 0,
+      "weekly_no_investment_drafts": 0,
+      "scheduler_control": 0,
+      "scheduler_change_drafts": 0,
+      "scheduler_worker_snapshots": 0,
+      "execution_constraints": 0,
+      "execution_constraint_drafts": 0,
+      "execution_quota_observations": 0,
+      "research_case_versions": 0,
+      "research_decision_journal": 0,
+      "research_benchmark_mappings": 0,
+      "research_benchmark_runs": 0,
+      "research_thesis_actions": 0,
+      "research_thesis_observations": 0,
+      "holding_review_snapshots": 0,
+      "holding_review_tasks": 0,
+      "holding_review_events": 0,
+      "peer_research_runs": 0,
+      "research_update_runs": 0,
+      "research_update_evidence": 0,
+      "shadow_models": 0,
+      "shadow_records": 0
+    },
+    "all_table_counts_after": {
+      "alembic_version": 1,
+      "schema_meta": 1,
+      "settings": 0,
+      "job_runs": 0,
+      "audit_events": 0,
+      "backups": 0,
+      "portfolios": 0,
+      "accounts": 0,
+      "holding_snapshots": 0,
+      "transactions": 0,
+      "market_data_source_health": 0,
+      "market_sync_runs": 0,
+      "market_nav_verifications": 0,
+      "market_nav_snapshots": 0,
+      "strategy_definitions": 1,
+      "strategy_versions": 1,
+      "strategy_assignments": 0,
+      "plan_revisions": 0,
+      "plan_items": 0,
+      "strategy_instrument_configs": 0,
+      "strategy_config_drafts": 0,
+      "valuation_observations": 0,
+      "valuation_snapshots": 0,
+      "sell_diagnostics": 0,
+      "sell_decision_drafts": 0,
+      "sell_decisions": 0,
+      "instrument_lifecycle_observations": 0,
+      "sell_proposals": 0,
+      "sell_execution_links": 0,
+      "sell_followups": 0,
+      "automation_policy_drafts": 0,
+      "automation_policies": 0,
+      "report_bundles": 0,
+      "alerts": 0,
+      "automation_scheduler_snapshots": 0,
+      "notification_delivery_attempts": 0,
+      "performance_snapshots": 0,
+      "periodic_reviews": 0,
+      "review_action_items": 0,
+      "notification_test_requests": 0,
+      "notification_outbox": 0,
+      "cash_ledger_events": 0,
+      "cash_event_drafts": 0,
+      "official_nav_backfill_batches": 0,
+      "runtime_mode_snapshots": 0,
+      "market_research_evidence": 0,
+      "market_discovery_runs": 0,
+      "market_discovery_items": 0,
+      "review_action_decision_drafts": 0,
+      "review_action_decisions": 0,
+      "market_discovery_changes": 0,
+      "review_trend_snapshots": 0,
+      "rule_hits": 0,
+      "research_evidence_changes": 0,
+      "research_watchlist_entries": 0,
+      "research_watchlist_transition_drafts": 0,
+      "research_watchlist_transitions": 0,
+      "review_action_outcome_drafts": 0,
+      "review_action_outcomes": 0,
+      "research_watchlist_review_snapshots": 0,
+      "research_collection_runs": 0,
+      "research_collection_items": 0,
+      "review_quality_snapshots": 0,
+      "research_source_config_drafts": 0,
+      "research_source_configs": 0,
+      "research_coverage_snapshots": 0,
+      "research_collection_tasks": 0,
+      "research_collection_claims": 0,
+      "research_collection_task_receipts": 0,
+      "research_connector_health_receipts": 0,
+      "research_coverage_changes": 0,
+      "satellite_signal_policy_drafts": 0,
+      "satellite_signal_policies": 0,
+      "satellite_signal_snapshots": 0,
+      "plan_execution_links": 0,
+      "external_subscriptions": 0,
+      "weekly_plan_skip_drafts": 0,
+      "instruments": 0,
+      "external_subscription_confirmations": 0,
+      "external_subscription_drafts": 0,
+      "transaction_drafts": 0,
+      "subscription_confirmation_transaction_links": 0,
+      "weekly_plan_partial_close_drafts": 0,
+      "weekly_report_drafts": 0,
+      "weekly_reports": 0,
+      "investment_plans": 0,
+      "weekly_no_investment_drafts": 0,
+      "scheduler_control": 0,
+      "scheduler_change_drafts": 0,
+      "scheduler_worker_snapshots": 0,
+      "execution_constraints": 0,
+      "execution_constraint_drafts": 0,
+      "execution_quota_observations": 0,
+      "research_case_versions": 0,
+      "research_decision_journal": 0,
+      "research_benchmark_mappings": 0,
+      "research_benchmark_runs": 0,
+      "research_thesis_actions": 0,
+      "research_thesis_observations": 0,
+      "holding_review_snapshots": 0,
+      "holding_review_tasks": 0,
+      "holding_review_events": 0,
+      "peer_research_runs": 0,
+      "research_update_runs": 0,
+      "research_update_evidence": 0,
+      "shadow_models": 0,
+      "shadow_records": 0
+    },
+    "original_packet_database_hashes_unchanged": true,
+    "network_collection": false,
+    "production_connected": false,
+    "port": 63884,
+    "result_sha256": "6078156bdc897adeba5dbbbb5b982e6d0b9127c3a931e575cc3bc095e27ec2b7",
+    "entry": "investor_core.api.medical_shadow:create_app",
+    "command": "investor-assistant --core-url <isolated-loopback-url> medical-shadow",
+    "observation": "2026-10-03T12:00:00+08:00",
+    "nav_cutoff": "2026-09-30",
+    "model_version": "r12-medical-v2",
+    "adapter_version": "003096-reviewed-originals-h-2",
+    "tests": {
+      "new_wrapper": 8,
+      "archive_regression": 14,
+      "daily_regression": 19,
+      "ruff": "PASS",
+      "mypy_modules": 2
+    },
+    "saved_result_fallback": false,
+    "production_deployed": false
+  },
+  "r12_source_release_047": {
+    "scope_review": "PASS: approved R1.2 + original adapter + isolated query only; R1.1/A500/C/ledger diff empty",
+    "review_fix": "non-object JSON packet returns explicit BLOCKED; regression covered",
+    "clean_install": {
+      "version": "0.47.0",
+      "non_editable": true,
+      "originals": 20,
+      "relative_paths": true,
+      "arbitrary_cwd": true,
+      "command_http_pass": true,
+      "repeat_equal": true,
+      "missing_original_blocked": true,
+      "saved_fallback": false,
+      "rows": [
+        {
+          "code": "003096",
+          "redemption_arrival": {
+            "state": "UNKNOWN",
+            "max_trading_days": null,
+            "rule": null,
+            "reasons": [
+              "APPLICABLE_ARRIVAL_RULE_MISSING",
+              "ARRIVAL_BOUND_UNKNOWN"
+            ],
+            "overall_execution_pass": false
+          },
+          "filter_result": "UNKNOWN",
+          "gaps": [
+            "BENCHMARK_MAPPING_INCOMPLETE"
+          ],
+          "exclusions": [],
+          "metrics": {
+            "return_pct": "-3.652051770843784488813083174475950",
+            "max_drawdown_pct": "29.09226932668329177057356608478824",
+            "volatility_pct": "31.84595433899157027628217828596002",
+            "standard_external_cost_pct": "0.2500"
+          },
+          "dimension_scores": {
+            "return": "40.86987057289053877796729206381012",
+            "risk": "38.27502946671297748239932559285250",
+            "management": "41.64383561643835616438356164383561",
+            "cost": "87.5000"
+          },
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "total_score": null,
+          "rank": null,
+          "stock_range": [
+            "60",
+            "95"
+          ],
+          "warnings": [
+            "BOUNDED_OFFICIAL_NOTICE_DIRECTORY_NOT_ABSOLUTE_COMPLETENESS",
+            "CHANNEL_CAP_IS_NOT_ACCOUNT_AVAILABLE_CAPACITY",
+            "CSI_FACTSHEET_REVISION_SEPARATE_FROM_OLD_AUGUST_ARCHIVE",
+            "EXECUTION_UNKNOWN",
+            "H11009_HISTORICAL_METHOD_VERSION_COVERAGE_UNVERIFIED",
+            "INDEPENDENT_VERIFICATION_REQUIRED",
+            "MANAGER_ONLY_NO_INDEPENDENT_UPSTREAM",
+            "MAPPING_DRAFT",
+            "PUBLICATION_UNKNOWN_FOR_DYNAMIC_NAV_AND_DIRECTORY",
+            "REDEMPTION_ARRIVAL_UNKNOWN"
+          ]
+        },
+        {
+          "code": "009163",
+          "redemption_arrival": {
+            "state": "UNKNOWN",
+            "max_trading_days": null,
+            "rule": null,
+            "reasons": [
+              "APPLICABLE_ARRIVAL_RULE_MISSING",
+              "ARRIVAL_BOUND_UNKNOWN"
+            ],
+            "overall_execution_pass": false
+          },
+          "filter_result": "UNKNOWN",
+          "gaps": [
+            "BENCHMARK_MAPPING_INCOMPLETE",
+            "DIVIDEND_COVERAGE_INCOMPLETE",
+            "OUTSIDE_REVIEWED_ORIGINAL_ADAPTER",
+            "REQUIRED_SCORE_DIMENSION_MISSING",
+            "SOURCE_MISSING",
+            "TOTAL_FUND_ASSETS_MISSING",
+            "redemption_open:MISSING",
+            "subscription_open:MISSING"
+          ],
+          "exclusions": [],
+          "metrics": {},
+          "dimension_scores": {},
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "total_score": null,
+          "rank": null,
+          "stock_range": [
+            "80",
+            "95"
+          ],
+          "warnings": [
+            "EXECUTION_UNKNOWN",
+            "INDEPENDENT_VERIFICATION_REQUIRED",
+            "MAPPING_DRAFT",
+            "REDEMPTION_ARRIVAL_UNKNOWN"
+          ]
+        }
+      ],
+      "observation": "2026-10-03T12:00:00+08:00",
+      "nav_cutoff": "2026-09-30"
+    },
+    "package_checks": [
+      {
+        "package": "value_dca_agent-0.47.0-py3-none-any.whl",
+        "sha256": "63c0071639d7cfac1b4f285e264a8806f317e46bc78ce96498dedb1d73391715",
+        "entries": 113,
+        "private_original_matches": 0
+      },
+      {
+        "package": "value_dca_agent-0.47.0.tar.gz",
+        "sha256": "51f25c94d824936efd0acfecea2cbd6fca409922c4b625522b6dcbd137f188bd",
+        "entries": 395,
+        "private_original_matches": 0
+      }
+    ],
+    "source_release": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tag/v0.47.0",
+    "ci": "See linked promotion PRs and source release verification; not claimed before success",
+    "production_deployed": false
+  }
+}

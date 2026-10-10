@@ -528,6 +528,8 @@ def main() -> None:
     plan.add_argument("--period-end")
     plan.add_argument("--channel")
     sub.add_parser("system").add_argument("--since")
+    medical = sub.add_parser("medical-shadow", aliases=["查看医疗影子研究"])
+    medical.add_argument("--details", action="store_true")
     sub.add_parser("benchmark").add_argument("--code", required=True)
     sub.add_parser("case").add_argument("--code", required=True)
     sub.add_parser("thesis").add_argument("--code", required=True)
@@ -559,7 +561,12 @@ def main() -> None:
     args = parser.parse_args()
     client = DailyClient(args.core_url, portfolio_id=args.portfolio, account_id=args.account)
     try:
-        if args.command == "research-update-check":
+        if args.command in {"medical-shadow", "查看医疗影子研究"}:
+            result = client.get(
+                "/v1/medical-shadow-research",
+                view="DETAIL" if args.details else "SUMMARY",
+            )
+        elif args.command == "research-update-check":
             result = client.get("/v1/research-update-check")
         elif args.command == "research-update-last":
             result = client.get("/v1/research-updates/latest")
