@@ -1606,3 +1606,10 @@ H未知公开时点与旧原件获取时点不再被强制伪填，K/F仍阻断�
 完成标准：最终Ubuntu/Windows CI通过后才逐级合并；develop/release/main/Tag树一致，发布产物/代码一致。最终执行结果以[本版本Release门禁及树核验](https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tag/v0.47.0)为证据；未发布时仍为发布进行中，不能只凭本行版本号判断完成。
 
 交付边界：工程入口完成≠完整评分完成≠生产部署。003096历史方法范围及009163自身必需证据缺口保留；两只总分空、不排名、执行未知/替换阻断、无F/E资格。复现说明与详细记录已写原CODEX_DAILY_OPERATIONS、MEDICAL_D_ONCE_FEASIBILITY与原证据JSON。无新报告体系。
+
+
+#### v0.47.0收尾实证（2026-10-10）
+
+PR #227/#228/#229均在Ubuntu763通过/4跳过、Windows767通过及静态门禁成功后逐级合并。既有发布工作流38042943523成功创建v0.47.0；develop/release/main/Tag树一致，下载394文件按原始Git blob逐一一致，正式源码包干净安装及真实隔离命令再次通过。main自动CI最终结果：38044169645成功（Ubuntu 763通过/4跳过，Windows 767通过，Ruff/mypy及Windows解析通过）。最终详情追加原MEDICAL_D_ONCE_FEASIBILITY与MEDICAL_D_ONCE_EVIDENCE.json，以及[Release核验说明](https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tag/v0.47.0)。
+
+工程入口与源码发布完成；真实完整评分仍受原证据缺口阻断；生产部署/正式前瞻未做，不把候选发布当作模型完整可用。无新取证、模型范围扩大或投资事实变更。最终核验记录在feature正常提交推送，不改历史Tag、不单独发文档版本；本次收尾结束即停止。
