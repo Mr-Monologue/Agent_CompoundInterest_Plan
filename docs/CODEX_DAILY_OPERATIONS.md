@@ -99,3 +99,48 @@ D1使用补充：`holdings-review` 默认逐基金一行，`holdings-review --de
 
 
 v0.44.2：研究入口同步显示当前归档证据判断及精确分红适用区间。历史研究查询保留当时原文，明确标为非当前结论，另列最新判断；不将旧UNRESOLVED状态套给当前研究。非跨争议日窗口不受本条影响，其他独立警告保留；查询不采集、不写入、不批准。
+
+
+## R1.2医疗H研究隔离候选（未部署）
+
+自然语言“查看医疗影子研究”映射到 `investor-assistant --core-url <临时回环地址> medical-shadow`，也支持中文同名子命令；`--details`展开来源。不得将未部署命令默认指向生产8710后宣称可用。Codex保管地址和原件路径，不要求用户复制技术标识。
+
+隔离运行准备一个本地JSON包：`base_input`为既有真实R1.2输入，`original_paths`为已审阅manifest的原件key到路径映射（相对路径以包所在目录为准）。不将包、原件或私人路径提交Git。设置`INVESTOR_MEDICAL_H_PACKET`为该包的绝对路径，然后在临时回环端口启动：
+
+```powershell
+python -m uvicorn investor_core.api.medical_shadow:create_app --factory --host 127.0.0.1 --port <临时端口>
+investor-assistant --core-url http://127.0.0.1:<临时端口> medical-shadow
+investor-assistant --core-url http://127.0.0.1:<临时端口> medical-shadow --details
+```
+
+GET `/v1/medical-shadow-research?view=SUMMARY|DETAIL`只读。独立工厂不加载生产配置、不创建业务服务、不连接数据库，无写入路由；用完停止临时进程。无外部采集，不保存新观察、不触发前瞻。不是常驻服务，也不是生产安装。
+
+本次重新校验本地原件并重算历史H观察，不将查询日期当净值日期；来源/指纹不可用则明确BLOCKED，不退回历史保存结果。保留003096历史方法范围缺口与009163自身缺口，缺失不填零、不排名。数字及中文展示由Core模块统一生成，客户端不计算。详细日期/适用范围与资料指纹按需展开。真实使用证据和剩余限制仍维护原MEDICAL_D_ONCE_FEASIBILITY报告。
+
+
+### v0.47.0干净环境安装与路径契约（源码发布，不部署生产）
+
+使用Python 3.11及uv，从v0.47.0源码归档解压到任意目录，执行：
+
+```powershell
+uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file requirements.txt
+uv build --wheel
+uv venv .isolated-env --python 3.11
+uv pip sync requirements.txt --python .isolated-env/Scripts/python.exe
+uv pip install --no-deps --python .isolated-env/Scripts/python.exe dist/value_dca_agent-0.47.0-py3-none-any.whl
+```
+
+Linux对应解释器/命令位于`.isolated-env/bin/`。也可将构建后的wheel和锁定依赖清单送入独立环境；不是editable安装，不要求开发checkout在sys.path。
+
+原件由操作者单独提供，发布包不含私有原件或完整真实输入包。沿用已有核验输入，不手工补造必需字段。目录示例为`<研究目录>/packet.json`及`<研究目录>/originals/<原件key>`。packet根必须是对象，包含`base_input`（既有真实R1.2输入对象）和`original_paths`（原件key到路径的对象）；原件key与打包的`r12_003096_archive.json`中documents逐项对应，SHA必须一致。相对路径一律按packet所在目录解析，与启动目录无关；可整体搬迁。没有真实输入/原件时只能验证明确阻断，不宣称真实研究重算。
+
+启动前显式配置，不修改生产.env；以下端口仅作隔离示例，使用前确认空闲：
+
+```powershell
+$env:INVESTOR_MEDICAL_H_PACKET = (Resolve-Path '<研究目录>/packet.json').Path
+.isolated-env/Scripts/python.exe -m uvicorn investor_core.api.medical_shadow:create_app --factory --host 127.0.0.1 --port 18747
+# 在第二终端运行，使用同一隔离环境：
+.isolated-env/Scripts/investor-assistant.exe --core-url http://127.0.0.1:18747 medical-shadow
+```
+
+Linux使用`export INVESTOR_MEDICAL_H_PACKET=/absolute/path/packet.json`及bin目录命令。默认未配置、配置损坏、原件缺失/不匹配分别阻断，不尝试开发机目录、不下载原件、不读取保存结果冒充重算。完成后停止临时进程；不注册服务或调度。

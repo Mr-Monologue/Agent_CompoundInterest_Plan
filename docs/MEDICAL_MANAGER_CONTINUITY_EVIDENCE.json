@@ -1,0 +1,135 @@
+{
+  "observation_date": "2026-10-10",
+  "evidence_retrieved_on": "2026-10-10",
+  "purpose": "ISOLATED_MANAGEMENT_COMPONENT_NOT_FORMAL_MODEL_RUN",
+  "calculation": {
+    "formula": "100 * clamp((days / 365 * 12) / 36, 0, 1)",
+    "code": "r11_inputs.up / r11_rules.rules(MEDICAL).management_scale",
+    "weight_unchanged": "0.20"
+  },
+  "rows": [
+    {
+      "code": "003096",
+      "current_team": [
+        "葛兰",
+        "赵磊"
+      ],
+      "manager_team_since": "2025-07-04",
+      "announcement_date": "2025-07-04",
+      "effective_date": "2025-07-04",
+      "calendar_days": 463,
+      "model_months": "15.22191780821917808219178082191781",
+      "management_score": "42.28310502283105022831050228310503",
+      "status": "CALCULABLE_BOUNDED_OFFICIAL_EVIDENCE",
+      "coverage": "official product 391 temporary announcements 2025-07-04 through 2026-10-10, one page total=4; known change included, none later; 2026H1 report and September prospectus agree",
+      "limitations": [
+        "single manager upstream",
+        "bounded directory check, not absolute proof no omissions",
+        "retrieved today, no retroactive K/F known_at claim"
+      ],
+      "total_score": null,
+      "rank": null
+    },
+    {
+      "code": "009163",
+      "current_team": [
+        "吴兴武"
+      ],
+      "manager_team_since": null,
+      "last_documented_team_change": "2018-11-05",
+      "last_documented_change": "邱璟旻离任；吴兴武个人任职起点2018-10-16不能替代团队起点",
+      "management_score": null,
+      "status": "COVERAGE_INSUFFICIENT",
+      "coverage": "July 2026 prospectus PDF page 14 lists current and previous managers; archived 2026H1/current product references agree on Wu; subsequent official directory fetch failed HTTP405",
+      "limitations": [
+        "no verified change-directory coverage through observation date",
+        "GF interim refetch HTTP405; prior report kept as historical reference"
+      ],
+      "total_score": null,
+      "rank": null
+    }
+  ],
+  "sources": [
+    {
+      "key": "gf-js",
+      "url": "https://www.gffunds.com.cn/images/page_cppd.js?v=20260123-1",
+      "error": "HTTP Error 405: Not Allowed"
+    },
+    {
+      "key": "zo-js",
+      "url": "https://www.zofund.com/ws6/entry.js",
+      "sha256": "c7a4213f4f3dfaba9da5a0fc044ef759c9f3243c72e31c4e5d5c7c27c67849f9",
+      "retrieved_at": "2026-10-10T02:28:23.981724+00:00",
+      "bytes": 405744
+    },
+    {
+      "key": "zo-change",
+      "url": "https://www.zofund.com/upload2010/2025/07/04/095809333_390_38a6eadf-4480-3c7e-9b10-dcb1d1599082.pdf",
+      "sha256": "2a1d433b7dc207804e6c18f15556d7d212357358f1362245cef1d87f5fa3bda9",
+      "retrieved_at": "2026-10-10T02:28:24.210905+00:00",
+      "bytes": 45846
+    },
+    {
+      "key": "zo-list-script",
+      "url": "https://www.zofund.com/ws6/FundBaseInfoAnnouncementCom.v.js",
+      "sha256": "9258a841d397c65adff42a2bd293c4644a84f3068db5366b7d45001316e05225",
+      "retrieved_at": "2026-10-10T02:29:36.624208+00:00",
+      "bytes": 4004
+    },
+    {
+      "key": "zo-list-component",
+      "url": "https://www.zofund.com/ws6/FundBaseInfoAnnouncementCom.js",
+      "sha256": "b294eb6b7550a980084a528c2e3a5740312039c199f74e20a3555912cf945f8c",
+      "retrieved_at": "2026-10-10T02:29:36.816496+00:00",
+      "bytes": 145
+    },
+    {
+      "key": "zo-directory",
+      "url": "https://www.zofund.com/ws-business-server/fund/productAnn?productId=391&pageNum=1&pageSize=500&type=2&startDate=2025-07-04&endDate=2026-10-10&keyword=&selectTime=&merchantId=0&siteno=main",
+      "sha256": "7db23b2624cbaa0ddc50e48efdab3aa334b81cb81e1561f1c47e525b9dfc0090",
+      "retrieved_at": "2026-10-10T02:30:28.913470+00:00",
+      "bytes": 2101
+    },
+    {
+      "key": "gf-directory",
+      "url": "https://www.gffunds.com.cn/was5/web/search?channelid=276901&searchword=%E5%8C%BB%E7%96%97%E4%BF%9D%E5%81%A5%E8%82%A1%E7%A5%A8+%E5%9F%BA%E9%87%91%E7%BB%8F%E7%90%86%E5%8F%98%E6%9B%B4&keyword=%E5%8C%BB%E7%96%97%E4%BF%9D%E5%81%A5%E8%82%A1%E7%A5%A8+%E5%9F%BA%E9%87%91%E7%BB%8F%E7%90%86%E5%8F%98%E6%9B%B4&orderby=-DOCRELTIME&page=1&perpage=100&templet=informationSearch.jsp",
+      "error": "HTTP Error 405: Not Allowed"
+    },
+    {
+      "key": "zo-interim",
+      "url": "https://www.zofund.com/2026/wsnotice/20260829/673593c1c76447269a9c6e485b35e04c.pdf",
+      "sha256": "b2169cc248bb7a053087d9c1dd2763b834a9bc235ea428d19260ad01daaa4757",
+      "retrieved_at": "2026-10-10T02:31:31.790596+00:00",
+      "bytes": 608435
+    },
+    {
+      "key": "gf-interim",
+      "url": "https://www.gffunds.com.cn/jjgg/dqgg/202608/P020260831324422388065.pdf",
+      "error": "HTTP Error 405: Not Allowed"
+    }
+  ],
+  "reused_files": [
+    {
+      "name": "zo-20260921.pdf",
+      "sha256": "b20fef1df703cd944aa6d90b8371ed47228778e1bba6a270963bf0b31b954fb2",
+      "prior_archive": "redemption-bound-20261010/verification.json"
+    },
+    {
+      "name": "gf-20260727.pdf",
+      "sha256": "4da6250478cf02276ad48d73aa9a062b5e63e84e619d47eb0462b5bcadfe0fe3",
+      "prior_archive": "redemption-bound-20261010/verification.json"
+    }
+  ],
+  "production_accessed": false,
+  "code_changed": false,
+  "weights_changed": false,
+  "extracted_pages": {
+    "gf-page-14.txt": "4dedf071c4fbaca527a22f65d2aeca721741a75efc8a1bcb10399eb9bd312bd4",
+    "zo-change-page-1.txt": "31288d7ff8c68b812960a4b86816f01ad92199447b0a136bc060fb326d66640b",
+    "zo-interim-page-10.txt": "3496478f2cb6e1d31cf84bf0d491f5bc89cd295bd4db79292aee4b683591d769",
+    "zo-interim-page-9.txt": "d069b4327505a2f1110dcb22ee5cdd69e7406bb15bc8dd38322e847d300d1077",
+    "zo-page-12.txt": "e17fde1d6b65bda4a4227c5acbdb3c31d624c0a75681e589f08b382a7000e99a",
+    "zo-page-15.txt": "d0eb78e5d52842ff674a1d98f67d8cdb3ebb3e605ee186874825dcf816f1de75",
+    "zo-page-16.txt": "062d162078a4a6ff5f9c29ef41b38fee9b71f81d00682f8f7c41fb7a856f89e6"
+  }
+}

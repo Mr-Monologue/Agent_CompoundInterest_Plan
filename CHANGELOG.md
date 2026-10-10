@@ -1,3 +1,10 @@
+## v0.47.0 — R1.2 medical limited isolated research
+
+- Release the approved medical-only R1.2 scoring/execution separation, fixed-original H adapter and read-only isolated HTTP/daily command. R1.1, A500 and C remain unchanged.
+- Explicit local archive configuration; missing/invalid originals block recalculation. No collector, database writes, saved-result fallback or forward registration.
+- Real 003096 component results remain available, but full scoring is blocked by historical H11009 method coverage. 009163 retains its own evidence gaps; no ranking or replacement conclusion.
+- Source release only, not production deployment; no migration, mapping/thesis approval or investment/ledger change. Private original bytes/input packets are excluded.
+
 ## v0.46.0 — source release candidate
 
 - Preserve complete original bytes and retrieval/publication/vintage metadata in existing source facts; display excerpts do not replace originals. No database migration.
