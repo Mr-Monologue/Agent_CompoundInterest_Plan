@@ -111,7 +111,15 @@ def _calculate(
         raise ValueError("R1.2 is restricted to the medical cohort")
     ctx = data.context
     points_required = params["return_window"] + 1
-    output = base_output(ctx, data, data.cohort)
+    known_sources = {
+        k: s
+        for k, s in ctx.sources.items()
+        if s.published_at is not None and s.first_retrieved_at is not None
+    }
+    # Presentation-only provenance list; calculation still uses the unchanged full context.
+    known_context = ctx.model_copy(update={"sources": known_sources})
+    output = base_output(known_context, data, data.cohort)
+    output["unknown_knowledge_times"] = sorted(set(ctx.sources) - set(known_sources))
     if medical_r12:
         from investor_core.r12_medical import COMPUTATION_VERSION as R12_COMPUTATION
         from investor_core.r12_medical import DEFINITION as R12_DEFINITION
@@ -131,8 +139,7 @@ def _calculate(
         _, days, series_gaps = product.nav.window(
             ctx, product.calendar, points_required, 2, "NAV_CNY_NET_INTERNAL_FEES"
         )
-        gaps += [product.code + ":" + g for g in missing]
-        own_gaps[product.code] = series_gaps
+        own_gaps[product.code] = sorted(set(missing + series_gaps))
         if days:
             endpoints.append(days[-1])
     common = sorted(set.intersection(*grids)) if grids else []

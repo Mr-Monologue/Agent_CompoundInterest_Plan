@@ -1,0 +1,456 @@
+{
+  "version": "003096-reviewed-originals-h-1",
+  "as_of": "2026-10-03T12:00:00+08:00",
+  "documents": {
+    "zo-nav": {
+      "sha256": "e9cea387d8e9987bafe1e4605593c375d6aecc6c0f6632f21ac89da50a094f4b",
+      "url": "https://www.zofund.com/ws-business-server/fund/getFundNavList?productCode=003096&productId=391&merchantId=0&siteno=main&startDate=2022-12-30&endDate=2026-10-09",
+      "retrieved_at": "2026-10-09T09:53:11.317315+00:00",
+      "published_date": null,
+      "retrieval_note": "original capture",
+      "publication_precision": "UNKNOWN"
+    },
+    "zo-legal": {
+      "sha256": "b20fef1df703cd944aa6d90b8371ed47228778e1bba6a270963bf0b31b954fb2",
+      "url": "https://www.zofund.com/2026/wsnotice/20260921/7dda89d63a114540ac1e0826aaebd57d.pdf",
+      "retrieved_at": "2026-09-23T10:31:12.795857Z",
+      "published_date": null,
+      "retrieval_note": "earliest recovered Core archive with matching whole-original SHA256; later 2026-09-29 duplicate retained separately",
+      "publication_note": "cover states September 2026 only; URL date and benchmark effective date are not publication proof",
+      "publication_precision": "UNKNOWN"
+    },
+    "zo-interim": {
+      "sha256": "b2169cc248bb7a053087d9c1dd2763b834a9bc235ea428d19260ad01daaa4757",
+      "url": "https://www.zofund.com/2026/wsnotice/20260829/673593c1c76447269a9c6e485b35e04c.pdf",
+      "retrieved_at": "2026-10-10T02:31:31.790596+00:00",
+      "published_date": "2026-08-29",
+      "retrieval_note": "original capture",
+      "publication_precision": "DATE"
+    },
+    "zo-change": {
+      "sha256": "2a1d433b7dc207804e6c18f15556d7d212357358f1362245cef1d87f5fa3bda9",
+      "url": "https://www.zofund.com/upload2010/2025/07/04/095809333_390_38a6eadf-4480-3c7e-9b10-dcb1d1599082.pdf",
+      "retrieved_at": "2026-10-10T02:28:24.210905+00:00",
+      "published_date": "2025-07-04",
+      "retrieval_note": "original capture",
+      "publication_precision": "DATE"
+    },
+    "zo-directory": {
+      "sha256": "7db23b2624cbaa0ddc50e48efdab3aa334b81cb81e1561f1c47e525b9dfc0090",
+      "url": "https://www.zofund.com/ws-business-server/fund/productAnn?productId=391&pageNum=1&pageSize=500&type=2&startDate=2025-07-04&endDate=2026-10-10&keyword=&selectTime=&merchantId=0&siteno=main",
+      "retrieved_at": "2026-10-10T02:30:28.913470+00:00",
+      "published_date": null,
+      "retrieval_note": "original capture",
+      "publication_precision": "UNKNOWN"
+    },
+    "zo-annual2025": {
+      "sha256": "dc55bbdd4ae903fdaea7fe25ec2d3896100474b7d9c5742890e15505118950fd",
+      "url": "https://www.zofund.com/tempdir/minisite/20260330/483cbb47-60a5-4d37-a608-8238e4586d10_1774877559058.pdf",
+      "retrieved_at": "2026-10-10T02:47:28.270999+00:00",
+      "published_date": "2026-03-31",
+      "retrieval_note": "original capture",
+      "publication_precision": "DATE"
+    },
+    "sse2025": {
+      "sha256": "beb0957353f818f551792774f7a21816714dee7bc7be8da388de482248734378",
+      "url": "https://www.sse.com.cn/disclosure/dealinstruc/closed/c/c_20241223_10767110.shtml",
+      "retrieved_at": "2026-10-10T02:46:14.099781+00:00",
+      "published_date": "2024-12-23",
+      "retrieval_note": "original capture",
+      "publication_precision": "DATE"
+    },
+    "sse2026": {
+      "sha256": "4e260b815ce1309175ed994e6490a4ccd51b998a5f92bcdc41cec00fc6823dc7",
+      "url": "https://www.sse.com.cn/disclosure/announcement/general/c/c_20251222_10802507.shtml",
+      "retrieved_at": "2026-10-10T02:46:14.555513+00:00",
+      "published_date": "2025-12-22",
+      "retrieval_note": "original capture",
+      "publication_precision": "DATE"
+    },
+    "szse2025": {
+      "sha256": "1c89289137907b6afd00c27059919dedcb8414f4402a38b995ff9eccd465874e",
+      "url": "https://www.szse.cn/disclosure/notice/t20241223_611283.html",
+      "retrieved_at": "2026-10-10T02:47:26.732086+00:00",
+      "published_date": "2024-12-23",
+      "retrieval_note": "original capture",
+      "publication_precision": "DATE"
+    },
+    "szse2026": {
+      "sha256": "1656d8708d5faed33c7588538639d96128f39fdface02cfa6eb66d796c40f14e",
+      "url": "https://www.szse.cn/disclosure/notice/general/t20251222_618087.html",
+      "retrieved_at": "2026-10-10T02:47:26.730080+00:00",
+      "published_date": "2025-12-22",
+      "retrieval_note": "original capture",
+      "publication_precision": "DATE"
+    },
+    "H11009factsheet": {
+      "sha256": "edb290a9003ec989324b7102f765de96cbf3a882ba097b7a7c8888e70dd7673e",
+      "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/H11009factsheet.pdf",
+      "retrieved_at": "2026-10-10T08:06:36.626551+00:00",
+      "published_date": null,
+      "data_date": "2026-09-30",
+      "previous_sha256": "fd324dc5dfcb65c72ebcd89fcdfbd1ea55daa83f815f3055fc093aec5baed430",
+      "same_original": false,
+      "publication_precision": "UNKNOWN"
+    },
+    "000933factsheet": {
+      "sha256": "e1884e1f19f42fe665518278975e5c31c3422068e9713b9620d5dbe5f068dbfb",
+      "url": "https://oss-ch.csindex.com.cn/static/html/csindex/public/uploads/indices/detail/files/zh_CN/000933factsheet.pdf",
+      "retrieved_at": "2026-10-10T08:06:45.604529+00:00",
+      "published_date": null,
+      "data_date": "2026-09-30",
+      "previous_sha256": "542e3b4b386e802203dfa9b74194f77f59246462d32b9acca8d03060e8af0938",
+      "same_original": false,
+      "publication_precision": "UNKNOWN"
+    },
+    "benchmark-change": {
+      "sha256": "3b96a952be26493366647dd258a091f850d3ae40505360cc77c880ec6c3125aa",
+      "url": "https://www.zofund.com/2026/wsnotice/20260821/26c5f92c40f44e4cb0d54b3c950c693c.pdf",
+      "retrieved_at": "2026-10-10T08:06:45.974546+00:00",
+      "published_date": "2026-08-21",
+      "data_date": "2026-08-21",
+      "previous_sha256": "3b96a952be26493366647dd258a091f850d3ae40505360cc77c880ec6c3125aa",
+      "same_original": true,
+      "publication_precision": "DATE"
+    }
+  },
+  "claims": {
+    "currency": {
+      "value": "CNY",
+      "documents": [
+        "zo-interim"
+      ],
+      "locator": "PDF p15 C class NAV explicitly RMB",
+      "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "share_class": {
+      "value": "C",
+      "documents": [
+        "zo-legal",
+        "zo-nav"
+      ],
+      "locator": "PDF p29 separate A/C classes; NAV JSON /data/*/productCode=003096 and productName=C",
+      "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "product_type": {
+      "value": "ACTIVE_MEDICAL",
+      "documents": [
+        "zo-legal"
+      ],
+      "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+      "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "same_class_since": {
+      "value": "2022-12-30",
+      "documents": [
+        "zo-nav"
+      ],
+      "locator": "JSON first retained exact 003096 C NAV endpoint; conservative evidenced history start, NOT fund inception",
+      "effective_scope": "verified same-class retained series 2022-12-30..2026-09-30; satisfies >=365 days, not asserted original founding date",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "stock_min_pct": {
+      "value": "60",
+      "documents": [
+        "zo-legal"
+      ],
+      "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+      "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "stock_max_pct": {
+      "value": "95",
+      "documents": [
+        "zo-legal"
+      ],
+      "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+      "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "medical_non_cash_min_pct": {
+      "value": "80",
+      "documents": [
+        "zo-legal"
+      ],
+      "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+      "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "mainland_only": {
+      "value": true,
+      "documents": [
+        "zo-legal"
+      ],
+      "locator": "PDF p41 investment objective and permitted domestic instruments; stock 60-95%, medical >=80% noncash; active allocation",
+      "effective_scope": "current prospectus 2026-09-21; founding date is separate historical fact",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "fund_total_assets_cny": {
+      "value": "24770379722.59",
+      "documents": [
+        "zo-interim"
+      ],
+      "locator": "PDF p15 net assets total (all share classes), report cutoff",
+      "effective_scope": "2026-06-30 snapshot; 95 days old at H cutoff",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "assets_report_date": {
+      "value": "2026-06-30",
+      "documents": [
+        "zo-interim"
+      ],
+      "locator": "PDF p15 net assets total (all share classes), report cutoff",
+      "effective_scope": "2026-06-30 snapshot; 95 days old at H cutoff",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "manager_team_since": {
+      "value": "2025-07-04",
+      "documents": [
+        "zo-change",
+        "zo-interim",
+        "zo-directory"
+      ],
+      "locator": "PDF change p1; interim pp9-10; JSON /data/list bounded complete page",
+      "effective_scope": "team Ge Lan + Zhao Lei; effective 2025-07-04; bounded directory through 2026-10-10; no absolute completeness claim",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "fees": {
+      "value": {
+        "source": "zo-archive",
+        "effective_from": "2026-09-21",
+        "subscription_method": "GROSS_TIMES_RATE",
+        "subscription_value": "0",
+        "redemption_rate_pct_at_365_days": "0.25",
+        "standard_10000_365_day_scenario_supported": true
+      },
+      "documents": [
+        "zo-legal"
+      ],
+      "locator": "PDF pp34-35 C class; 365 <= N < 730; holding days from registration",
+      "effective_scope": "standard RMB10000/365 registered days; no channel discount; not retrospective fee override",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "subscription_confirmation_max_trading_days": {
+      "value": 1,
+      "documents": [
+        "zo-legal"
+      ],
+      "locator": "PDF pp8,31 normal valid application T+1 confirmation (T+2 query is different)",
+      "effective_scope": "normal fund registration, valid applications before cutoff; exceptions retained; not guaranteed account arrival",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "dividend_coverage_from": {
+      "value": "2025-01-01",
+      "documents": [
+        "zo-annual2025",
+        "zo-interim",
+        "zo-directory"
+      ],
+      "locator": "annual p10 prior three years; interim p13; directory /data/list 2025-07-04..2026-10-10",
+      "effective_scope": "bounded manager-only coverage; historical pre-window disputes excluded, not independent corroboration",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "dividend_coverage_to": {
+      "value": "2026-09-30",
+      "documents": [
+        "zo-annual2025",
+        "zo-interim",
+        "zo-directory"
+      ],
+      "locator": "annual p10 prior three years; interim p13; directory /data/list 2025-07-04..2026-10-10",
+      "effective_scope": "bounded manager-only coverage; historical pre-window disputes excluded, not independent corroboration",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "dividends": {
+      "value": [],
+      "documents": [
+        "zo-annual2025",
+        "zo-interim",
+        "zo-directory"
+      ],
+      "locator": "annual p10 prior three years; interim p13; directory /data/list 2025-07-04..2026-10-10",
+      "effective_scope": "bounded manager-only coverage; historical pre-window disputes excluded, not independent corroboration",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "benchmark_identity": {
+      "value": "CSI:000933+CSI:H11009;0.65/0.35 through 2026-09-20;0.90/0.10 from 2026-09-21",
+      "documents": [
+        "benchmark-change",
+        "000933factsheet",
+        "H11009factsheet",
+        "zo-interim",
+        "zo-legal"
+      ],
+      "locator": "benchmark_scope: change pp1,15; factsheets pp1-2; interim; prospectus p50",
+      "effective_scope": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "benchmark_currency": {
+      "value": "CNY",
+      "documents": [
+        "benchmark-change",
+        "000933factsheet",
+        "H11009factsheet",
+        "zo-interim",
+        "zo-legal"
+      ],
+      "locator": "benchmark_scope: change pp1,15; factsheets pp1-2; interim; prospectus p50",
+      "effective_scope": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "benchmark_effective_from": {
+      "value": "2025-09-15",
+      "documents": [
+        "benchmark-change",
+        "000933factsheet",
+        "H11009factsheet",
+        "zo-interim",
+        "zo-legal"
+      ],
+      "locator": "benchmark_scope: change pp1,15; factsheets pp1-2; interim; prospectus p50",
+      "effective_scope": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "benchmark_effective_to": {
+      "value": "2026-10-03",
+      "documents": [
+        "benchmark-change",
+        "000933factsheet",
+        "H11009factsheet",
+        "zo-interim",
+        "zo-legal"
+      ],
+      "locator": "benchmark_scope: change pp1,15; factsheets pp1-2; interim; prospectus p50",
+      "effective_scope": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    },
+    "legally_operating": {
+      "value": true,
+      "documents": [
+        "zo-legal",
+        "zo-nav",
+        "zo-directory"
+      ],
+      "locator": "PDF pp1-2 current registered fund, p29 contract; exact C NAV through 2026-09-30; bounded announcement directory",
+      "effective_scope": "positive current prospectus and observed NAV within H cutoff; bounded public records, not proof of all possible omissions",
+      "extraction": "REVIEWED_FIXED_ORIGINAL_CLAUSE"
+    }
+  },
+  "calendar": {
+    "from": "2025-01-01",
+    "to": "2026-10-03",
+    "documents": [
+      "sse2025",
+      "sse2026",
+      "szse2025",
+      "szse2026",
+      "zo-legal"
+    ],
+    "locator": "exchange annual holiday notices; prospectus pp8,30 normal SSE/SZSE open days; exceptions remain a separate qualification",
+    "closed_ranges": [
+      [
+        "2025-01-01",
+        "2025-01-01"
+      ],
+      [
+        "2025-01-28",
+        "2025-02-04"
+      ],
+      [
+        "2025-04-04",
+        "2025-04-06"
+      ],
+      [
+        "2025-05-01",
+        "2025-05-05"
+      ],
+      [
+        "2025-05-31",
+        "2025-06-02"
+      ],
+      [
+        "2025-10-01",
+        "2025-10-08"
+      ],
+      [
+        "2026-01-01",
+        "2026-01-03"
+      ],
+      [
+        "2026-02-15",
+        "2026-02-23"
+      ],
+      [
+        "2026-04-04",
+        "2026-04-06"
+      ],
+      [
+        "2026-05-01",
+        "2026-05-05"
+      ],
+      [
+        "2026-06-19",
+        "2026-06-21"
+      ],
+      [
+        "2026-09-25",
+        "2026-09-27"
+      ],
+      [
+        "2026-10-01",
+        "2026-10-07"
+      ]
+    ]
+  },
+  "limitations": [
+    "PUBLICATION_UNKNOWN_FOR_DYNAMIC_NAV_AND_DIRECTORY",
+    "MANAGER_ONLY_NO_INDEPENDENT_UPSTREAM",
+    "NORMAL_OPENING_CLAUSE_NOT_ASOF_OPERATION_STATUS",
+    "H11009_PUBLISHED_RETURN_METHOD_NOT_VERIFIED",
+    "CSI_FACTSHEET_REVISION_SEPARATE_FROM_OLD_AUGUST_ARCHIVE"
+  ],
+  "benchmark_scope": {
+    "components": [
+      {
+        "issuer": "CSI",
+        "code": "000933",
+        "currency": "CNY",
+        "variant": "published 000933, distinct from H00933 full return"
+      },
+      {
+        "issuer": "CSI",
+        "code": "H11009",
+        "currency": "CNY",
+        "variant": "published H11009, distinct from H01009 clean price and N11009 interest reinvestment; detailed published-return methodology not recovered"
+      }
+    ],
+    "segments": [
+      {
+        "coverage_from": "2025-09-15",
+        "through": "2026-09-20",
+        "weights": [
+          "0.65",
+          "0.35"
+        ]
+      },
+      {
+        "effective_from": "2026-09-21",
+        "coverage_through": "2026-10-03",
+        "weights": [
+          "0.90",
+          "0.10"
+        ]
+      }
+    ],
+    "locators": [
+      "change PDF pp1,15 (same historical SHA)",
+      "prospectus p50",
+      "2026 interim benchmark disclosure",
+      "CSI fact sheets pp1-2; current data date 2026-09-30; layout visually checked"
+    ],
+    "scope_note": "coverage starts at this H window, not original policy effective date; no approval inherited; no benchmark return subtraction in medical score"
+  }
+}

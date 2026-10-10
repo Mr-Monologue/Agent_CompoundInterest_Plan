@@ -23,9 +23,10 @@ from investor_core.r11_provenance import publication_matches, reconcile
 from investor_core.r11_quality import apply_extraction
 from investor_core.r11_rules import rules
 from investor_core.r12_candidates import _calculate
+from investor_core.r12_time import ResearchContext
 from investor_core.scheduler import digest
 
-COMPUTATION_VERSION = "r12-medical-v1"
+COMPUTATION_VERSION = "r12-medical-v2"
 DEFINITION = {
     **R11_DEFINITION,
     "definition_id": "r12-medical-research-1.0.0",
@@ -52,6 +53,7 @@ class ArrivalRule(StrictModel):
 
 
 class MedicalInput(CandidateInput):
+    context: ResearchContext
     cohort: Literal["MEDICAL"] = "MEDICAL"
     arrival_rules: dict[str, ArrivalRule] = Field(default_factory=dict)
 
@@ -113,18 +115,28 @@ def evaluate(
     evidence: dict[str, Any] | None = None,
     bindings: dict[str, Any] | None = None,
     core_bindings: dict[str, Any] | None = None,
+    originals: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """One pure candidate evaluation. Real inputs require the existing raw-byte checks.
 
     It does not accept approval flags as registration or promotion receipts.
     Execution-only provenance failures cannot erase valid research components.
     """
+    if originals is not None:
+        from investor_core.r12_archive import evaluate_originals
+
+        return evaluate_originals(data, originals)
     prior = select_history(history or [])
     with localcontext() as ctx:
         ctx.prec = 34
         output = _calculate(data, prior, rules("MEDICAL"), core_bindings, medical_r12=True)
     extraction = None
     if evidence is not None or data.context.dataset_kind == "REAL":
+        if any(
+            s.published_at is None or s.first_retrieved_at is None
+            for s in data.context.sources.values()
+        ):
+            raise ValueError("Unknown publication requires the archived H adapter")
         body = data.model_dump(mode="json")
         extraction = reconcile(body, evidence or {}, bindings or {})
         arrival_body = deepcopy(body)
@@ -216,7 +228,13 @@ def computation_fingerprint() -> str:
             parent=engine_hash(),
             own={
                 name: hashlib.sha256(root.joinpath(name).read_bytes()).hexdigest()
-                for name in ("r12_medical.py", "r12_candidates.py")
+                for name in (
+                    "r12_medical.py",
+                    "r12_candidates.py",
+                    "r12_time.py",
+                    "r12_archive.py",
+                    "r12_003096_archive.json",
+                )
             },
         )
     )
