@@ -1,0 +1,225 @@
+{
+  "data_kind": "SYNTHETIC_ISOLATED_NOT_MARKET_RESULTS",
+  "definition": {
+    "definition_id": "r12-medical-research-1.0.0",
+    "approved_at": null,
+    "source_commit": "405504eb9ab52cab353590be2fbaf810ad5f37a7",
+    "source_path": "docs/SHADOW_MODEL_MINIMUM_PLAN.md#r12-medical-proposal",
+    "authorization": "ISOLATED_CANDIDATE_ONLY_NO_FORWARD_OR_PROMOTION",
+    "hypotheses_validated": false,
+    "actual_promotion_authorized": false,
+    "active_reachable": false,
+    "parent_definition_id": "r11-isolated-research-1.0.0",
+    "implementation_approval_date": "2026-10-10",
+    "change": "MEDICAL_REDEMPTION_ARRIVAL_EXECUTION_ONLY"
+  },
+  "cases": {
+    "None": {
+      "rows": [
+        {
+          "code": "003096",
+          "total_score": "87.500",
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "redemption_arrival": {
+            "state": "UNKNOWN",
+            "max_trading_days": null,
+            "rule": {
+              "source": "official",
+              "channel": "SYNTHETIC_CHANNEL",
+              "effective_from": "2020-01-01",
+              "effective_to": null,
+              "object": "INVESTOR_ACCOUNT_ARRIVAL",
+              "day_basis": "TRADING_DAYS"
+            },
+            "reasons": [
+              "ARRIVAL_BOUND_UNKNOWN"
+            ],
+            "overall_execution_pass": false
+          }
+        },
+        {
+          "code": "009163",
+          "total_score": "87.500",
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "redemption_arrival": {
+            "state": "UNKNOWN",
+            "max_trading_days": null,
+            "rule": {
+              "source": "official",
+              "channel": "SYNTHETIC_CHANNEL",
+              "effective_from": "2020-01-01",
+              "effective_to": null,
+              "object": "INVESTOR_ACCOUNT_ARRIVAL",
+              "day_basis": "TRADING_DAYS"
+            },
+            "reasons": [
+              "ARRIVAL_BOUND_UNKNOWN"
+            ],
+            "overall_execution_pass": false
+          }
+        }
+      ],
+      "replacement": "BLOCKED",
+      "formal_forward_record": false,
+      "delay_stress_status": "INCOMPLETE"
+    },
+    "1": {
+      "rows": [
+        {
+          "code": "003096",
+          "total_score": "87.500",
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "redemption_arrival": {
+            "state": "SATISFIED",
+            "max_trading_days": 1,
+            "rule": {
+              "source": "official",
+              "channel": "SYNTHETIC_CHANNEL",
+              "effective_from": "2020-01-01",
+              "effective_to": null,
+              "object": "INVESTOR_ACCOUNT_ARRIVAL",
+              "day_basis": "TRADING_DAYS"
+            },
+            "reasons": [],
+            "overall_execution_pass": false
+          }
+        },
+        {
+          "code": "009163",
+          "total_score": "87.500",
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "redemption_arrival": {
+            "state": "SATISFIED",
+            "max_trading_days": 1,
+            "rule": {
+              "source": "official",
+              "channel": "SYNTHETIC_CHANNEL",
+              "effective_from": "2020-01-01",
+              "effective_to": null,
+              "object": "INVESTOR_ACCOUNT_ARRIVAL",
+              "day_basis": "TRADING_DAYS"
+            },
+            "reasons": [],
+            "overall_execution_pass": false
+          }
+        }
+      ],
+      "replacement": "BLOCKED",
+      "formal_forward_record": false,
+      "delay_stress_status": "NOT_RUN"
+    },
+    "6": {
+      "rows": [
+        {
+          "code": "003096",
+          "total_score": "87.500",
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "redemption_arrival": {
+            "state": "NOT_SATISFIED",
+            "max_trading_days": 6,
+            "rule": {
+              "source": "official",
+              "channel": "SYNTHETIC_CHANNEL",
+              "effective_from": "2020-01-01",
+              "effective_to": null,
+              "object": "INVESTOR_ACCOUNT_ARRIVAL",
+              "day_basis": "TRADING_DAYS"
+            },
+            "reasons": [],
+            "overall_execution_pass": false
+          }
+        },
+        {
+          "code": "009163",
+          "total_score": "87.500",
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "redemption_arrival": {
+            "state": "NOT_SATISFIED",
+            "max_trading_days": 6,
+            "rule": {
+              "source": "official",
+              "channel": "SYNTHETIC_CHANNEL",
+              "effective_from": "2020-01-01",
+              "effective_to": null,
+              "object": "INVESTOR_ACCOUNT_ARRIVAL",
+              "day_basis": "TRADING_DAYS"
+            },
+            "reasons": [],
+            "overall_execution_pass": false
+          }
+        }
+      ],
+      "replacement": "BLOCKED",
+      "formal_forward_record": false,
+      "delay_stress_status": "INCOMPLETE"
+    },
+    "missing_management": {
+      "total_score": null
+    }
+  },
+  "replay": {
+    "result": "PASS",
+    "formal_forward_record": false,
+    "actual_promotion_authorized": false
+  },
+  "r11_preserved_files": [
+    "r11_candidates.py",
+    "r11_constituents.py",
+    "r11_core_bindings.py",
+    "r11_definition.json",
+    "r11_governance.py",
+    "r11_inputs.py",
+    "r11_macro.py",
+    "r11_provenance.py",
+    "r11_quality.py",
+    "r11_receipts.py",
+    "r11_replacement.py",
+    "r11_rules.py",
+    "r11_sensitivity.py",
+    "r11_service.py",
+    "r11_source_archive.py",
+    "r11_source_json.py",
+    "r11_source_monthly.py",
+    "r11_source_preparation.py",
+    "r11_validation.py"
+  ],
+  "r11_local_engine_hash": "463a61bd1cab9a5397b254af28db59eaf8a9461319175d7f93a8da60c40fdc08",
+  "tests": {
+    "existing_related_passed": 37,
+    "new_final_passed": 30,
+    "ruff": "PASS",
+    "mypy": "PASS"
+  },
+  "production_access": false,
+  "real_missing_inputs_source": "MEDICAL_D_ONCE_FEASIBILITY.md#6"
+}
