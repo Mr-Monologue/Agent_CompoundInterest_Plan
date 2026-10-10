@@ -250,5 +250,141 @@
   "production_accessed": false,
   "preregistration_created": false,
   "approval_mutation": false,
-  "full_model_run": false
+  "full_model_run": false,
+  "r12_bounded_check_20261010": {
+    "as_of": "2026-10-03T12:00:00+08:00",
+    "evidence_class": "H",
+    "actual_calculated_at": "2026-10-10T02:50:04.603264+00:00",
+    "nav_window_start": "2025-09-15",
+    "nav_window_end": "2026-09-30",
+    "endpoints": 253,
+    "returns": 252,
+    "exchange_calendar_vs_csi_missing": [],
+    "nav_retrieved_on": "2026-10-09",
+    "new_material_retrieved_on": "2026-10-10",
+    "rows": [
+      {
+        "code": "003096",
+        "return_pct": "-3.652051770843784488813083174475950",
+        "max_drawdown_pct": "29.09226932668329177057356608478824",
+        "volatility_pct": "31.84595433899157027628217828596002",
+        "external_cost_pct": "0.2500",
+        "conditional_dimension_scores": {
+          "return": "40.86987057289053877796729206381012",
+          "risk": "38.27502946671297748239932559285250",
+          "cost": "87.5000",
+          "management": "41.64383561643835616438356164383561"
+        },
+        "total_score": null,
+        "rank": null,
+        "assumptions": [
+          "no dividend in selected window; ZO annual/interim/directory corroborated, GF complete coverage unverified",
+          "calendar derived from exchange notices and fund normal-rule; exceptions/bindings not fully qualified",
+          "not a qualified full score"
+        ]
+      },
+      {
+        "code": "009163",
+        "return_pct": "-10.66078440878460270519222378435998",
+        "max_drawdown_pct": "25.69932612595142289232559266980149",
+        "volatility_pct": "29.77016630889339846942712214378589",
+        "external_cost_pct": "0",
+        "conditional_dimension_scores": {
+          "return": "23.34803897803849323701944053910005",
+          "risk": "45.71682621966693349560810779197980",
+          "cost": "100",
+          "management": null
+        },
+        "total_score": null,
+        "rank": null,
+        "assumptions": [
+          "no dividend in selected window; ZO annual/interim/directory corroborated, GF complete coverage unverified",
+          "calendar derived from exchange notices and fund normal-rule; exceptions/bindings not fully qualified",
+          "not a qualified full score"
+        ]
+      }
+    ],
+    "r12_actual_status": "INSUFFICIENT_DATA",
+    "r12_actual_rows": [
+      {
+        "code": "003096",
+        "total_score": null,
+        "rank": null,
+        "gaps": [
+          "003096:SOURCE_MISSING",
+          "009163:SOURCE_MISSING",
+          "BENCHMARK_MAPPING_INCOMPLETE",
+          "REQUIRED_SCORE_DIMENSION_MISSING",
+          "SOURCE_MISSING",
+          "redemption_open:MISSING",
+          "subscription_open:MISSING"
+        ],
+        "redemption_arrival": "UNKNOWN"
+      },
+      {
+        "code": "009163",
+        "total_score": null,
+        "rank": null,
+        "gaps": [
+          "003096:SOURCE_MISSING",
+          "009163:SOURCE_MISSING",
+          "BENCHMARK_MAPPING_INCOMPLETE",
+          "DIVIDEND_COVERAGE_INCOMPLETE",
+          "REQUIRED_SCORE_DIMENSION_MISSING",
+          "SOURCE_MISSING",
+          "TOTAL_FUND_ASSETS_MISSING",
+          "redemption_open:MISSING",
+          "subscription_open:MISSING"
+        ],
+        "redemption_arrival": "UNKNOWN"
+      }
+    ],
+    "extraction_failure_count": 2624,
+    "formal_forward_record": false,
+    "source_binding_note": "sources omitted where publication metadata and verified native original bindings unavailable; manual interpretations kept only in evidence report",
+    "input_sha256": "082ade695951504f58baba9352810088508eb2eec12fdc8916258a9267a3e08c",
+    "output_sha256": "a4200d26efbb7aa7fb11d94aa9748169981e8f674c6d8b34c23bcb425fc52763",
+    "new_sources": [
+      {
+        "key": "sse2025",
+        "url": "https://www.sse.com.cn/disclosure/dealinstruc/closed/c/c_20241223_10767110.shtml",
+        "requested_at": "2026-10-10T02:46:13.841380+00:00",
+        "sha256": "beb0957353f818f551792774f7a21816714dee7bc7be8da388de482248734378",
+        "bytes": 28511,
+        "retrieved_at": "2026-10-10T02:46:14.099781+00:00"
+      },
+      {
+        "key": "sse2026",
+        "url": "https://www.sse.com.cn/disclosure/announcement/general/c/c_20251222_10802507.shtml",
+        "requested_at": "2026-10-10T02:46:14.099781+00:00",
+        "sha256": "4e260b815ce1309175ed994e6490a4ccd51b998a5f92bcdc41cec00fc6823dc7",
+        "bytes": 29251,
+        "retrieved_at": "2026-10-10T02:46:14.555513+00:00"
+      },
+      {
+        "key": "szse2025",
+        "url": "https://www.szse.cn/disclosure/notice/t20241223_611283.html",
+        "requested_at": "2026-10-10T02:47:26.562162+00:00",
+        "sha256": "1c89289137907b6afd00c27059919dedcb8414f4402a38b995ff9eccd465874e",
+        "bytes": 33499,
+        "retrieved_at": "2026-10-10T02:47:26.732086+00:00"
+      },
+      {
+        "key": "szse2026",
+        "url": "https://www.szse.cn/disclosure/notice/general/t20251222_618087.html",
+        "requested_at": "2026-10-10T02:47:26.564164+00:00",
+        "sha256": "1656d8708d5faed33c7588538639d96128f39fdface02cfa6eb66d796c40f14e",
+        "bytes": 24946,
+        "retrieved_at": "2026-10-10T02:47:26.730080+00:00"
+      },
+      {
+        "key": "zo-annual2025",
+        "url": "https://www.zofund.com/tempdir/minisite/20260330/483cbb47-60a5-4d37-a608-8238e4586d10_1774877559058.pdf",
+        "requested_at": "2026-10-10T02:47:26.564164+00:00",
+        "sha256": "dc55bbdd4ae903fdaea7fe25ec2d3896100474b7d9c5742890e15505118950fd",
+        "bytes": 2108478,
+        "retrieved_at": "2026-10-10T02:47:28.270999+00:00"
+      }
+    ]
+  }
 }
