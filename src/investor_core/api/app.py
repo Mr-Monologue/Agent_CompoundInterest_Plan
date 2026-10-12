@@ -94,6 +94,7 @@ from investor_core.health import build_doctor_report
 from investor_core.holding_review import HoldingReviewService, ReviewCapture, ReviewHandling
 from investor_core.ledger import LedgerError, LedgerService
 from investor_core.logging_config import build_uvicorn_log_config
+from investor_core.manual_decisions import ManualDecisionDraft, ManualDecisionService
 from investor_core.market_data import MarketDataService
 from investor_core.market_sync import MarketSyncService
 from investor_core.notebook import CaseDraft, JournalEntry, NotebookService, risk_coverage
@@ -152,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     workspace = WorkspaceService(runtime_settings)
     subscriptions = SubscriptionService(runtime_settings)
     weekly_reports = WeeklyReportService(runtime_settings)
+    manual_decisions = ManualDecisionService(notebook, planning, weekly_reports)
     app = FastAPI(
         title="Value DCA Investor Core",
         version=__version__,
@@ -1634,6 +1636,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/v1/research-case-drafts")
     def research_case_create(request: CaseDraft) -> dict[str, Any]:
         return success(notebook.create(request), data_quality="WARNING")
+
+    @app.post("/v1/manual-decision-drafts")
+    def manual_decision_create(request: ManualDecisionDraft) -> dict[str, Any]:
+        return success(manual_decisions.create(request), data_quality="WARNING")
+
+    @app.post("/v1/manual-decisions/{decision_id}/confirm")
+    def manual_decision_confirm(decision_id: str, request: ThesisConfirmation) -> dict[str, Any]:
+        return success(manual_decisions.confirm(decision_id, request), data_quality="WARNING")
+
+    @app.get("/v1/manual-decisions")
+    def manual_decision_list(
+        portfolio_id: str, account_id: str, plan_id: str | None = None
+    ) -> dict[str, Any]:
+        return success(
+            manual_decisions.list(portfolio_id, account_id, plan_id), data_quality="WARNING"
+        )
+
+    @app.get("/v1/manual-decisions/{decision_id}")
+    def manual_decision_get(decision_id: str) -> dict[str, Any]:
+        return success(manual_decisions.read(decision_id), data_quality="WARNING")
 
     @app.post("/v1/decision-journal")
     def decision_journal_create(request: JournalEntry) -> dict[str, Any]:

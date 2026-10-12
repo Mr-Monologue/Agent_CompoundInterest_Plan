@@ -23,6 +23,8 @@ from croniter import croniter
 Json = dict[str, Any]
 # Named workflows only: no generic POST, trading, source switch or market refresh.
 WORKFLOWS = {
+    "manual-decision-draft": ("/v1/manual-decision-drafts", "draft", True),
+    "manual-decision-confirm": ("/v1/manual-decisions/{id}/confirm", "confirm", False),
     "review-save": ("/v1/holding-review-observations", "draft", True),
     "review-capture": ("/v1/holding-review-captures", "draft", True),
     "review-handle": ("/v1/holding-review-tasks/{id}/handling", "draft", True),
@@ -129,6 +131,7 @@ class DailyClient:
 
     def inspect(self, kind: str, subject: str) -> Json:
         paths = {
+            "manual-decision": "manual-decisions",
             "plan": "weekly-plans",
             "report": "weekly-reports",
             "report-draft": "weekly-report-drafts",
@@ -522,6 +525,8 @@ def main() -> None:
     sub.add_parser("investment")
     sub.add_parser("context")
     sub.add_parser("week")
+    decision = sub.add_parser("decision-review", aliases=["查看人工决定复盘"])
+    decision.add_argument("--plan")
     plan = sub.add_parser("plan")
     plan.add_argument("--budget", required=True)
     plan.add_argument("--period-start")
@@ -561,7 +566,9 @@ def main() -> None:
     args = parser.parse_args()
     client = DailyClient(args.core_url, portfolio_id=args.portfolio, account_id=args.account)
     try:
-        if args.command in {"medical-shadow", "查看医疗影子研究"}:
+        if args.command in {"decision-review", "查看人工决定复盘"}:
+            result = client.get("/v1/manual-decisions", **client.scope(), plan_id=args.plan)
+        elif args.command in {"medical-shadow", "查看医疗影子研究"}:
             result = client.get(
                 "/v1/medical-shadow-research",
                 view="DETAIL" if args.details else "SUMMARY",

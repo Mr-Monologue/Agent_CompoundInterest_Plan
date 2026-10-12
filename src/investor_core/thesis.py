@@ -478,7 +478,7 @@ class ThesisService:
         if journal:
             entry = journal[-1]
             lines.append(
-                f"最近复盘绑定论点版本 {entry['thesis_version']}: "
+                f"最近复盘绑定论点版本 {entry['thesis_version'] or '未引用'}: "
                 f"过程 {entry['process_quality']}, 执行 {entry['execution_quality']}, "
                 f"结果 {entry['outcome_quality']}, 逻辑一致性 {entry['logic_match']}"
             )
