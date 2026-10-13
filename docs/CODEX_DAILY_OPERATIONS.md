@@ -145,7 +145,7 @@ $env:INVESTOR_MEDICAL_H_PACKET = (Resolve-Path '<研究目录>/packet.json').Pat
 
 Linux使用`export INVESTOR_MEDICAL_H_PACKET=/absolute/path/packet.json`及bin目录命令。默认未配置、配置损坏、原件缺失/不匹配分别阻断，不尝试开发机目录、不下载原件、不读取保存结果冒充重算。完成后停止临时进程；不注册服务或调度。
 
-## 人工决定与执行复盘（feature候选，生产未部署）
+## 人工决定与执行复盘（v0.48.0源码已发布，生产未部署）
 
 自然语言“查看人工决定复盘”对应 `investor-assistant decision-review`（亦支持同名中文命令）；按只读默认组合/账户列出决定及完整链路。可用 `--plan` 缩小到已读取的计划；技术标识由Codex保管，不要求用户复制。`inspect manual-decision` 可回读单个对象及原始依据。
 
