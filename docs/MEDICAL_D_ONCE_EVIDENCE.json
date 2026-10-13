@@ -1605,5 +1605,173 @@
     "source_release": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tag/v0.47.0",
     "ci": "See linked promotion PRs and source release verification; not claimed before success",
     "production_deployed": false
+  },
+  "r12_source_release_047_final": {
+    "release_url": "https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tag/v0.47.0",
+    "automatic_publish_run": 38042943523,
+    "automatic_publish": "SUCCESS",
+    "promotions": [
+      {
+        "pr": 227,
+        "run": 38041133477
+      },
+      {
+        "pr": 228,
+        "run": 38042247261
+      },
+      {
+        "pr": 229,
+        "run": 38042954145
+      }
+    ],
+    "promotion_ci": "ALL_SUCCESS: Ubuntu 763 passed / 4 skipped; Windows 767 passed",
+    "main_ci": {
+      "run": 38044169645,
+      "status": "SUCCESS",
+      "ubuntu": "763 passed, 4 skipped",
+      "windows": "767 passed",
+      "static_checks": "PASS"
+    },
+    "source_verification": {
+      "refs": {
+        "origin/develop": {
+          "commit": "76a335f28e28d71d23aa0d78f8c4c909dd5a1967",
+          "tree": "68d3f81e53cdacc626f6184eec85768b0e890d6d"
+        },
+        "origin/release": {
+          "commit": "5a5187d91a6f9c889bec6ae8288e84754eeef40e",
+          "tree": "68d3f81e53cdacc626f6184eec85768b0e890d6d"
+        },
+        "origin/main": {
+          "commit": "b1234edb16d3a236f23ff0be475e7103ecdefde0",
+          "tree": "68d3f81e53cdacc626f6184eec85768b0e890d6d"
+        },
+        "v0.47.0": {
+          "commit": "5a5187d91a6f9c889bec6ae8288e84754eeef40e",
+          "tree": "68d3f81e53cdacc626f6184eec85768b0e890d6d"
+        }
+      },
+      "source_zip_sha256": "e6eab965c2dafd4ecec71feb42532dcb70ac634dfcfac3fdd7017b31ca6a6c92",
+      "tracked_files_equal": 394,
+      "private_originals_included": false,
+      "production_deployed": false
+    },
+    "official_source_clean_install": {
+      "version": "0.47.0",
+      "non_editable": true,
+      "originals": 20,
+      "relative_paths": true,
+      "arbitrary_cwd": true,
+      "command_http_pass": true,
+      "repeat_equal": true,
+      "missing_original_blocked": true,
+      "saved_fallback": false,
+      "rows": [
+        {
+          "code": "003096",
+          "redemption_arrival": {
+            "state": "UNKNOWN",
+            "max_trading_days": null,
+            "rule": null,
+            "reasons": [
+              "APPLICABLE_ARRIVAL_RULE_MISSING",
+              "ARRIVAL_BOUND_UNKNOWN"
+            ],
+            "overall_execution_pass": false
+          },
+          "filter_result": "UNKNOWN",
+          "gaps": [
+            "BENCHMARK_MAPPING_INCOMPLETE"
+          ],
+          "exclusions": [],
+          "metrics": {
+            "return_pct": "-3.652051770843784488813083174475950",
+            "max_drawdown_pct": "29.09226932668329177057356608478824",
+            "volatility_pct": "31.84595433899157027628217828596002",
+            "standard_external_cost_pct": "0.2500"
+          },
+          "dimension_scores": {
+            "return": "40.86987057289053877796729206381012",
+            "risk": "38.27502946671297748239932559285250",
+            "management": "41.64383561643835616438356164383561",
+            "cost": "87.5000"
+          },
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "total_score": null,
+          "rank": null,
+          "stock_range": [
+            "60",
+            "95"
+          ],
+          "warnings": [
+            "BOUNDED_OFFICIAL_NOTICE_DIRECTORY_NOT_ABSOLUTE_COMPLETENESS",
+            "CHANNEL_CAP_IS_NOT_ACCOUNT_AVAILABLE_CAPACITY",
+            "CSI_FACTSHEET_REVISION_SEPARATE_FROM_OLD_AUGUST_ARCHIVE",
+            "EXECUTION_UNKNOWN",
+            "H11009_HISTORICAL_METHOD_VERSION_COVERAGE_UNVERIFIED",
+            "INDEPENDENT_VERIFICATION_REQUIRED",
+            "MANAGER_ONLY_NO_INDEPENDENT_UPSTREAM",
+            "MAPPING_DRAFT",
+            "PUBLICATION_UNKNOWN_FOR_DYNAMIC_NAV_AND_DIRECTORY",
+            "REDEMPTION_ARRIVAL_UNKNOWN"
+          ]
+        },
+        {
+          "code": "009163",
+          "redemption_arrival": {
+            "state": "UNKNOWN",
+            "max_trading_days": null,
+            "rule": null,
+            "reasons": [
+              "APPLICABLE_ARRIVAL_RULE_MISSING",
+              "ARRIVAL_BOUND_UNKNOWN"
+            ],
+            "overall_execution_pass": false
+          },
+          "filter_result": "UNKNOWN",
+          "gaps": [
+            "BENCHMARK_MAPPING_INCOMPLETE",
+            "DIVIDEND_COVERAGE_INCOMPLETE",
+            "OUTSIDE_REVIEWED_ORIGINAL_ADAPTER",
+            "REQUIRED_SCORE_DIMENSION_MISSING",
+            "SOURCE_MISSING",
+            "TOTAL_FUND_ASSETS_MISSING",
+            "redemption_open:MISSING",
+            "subscription_open:MISSING"
+          ],
+          "exclusions": [],
+          "metrics": {},
+          "dimension_scores": {},
+          "weights": {
+            "return": "0.25",
+            "risk": "0.35",
+            "cost": "0.20",
+            "management": "0.20"
+          },
+          "total_score": null,
+          "rank": null,
+          "stock_range": [
+            "80",
+            "95"
+          ],
+          "warnings": [
+            "EXECUTION_UNKNOWN",
+            "INDEPENDENT_VERIFICATION_REQUIRED",
+            "MAPPING_DRAFT",
+            "REDEMPTION_ARRIVAL_UNKNOWN"
+          ]
+        }
+      ],
+      "observation": "2026-10-03T12:00:00+08:00",
+      "nav_cutoff": "2026-09-30"
+    },
+    "official_wheel_sha256": "2b0d9f18f2dc18683ed07fa7f238abad8817635d3c73fea0b11b371ecd3b1111",
+    "archive_note": "Earlier local git archive used CRLF conversion. Final downloaded source compared against all 394 raw Git blob object IDs, without newline normalization. Source package and clean installed code verified.",
+    "post_release_document_policy": "Final verification record committed on feature; no Tag rewrite or separate document release cycle."
   }
 }
