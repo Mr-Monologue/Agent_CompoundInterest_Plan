@@ -1,3 +1,5 @@
+> 当前生产（2026-10-13）：v0.48.0安装与只读现场验收通过。“查看人工决定复盘”可用，现为“暂无记录”；本次没有创建决定、冻结计划、记账或启动前瞻。真实闭环仍待具体业务确认。旧版本状态为历史记录，见LAUNCH_CHECKLIST末尾。
+
 > v0.41.0：医疗主题同类比较见 [PEER_RESEARCH](PEER_RESEARCH.md)，使用 `peers --anchor 003096`，详情增加 `--code 009163 --details`。仅只读归档研究，默认说明未获取新证据。
 
 > v0.40.0：默认“复核我的持仓”改为首次基线差异复核。当前入口、显式观察保存和限制见 [BASELINE_DELTA_REVIEW](BASELINE_DELTA_REVIEW.md)。以下旧版描述保留历史；完整当前报告使用 holdings-research-current。
