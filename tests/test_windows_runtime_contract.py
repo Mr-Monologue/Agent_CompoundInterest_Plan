@@ -69,7 +69,7 @@ def test_release_manifest_matches_project_version() -> None:
     assert manifest["channel"] == "stable"
     assert manifest["version"] == project["project"]["version"]
     assert f'__version__ = "{project["project"]["version"]}"' in runtime_version
-    assert manifest["database_revision"] == "0045_shadow_models"
+    assert manifest["database_revision"] == "0046_manual_decisions"
 
 
 def test_windows_installer_copies_console_free_hermes_cron_scripts() -> None:
@@ -185,3 +185,36 @@ def test_windows_ci_parses_powershell_scripts() -> None:
     assert "Parse Windows PowerShell scripts" in workflow
     assert "System.Management.Automation.Language.Parser" in workflow
     assert "runner.os == 'Windows'" in workflow
+
+
+def test_installer_failure_preserves_current_database_and_sidecars(tmp_path):
+    import shutil
+    import subprocess
+
+    installer = (PROJECT_ROOT / "install-windows.ps1").read_text(encoding="utf-8-sig")
+    handler = installer[installer.rindex("\ncatch {") + len("\ncatch {"):]
+    handler = handler[:handler.index("\n}\nfinally")]
+    assert "Copy-Item" not in handler and "Remove-Item" not in handler
+    assert "compatibility proof" in handler and "separate factual review" in handler
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if not shell:
+        return  # Windows CI executes the real extracted failure handler.
+    current = tmp_path / "data"
+    current.mkdir()
+    for name in ("investor.db", "investor.db-wal", "investor.db-shm"):
+        (current / name).write_bytes(b"newly-accepted-facts")
+    backup = tmp_path / "old.db"
+    backup.write_bytes(b"old-facts")
+    script = tmp_path / "failure.ps1"
+    script.write_text(
+        "$ProjectRoot=$PSScriptRoot; $DatabaseBackupVerified=$true; "
+        "$DatabaseBackup=Join-Path $PSScriptRoot 'old.db'; "
+        "try { try { throw 'expected-failure' } catch {" + handler +
+        "} } catch { if ($_.Exception.Message -ne 'expected-failure') { exit 1 } }",
+        encoding="utf-8-sig",
+    )
+    run = subprocess.run([shell, "-NoProfile", "-File", str(script)], capture_output=True)
+    assert run.returncode == 0, run.stderr
+    assert all(p.read_bytes() == b"newly-accepted-facts" for p in current.iterdir())
+    assert backup.read_bytes() == b"old-facts"
+
