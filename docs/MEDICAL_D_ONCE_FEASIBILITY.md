@@ -244,3 +244,18 @@
 干净Windows环境已实际从非editable wheel安装（锁定运行依赖、Python3.11），无开发源码sys.path。20份真实原件复制到独立研究目录，全部路径改为相对packet，并从无关工作目录启动隔离HTTP；日常命令和重复查询成功，与既有真实分项一致。故意将一份原件路径指向不存在文件，准确返回ORIGINALS_UNAVAILABLE，修复配置后相同结果恢复；未读取历史output或搜索开发临时目录。打包wheel/sdist已逐文件及原件内容SHA检查，无20份原件、数据库、真实packet或私有.env；.env.example是公开配置模板，不是秘密。具体复现步骤追加CODEX_DAILY_OPERATIONS。
 
 相关修复9项测试通过；既有原件14和客户端19项成功证据复用。最终双平台全量以仓库强制CI为准，未在本机重复无变化全量。提交后按feature→develop→release→main逐级检查，不抢先合并，不部署。源码发布及最终各门禁/树/Tag结果集中记录在[本版本Release核验说明](https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tag/v0.47.0)，该链接未发布时不视为通过；原清单为唯一恢复入口。完成后停止，不扩展研究。
+
+
+### v0.47.0最终源码发布核验（2026-10-10）
+
+工程入口完成、完整评分受阻、生产未部署，三个状态互不替代。PR #227→#228→#229按feature→develop→release→main逐级合并，各级均先通过Ubuntu763项/4跳过、Windows767项及Ruff/mypy/Windows脚本解析。main自动CI终态：38044169645成功（Ubuntu 763通过/4跳过，Windows 767通过，Ruff/mypy及Windows解析通过）。
+
+既有release.yml在release版本变更及检查通过后自动创建v0.47.0（发布工作流38042943523成功），并非新加的部署流程；已回读公开Release，无二进制附带资产。Tag指向release提交5a5187d，main为合并提交b1234ed；提交不同、Git tree相同。develop/release/main/Tag树均68d3f81e53cdacc626f6184eec85768b0e890d6d；未改写Tag。
+
+已实际下载[正式源码](https://github.com/Mr-Monologue/Agent_CompoundInterest_Plan/releases/tag/v0.47.0)，394文件与Tag原始Git blob逐一匹配，ZIP SHA256 e6eab965c2dafd4ecec71feb42532dcb70ac634dfcfac3fdd7017b31ca6a6c92。初次本地git archive导出393文件有CRLF差异，定位为Windows导出换行转换；最终不靠“忽略换行”宣称一致，而是将下载内容按Git blob公式与原始对象逐字节校验，全部一致。
+
+从该正式下载包再构建wheel并装入干净非editable环境，复用先前20份原件相对路径验收；命令→HTTP、重复查询及缺原件/恢复配置均再次通过。原件缺失不读历史结果；没有依赖开发临时目录。源码包不含私有原件、packet、数据库或秘密.env；先期安装构建包与正式源码ZIP的指纹分别记录，不混称同一产物。
+
+实际限制不变：观察2026-10-03、003096净值截止2026-09-30，四分项可回读，总分因H11009完整历史方法覆盖缺口仍空；009163自身必需输入未齐、不排名。到账未知、上游独立性/时点限制及正式F/E未接入保留。本次无生产安装、批准、前瞻或业务写入，也未搜索新增研究资料。
+
+最终核验只追加原报告、原清单及原证据JSON，作为feature上的正常版本记录；不改已发Tag，不为收尾文档单独启动发布循环。具体启动见CODEX_DAILY_OPERATIONS末尾，发布核验见上述Release。完成本次收尾后停止。

@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$InstallDir = "C:\investor\value-dca-agent",
     [string]$HermesProfile = "investor",
@@ -442,22 +442,10 @@ try {
     Write-Host "Broker connections and automatic trading remain disabled."
 }
 catch {
-    if ($DatabaseBackupVerified -and $null -ne $DatabaseBackup -and (Test-Path $DatabaseBackup)) {
-        Write-Warning "Installation failed; restoring the pre-migration database backup."
-        $Task = Get-ScheduledTask -TaskName $CoreTaskName -ErrorAction SilentlyContinue
-        if ($null -ne $Task -and $Task.State -eq "Running") {
-            Stop-ScheduledTask -TaskName $CoreTaskName
-        }
-        @(Get-InvestorRuntimeProcesses $ProjectRoot) | Stop-Process -Force
-        $DatabasePath = Join-Path $ProjectRoot "data\investor.db"
-        Copy-Item -LiteralPath $DatabaseBackup -Destination $DatabasePath -Force
-        foreach ($Suffix in @("-wal", "-shm")) {
-            $Sidecar = "$DatabasePath$Suffix"
-            if (Test-Path $Sidecar) {
-                Remove-Item -LiteralPath $Sidecar -Force
-            }
-        }
-    }
+    # Installation can fail after Core has accepted new facts. Never restore an
+    # earlier database or delete its WAL/SHM, even when that backup is verified.
+    Write-Warning "Installation failed; current database and WAL/SHM are preserved." -WarningAction Continue
+    Write-Warning "Service state requires inspection. Code rollback requires compatibility proof; database restore requires separate factual review and authorization." -WarningAction Continue
     throw
 }
 finally {
