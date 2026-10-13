@@ -394,3 +394,40 @@ def test_no_decision_returns_no_records_without_writes(tmp_path):
     assert result["items"] == []
     assert "暂无记录" in result["display_text"]
     assert facts(settings.db_path) == before
+
+
+def test_lost_draft_response_controlled_recovery(tmp_path):
+    settings, _, _, _, service, request, _ = setup(tmp_path)
+    lost = service.create(request)
+    original = deepcopy(lost["original_context"])
+    before = facts(settings.db_path)
+    replay = service.create(request)
+    assert replay["confirmation_recovery_required"]
+    assert facts(settings.db_path) == before
+    recovered = service.create(request.model_copy(update={"recover_confirmation": True}))
+    assert recovered["id"] == lost["id"]
+    assert recovered["original_context"] == original
+    assert recovered["expires_at"] == lost["expires_at"]
+    with pytest.raises(LedgerError, match="Invalid content"):
+        confirm(service, lost)
+    confirm(service, recovered)
+    assert confirm(service, recovered)["idempotent_replay"]
+    replay = service.create(request.model_copy(update={"recover_confirmation": True}))
+    assert "confirmation_token" not in replay
+    with sqlite3.connect(settings.db_path) as c:
+        assert c.execute("SELECT count(*) FROM manual_investment_decisions").fetchone()[0] == 1
+
+
+def test_recovery_does_not_bypass_expiry_or_revision(tmp_path):
+    settings, _, _, _, service, request, _ = setup(tmp_path)
+    service.create(request)
+    recover = request.model_copy(update={"recover_confirmation": True})
+    now = service.research._now
+    service.research._now = lambda: now() + timedelta(days=2)
+    with pytest.raises(LedgerError, match="fresh decision"):
+        service.create(recover)
+    service.research._now = now
+    with sqlite3.connect(settings.db_path) as c:
+        c.execute("UPDATE investment_plans SET current_revision=2 WHERE id=?", (request.plan_id,))
+    with pytest.raises(LedgerError, match="revision was not found"):
+        service.create(recover)

@@ -39,6 +39,7 @@ class ManualDecisionDraft(StrictModel):
     research_references: list[ResearchReference] = Field(default_factory=list, max_length=30)
     idempotency_key: str = Field(min_length=1, max_length=200)
     actor_ref: str = "codex"
+    recover_confirmation: bool = False
 
     @model_validator(mode="after")
     def consistent(self) -> ManualDecisionDraft:
@@ -171,7 +172,7 @@ class ManualDecisionService:
         )
 
     def create(self, request: ManualDecisionDraft) -> Json:
-        payload = request.model_dump(mode="json")
+        payload = request.model_dump(mode="json", exclude={"recover_confirmation"})
         with self.research._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             row = c.execute(
@@ -182,7 +183,26 @@ class ManualDecisionService:
                 data = json.loads(row[0])
                 if data["request_hash"] != digest(payload):
                     raise LedgerError("IDEMPOTENCY_CONFLICT", "Decision key content differs")
-                return dict(self.public(data), idempotent_replay=True)
+                if data["status"] == "DRAFT" and request.recover_confirmation:
+                    if instant(data["expires_at"]) <= self.research._now():
+                        raise LedgerError("DRAFT_EXPIRED", "Review a fresh decision draft")
+                    plan = self._plan(c, data["plan_id"], data["portfolio_id"])
+                    if not self._same_revision(data, plan):
+                        raise LedgerError("DECISION_REVISION_CHANGED", "Plan changed; review again")
+                    token = secrets.token_urlsafe(32)
+                    data["confirmation_digest"] = digest(token)
+                    c.execute(
+                        "UPDATE manual_investment_decisions SET payload_json=? WHERE id=?",
+                        (json.dumps(data, ensure_ascii=False), data["id"]),
+                    )
+                    return dict(
+                        self.public(data), idempotent_replay=True, confirmation_token=token,
+                        confirmation_recovered=True, display_text=self._decision_text(data),
+                    )
+                return dict(
+                    self.public(data), idempotent_replay=True,
+                    confirmation_recovery_required=data["status"] == "DRAFT",
+                )
             plan = self._plan(c, request.plan_id, request.portfolio_id)
             if plan["current_revision"] != request.plan_revision:
                 raise LedgerError("DECISION_REVISION_CHANGED", "Review the current plan revision")
