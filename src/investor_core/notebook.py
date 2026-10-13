@@ -103,9 +103,10 @@ class CaseDraft(StrictModel):
 
 
 class JournalEntry(StrictModel):
+    manual_decision_id: str | None = Field(default=None, min_length=1)
     portfolio_id: str
     instrument_code: str
-    thesis_version: int = Field(ge=1)
+    thesis_version: int | None = Field(default=None, ge=1)
     idempotency_key: str = Field(min_length=1, max_length=200)
     supersedes_id: str | None = None
     decision_frame: str = Field(min_length=1)
@@ -124,6 +125,10 @@ class JournalEntry(StrictModel):
 
     @model_validator(mode="after")
     def reviewed(self) -> JournalEntry:
+        if self.thesis_version is None and not self.manual_decision_id:
+            raise ValueError(
+                "A research journal needs its version; only manual reviews may be unreferenced"
+            )
         if (
             self.process_quality != "NOT_REVIEWED"
             or self.outcome_quality != "UNKNOWN"
@@ -217,6 +222,8 @@ class NotebookService:
 
     def journal(self, request: JournalEntry) -> Json:
         payload = request.model_dump(mode="json")
+        if request.manual_decision_id is None:
+            payload.pop("manual_decision_id")  # Keep historical idempotency hashes unchanged.
         with self.research._connect() as c:
             c.execute("BEGIN IMMEDIATE")
             self._scope(c, request.portfolio_id, request.instrument_code)
@@ -229,12 +236,47 @@ class NotebookService:
                 if result["request_hash"] != digest(payload):
                     raise LedgerError("IDEMPOTENCY_CONFLICT", "Journal key content mismatch")
                 return dict(result, idempotent_replay=True)
+            if request.manual_decision_id:
+                row = c.execute(
+                    "SELECT payload_json FROM manual_investment_decisions WHERE id=?",
+                    (request.manual_decision_id,),
+                ).fetchone()
+                decision = json.loads(row[0]) if row else None
+                if (
+                    not decision
+                    or decision["status"] != "CONFIRMED"
+                    or decision["portfolio_id"] != request.portfolio_id
+                ):
+                    raise LedgerError(
+                        "JOURNAL_DECISION_SCOPE",
+                        "Review requires a confirmed decision in this portfolio",
+                    )
+                cases = [
+                    r["content"]
+                    for r in decision["original_context"]["research"]
+                    if r["kind"] == "CASE"
+                ]
+                codes = {
+                    x["instrument_code"] for x in decision["original_context"]["plan"]["items"]
+                }
+                if request.instrument_code not in codes:
+                    raise LedgerError(
+                        "JOURNAL_DECISION_SCOPE", "Review is outside the original plan"
+                    )
+                original = [x for x in cases if x["instrument_code"] == request.instrument_code]
+                if (
+                    original and not any(x["version"] == request.thesis_version for x in original)
+                ) or (not original and request.thesis_version is not None):
+                    raise LedgerError(
+                        "JOURNAL_DECISION_VERSION",
+                        "Review must use the original cited case version or remain unreferenced",
+                    )
             case = c.execute(
                 "SELECT id FROM research_case_versions WHERE portfolio_id=? "
                 "AND instrument_code=? AND version=?",
                 (request.portfolio_id, request.instrument_code, request.thesis_version),
             ).fetchone()
-            if not case:
+            if request.thesis_version is not None and not case:
                 raise LedgerError(
                     "NOTEBOOK_VERSION_MISSING", "Referenced thesis version does not exist"
                 )
@@ -243,6 +285,13 @@ class NotebookService:
                     "SELECT payload_json FROM research_decision_journal WHERE id=?",
                     (request.supersedes_id,),
                 ).fetchone()
+                if (
+                    prior
+                    and json.loads(prior[0]).get("manual_decision_id") != request.manual_decision_id
+                ):
+                    raise LedgerError(
+                        "JOURNAL_DECISION_SCOPE", "Review chain cannot change its decision"
+                    )
                 if not prior or any(
                     json.loads(prior[0])[k] != payload[k]
                     for k in ("portfolio_id", "instrument_code")

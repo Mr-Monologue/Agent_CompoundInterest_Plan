@@ -48,3 +48,9 @@
 `GET /v1/research-thesis`；`POST /v1/research-thesis-drafts`；`POST /v1/research-thesis-drafts/{id}/confirm`；`POST /v1/research-thesis-observations`。均复用命名HTTP客户端及其未知响应停止重试机制。只存令牌摘要，GET不返回摘要或令牌；用户无需复制技术标识。
 
 0041只新增两张研究表；旧研究/策略/账本不迁移改写。升级前备份和隔离迁移验证。旧代码/新结构兼容无法证明时明确阻断回退，保留当前库并按 RECOVERY_RUNBOOK 前滚修复；不因新增表默认兼容，不自动还原旧数据库。
+
+### 人工决定关联（未发布候选）
+
+人工决定独立于研究批准及计划冻结。`POST /v1/manual-decision-drafts`读取精确计划修订与可选CASE/BENCHMARK/PEER档案，`POST /v1/manual-decisions/{id}/confirm`沿现有短期确认摘要/幂等模式仅保存决定。新增0046单表，旧事实不迁移改写。`GET /v1/manual-decisions`及单项GET串联原上下文、当前计划、实际执行和报告，查询不写。生产未部署；发布时需同步版本与发布清单的数据库修订，不能直接以旧源码Release安装新表。
+
+既有`JournalEntry`增加可选`manual_decision_id`，复盘必须匹配原计划基金及原论点版本，链条不得改挂其他决定。没有引用论点时允许版本为空（仅限明确关联已确认人工决定的复盘）；普通旧研究日志仍要求版本。空关联字段不进入旧请求哈希，保持历史重放。用户理由为空时保持未知，系统解释单列；日期以实际记录时间为准。过程评价仍须有证据，不能由盈亏自动判断。

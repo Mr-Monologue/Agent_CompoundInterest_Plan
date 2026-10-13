@@ -297,6 +297,7 @@ def test_update_migration_preserves_every_existing_table(tmp_path):
                     "shadow_models",
                     "shadow_records",
                     "uq_shadow_model_version",
+                    "manual_investment_decisions",
                 )
             )
         ]

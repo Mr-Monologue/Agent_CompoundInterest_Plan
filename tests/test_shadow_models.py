@@ -316,6 +316,7 @@ def test_additive_migration_preserves_populated_business_database(rig):
                 "shadow_models",
                 "shadow_records",
                 "uq_shadow_model_version",
+                "manual_investment_decisions",
             )
         )
     ]

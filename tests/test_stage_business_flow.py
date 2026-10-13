@@ -63,6 +63,32 @@ def test_complete_http_business_journey_and_lost_commit_response(tmp_path, outco
         )
         plan_id = created["plan"]["id"]
         plan_path = "/v1/weekly-plans/" + plan_id
+        decision = call(
+            client,
+            "POST",
+            "/v1/manual-decision-drafts",
+            json={
+                "portfolio_id": pid,
+                "plan_id": plan_id,
+                "plan_revision": 1,
+                "intent": "SKIP" if outcome == "skip" else "FOLLOW_PLAN",
+                "reason_status": "USER_QUOTE",
+                "user_quote": "隔离用户: 按本次计划观察执行",
+                "system_explanation": "隔离测试,不是生产投资",
+                "idempotency_key": "manual-journey",
+            },
+        )
+        decision_path = "/v1/manual-decisions/" + decision["id"]
+        before_confirm = _business_fact_counts(database)
+        assert client.post(decision_path + "/confirm", json=approval(decision)).status_code == 200
+        # Simulate lost confirmation response; GET is the first recovery action.
+        recovered = call(client, "GET", decision_path)
+        assert recovered["decision"]["status"] == "CONFIRMED"
+        assert recovered["current_plan"]["frozen_at"] is None
+        assert recovered["decision"]["original_context"]["research_status"] == "NOT_REFERENCED"
+        assert _business_fact_counts(database) == before_confirm
+        retry_decision = call(client, "POST", decision_path + "/confirm", json=approval(decision))
+        assert retry_decision["idempotent_replay"]
         initial = _business_fact_counts(database)
         if outcome == "skip":
             call(
@@ -225,3 +251,14 @@ def test_complete_http_business_journey_and_lost_commit_response(tmp_path, outco
         assert _business_fact_counts(database) == before_report
         reports = call(client, "GET", "/v1/weekly-reports", params={"portfolio_id": pid})
         assert len(reports["items"]) == 1
+
+        before_read = facts(database)
+        review = call(client, "GET", decision_path)
+        assert review["execution"]["executed_amount"] == content["executed_amount"]
+        assert review["execution"]["abandoned_amount"] == content["abandoned_amount"]
+        assert len(review["reports"]) == 1
+        assert review["decision"]["user_quote"] == decision["user_quote"]
+        assert "零投入不等于零收益" in review["display_text"]
+        assert review["execution"]["valuation"]["status"] == "LIMITED"
+        call(client, "GET", decision_path)
+        assert facts(database) == before_read

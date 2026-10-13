@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "version": "0.47.0",
+  "version": "0.48.0",
   "channel": "stable",
   "auto_update": true,
   "requires_manual_approval": true,
-  "database_revision": "0045_shadow_models",
+  "database_revision": "0046_manual_decisions",
   "minimum_current_version": "0.5.3",
-  "notes": "Source-only R1.2 medical limited H research, reviewed-original adapter and opt-in isolated HTTP/daily query. Full real scores remain blocked. No production deployment, schema migration, forward registration, mapping or investment changes."
+  "notes": "Confirmed manual decisions link immutable evidence and exact plan revisions to execution and review. From 0.44.2: cumulative 0045/0046 add three tables only; no model registration, forward observation, investment approval or ledger rewrite. Production deployment requires explicit confirmation."
 }

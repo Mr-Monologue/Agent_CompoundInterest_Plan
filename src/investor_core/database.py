@@ -88,6 +88,7 @@ REQUIRED_TABLES = {
     "strategy_definitions",
     "strategy_instrument_configs",
     "strategy_versions",
+    "manual_investment_decisions",
     "investment_plans",
     "plan_items",
     "plan_revisions",
@@ -104,7 +105,7 @@ REQUIRED_TABLES = {
     "transaction_drafts",
     "transactions",
 }
-EXPECTED_ALEMBIC_REVISION = "0045_shadow_models"
+EXPECTED_ALEMBIC_REVISION = "0046_manual_decisions"
 
 
 def ensure_database_parent(settings: Settings) -> None:
