@@ -198,7 +198,9 @@ def test_installer_failure_preserves_current_database_and_sidecars(tmp_path):
     assert "compatibility proof" in handler and "separate factual review" in handler
     shell = shutil.which("pwsh") or shutil.which("powershell")
     if not shell:
-        return  # Windows CI executes the real extracted failure handler.
+        import pytest
+
+        pytest.skip("PowerShell unavailable; real handler is exercised on Windows CI")
     current = tmp_path / "data"
     current.mkdir()
     for name in ("investor.db", "investor.db-wal", "investor.db-shm"):
@@ -207,14 +209,18 @@ def test_installer_failure_preserves_current_database_and_sidecars(tmp_path):
     backup.write_bytes(b"old-facts")
     script = tmp_path / "failure.ps1"
     script.write_text(
+        "$WarningPreference='Stop'; $caught=$false; "
         "$ProjectRoot=$PSScriptRoot; $DatabaseBackupVerified=$true; "
         "$DatabaseBackup=Join-Path $PSScriptRoot 'old.db'; "
         "try { try { throw 'expected-failure' } catch {" + handler +
-        "} } catch { if ($_.Exception.Message -ne 'expected-failure') { exit 1 } }",
+        "} } catch { if ($_.Exception.Message -ne 'expected-failure') { exit 1 }; "
+        "$caught=$true }; if (-not $caught) { exit 2 }",
         encoding="utf-8-sig",
     )
     run = subprocess.run([shell, "-NoProfile", "-File", str(script)], capture_output=True)
     assert run.returncode == 0, run.stderr
-    assert all(p.read_bytes() == b"newly-accepted-facts" for p in current.iterdir())
+    for name in ("investor.db", "investor.db-wal", "investor.db-shm"):
+        assert (current / name).is_file()
+        assert (current / name).read_bytes() == b"newly-accepted-facts"
     assert backup.read_bytes() == b"old-facts"
 

@@ -444,8 +444,8 @@ try {
 catch {
     # Installation can fail after Core has accepted new facts. Never restore an
     # earlier database or delete its WAL/SHM, even when that backup is verified.
-    Write-Warning "Installation failed; current database and WAL/SHM are preserved."
-    Write-Warning "Service state requires inspection. Code rollback requires compatibility proof; database restore requires separate factual review and authorization."
+    Write-Warning "Installation failed; current database and WAL/SHM are preserved." -WarningAction Continue
+    Write-Warning "Service state requires inspection. Code rollback requires compatibility proof; database restore requires separate factual review and authorization." -WarningAction Continue
     throw
 }
 finally {
