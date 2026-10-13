@@ -385,3 +385,12 @@ def test_future_and_missing_evidence_are_not_silently_omitted(tmp_path):
         )
     with pytest.raises(LedgerError, match="original is missing"):
         service.create(request)
+
+
+def test_no_decision_returns_no_records_without_writes(tmp_path):
+    settings, pid, aid, _, service, _, _ = setup(tmp_path)
+    before = facts(settings.db_path)
+    result = service.list(pid, aid)
+    assert result["items"] == []
+    assert "暂无记录" in result["display_text"]
+    assert facts(settings.db_path) == before

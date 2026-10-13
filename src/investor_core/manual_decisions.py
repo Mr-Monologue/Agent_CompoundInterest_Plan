@@ -395,5 +395,5 @@ class ManualDecisionService:
             items=items,
             query_only=True,
             display_text="\n\n".join(x["display_text"] for x in items)
-            or "尚无已保存人工决定;未创建任何记录。",
+            or "暂无记录: 尚无已保存人工决定;未创建任何记录。",
         )

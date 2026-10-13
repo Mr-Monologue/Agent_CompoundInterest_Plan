@@ -1,3 +1,9 @@
+# v0.48.0 — 人工决定与执行复盘
+
+- 明确确认后保存精确计划修订、可选研究依据、用户原话及独立系统解释；不冻结或交易。
+- 只读串联申购、份额、记账、未执行、周报及复盘；原依据不可被新研究覆盖。
+- 从v0.44.2累计迁移0045/0046仅新增三表，不注册模型或改变现有业务事实；部署须单独确认。
+
 ## v0.47.0 — R1.2 medical limited isolated research
 
 - Release the approved medical-only R1.2 scoring/execution separation, fixed-original H adapter and read-only isolated HTTP/daily command. R1.1, A500 and C remain unchanged.
