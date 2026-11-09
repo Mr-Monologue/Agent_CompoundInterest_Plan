@@ -1,0 +1,101 @@
+{
+  "title": "2026-11-02至11-06主要指数收盘复算（事后回放）",
+  "as_of": "2026-11-09",
+  "period_start": "2026-10-30",
+  "period_end": "2026-11-06",
+  "previous_session": "2026-11-05",
+  "sources": [
+    {
+      "id": "baseline",
+      "url": "https://finance.eastmoney.com/a/202610303916421913.html",
+      "publisher": "澎湃新闻（东方财富转载）",
+      "published_on": "2026-10-30",
+      "accessed_on": "2026-11-09"
+    },
+    {
+      "id": "previous",
+      "url": "https://news.10jqka.com.cn/20261105/c681500940.shtml",
+      "publisher": "同花顺",
+      "published_on": "2026-11-05",
+      "accessed_on": "2026-11-09"
+    },
+    {
+      "id": "close",
+      "url": "https://www.cnfin.com/yw-lb/detail/20261106/4492048_1.html",
+      "publisher": "新华财经",
+      "published_on": "2026-11-06",
+      "accessed_on": "2026-11-09"
+    }
+  ],
+  "series": [
+    {
+      "id": "000001",
+      "name": "上证指数",
+      "basis": "PRICE_INDEX",
+      "currency": "CNY",
+      "closes": [
+        {
+          "date": "2026-10-30",
+          "value": "3599.02",
+          "source_id": "baseline"
+        },
+        {
+          "date": "2026-11-05",
+          "value": "3689.91",
+          "source_id": "previous"
+        },
+        {
+          "date": "2026-11-06",
+          "value": "3649.18",
+          "source_id": "close"
+        }
+      ]
+    },
+    {
+      "id": "399001",
+      "name": "深证成指",
+      "basis": "PRICE_INDEX",
+      "currency": "CNY",
+      "closes": [
+        {
+          "date": "2026-10-30",
+          "value": "10833.78",
+          "source_id": "baseline"
+        },
+        {
+          "date": "2026-11-05",
+          "value": "11471.09",
+          "source_id": "previous"
+        },
+        {
+          "date": "2026-11-06",
+          "value": "11175.78",
+          "source_id": "close"
+        }
+      ]
+    },
+    {
+      "id": "399006",
+      "name": "创业板指",
+      "basis": "PRICE_INDEX",
+      "currency": "CNY",
+      "closes": [
+        {
+          "date": "2026-10-30",
+          "value": "2413.63",
+          "source_id": "baseline"
+        },
+        {
+          "date": "2026-11-05",
+          "value": "2566.80",
+          "source_id": "previous"
+        },
+        {
+          "date": "2026-11-06",
+          "value": "2465.23",
+          "source_id": "close"
+        }
+      ]
+    }
+  ]
+}

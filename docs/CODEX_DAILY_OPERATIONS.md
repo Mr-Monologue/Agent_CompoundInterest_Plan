@@ -1,3 +1,5 @@
+> 当前生产（2026-10-13）：v0.48.0安装与只读现场验收通过。“查看人工决定复盘”可用，现为“暂无记录”；本次没有创建决定、冻结计划、记账或启动前瞻。真实闭环仍待具体业务确认。旧版本状态为历史记录，见LAUNCH_CHECKLIST末尾。
+
 > v0.41.0：医疗主题同类比较见 [PEER_RESEARCH](PEER_RESEARCH.md)，使用 `peers --anchor 003096`，详情增加 `--code 009163 --details`。仅只读归档研究，默认说明未获取新证据。
 
 > v0.40.0：默认“复核我的持仓”改为首次基线差异复核。当前入口、显式观察保存和限制见 [BASELINE_DELTA_REVIEW](BASELINE_DELTA_REVIEW.md)。以下旧版描述保留历史；完整当前报告使用 holdings-research-current。
@@ -145,7 +147,7 @@ $env:INVESTOR_MEDICAL_H_PACKET = (Resolve-Path '<研究目录>/packet.json').Pat
 
 Linux使用`export INVESTOR_MEDICAL_H_PACKET=/absolute/path/packet.json`及bin目录命令。默认未配置、配置损坏、原件缺失/不匹配分别阻断，不尝试开发机目录、不下载原件、不读取保存结果冒充重算。完成后停止临时进程；不注册服务或调度。
 
-## 人工决定与执行复盘（feature候选，生产未部署）
+## 人工决定与执行复盘（v0.48.0源码已发布，生产未部署）
 
 自然语言“查看人工决定复盘”对应 `investor-assistant decision-review`（亦支持同名中文命令）；按只读默认组合/账户列出决定及完整链路。可用 `--plan` 缩小到已读取的计划；技术标识由Codex保管，不要求用户复制。`inspect manual-decision` 可回读单个对象及原始依据。
 
