@@ -506,6 +506,8 @@ def main() -> None:
     parser.add_argument("--account")
     parser.add_argument("--json", action="store_true", help="Agent internal structured output")
     sub = parser.add_subparsers(dest="command", required=True)
+    observation = sub.add_parser("market-observation", help="Read source-bound market evidence")
+    observation.add_argument("packet", type=Path)
     validation = sub.add_parser("peer-validation", help="Read archived comparison validation")
     validation.add_argument("--anchor", required=True)
     validation.add_argument("--cohort")
@@ -564,6 +566,15 @@ def main() -> None:
     flow.add_argument("--confirmation", default="")
     flow.add_argument("--parent", default="")
     args = parser.parse_args()
+    if args.command == "market-observation":
+        from investor_core.market_observation import load_report
+
+        try:
+            report = load_report(args.packet)
+        except (OSError, ValueError) as exc:
+            parser.exit(2, f"Invalid observation packet: {exc}\n")
+        print(report.model_dump_json(indent=2) if args.json else report.display_text)
+        return
     client = DailyClient(args.core_url, portfolio_id=args.portfolio, account_id=args.account)
     try:
         if args.command in {"decision-review", "查看人工决定复盘"}:
