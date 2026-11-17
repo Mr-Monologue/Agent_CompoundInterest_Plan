@@ -506,6 +506,13 @@ def main() -> None:
     parser.add_argument("--account")
     parser.add_argument("--json", action="store_true", help="Agent internal structured output")
     sub = parser.add_subparsers(dest="command", required=True)
+    brief = sub.add_parser("research-brief", help="Fetch public prices and build a research brief")
+    brief.add_argument("--start", type=date.fromisoformat)
+    brief.add_argument("--end", type=date.fromisoformat,
+                       default=datetime.now(ZoneInfo("Asia/Shanghai")).date())
+    brief.add_argument("--fund", action="append", default=[])
+    brief.add_argument("--market-only", action="store_true",
+                       help="Skip local Core; fund arguments are a watchlist, not holdings")
     observation = sub.add_parser("market-observation", help="Read source-bound market evidence")
     observation.add_argument("packet", type=Path)
     validation = sub.add_parser("peer-validation", help="Read archived comparison validation")
@@ -566,6 +573,32 @@ def main() -> None:
     flow.add_argument("--confirmation", default="")
     flow.add_argument("--parent", default="")
     args = parser.parse_args()
+    if args.command == "research-brief":
+        from investor_core.research_brief import PublicResearch, default_start, render
+
+        portfolio = None
+        core_error = None
+        funds = list(args.fund)
+        if not args.market_only:
+            core = DailyClient(args.core_url, portfolio_id=args.portfolio, account_id=args.account)
+            try:
+                portfolio = core.get("/v1/portfolio-brief", **core.scope())
+                funds.extend(position["holding"]["instrument_code"]
+                             for position in portfolio["valuation"]["positions"])
+            except (AssistantError, KeyError, TypeError) as exc:
+                core_error = type(exc).__name__
+            finally:
+                core.close()
+        try:
+            result = PublicResearch().run(args.start or default_start(args.end), args.end, funds)
+        except (ValueError, OSError) as exc:
+            parser.exit(2, f"Research request failed: {exc}\n")
+        result["portfolio"] = portfolio
+        result["core_error"] = core_error
+        result["display_text"] = render(result)
+        print(json.dumps(result, ensure_ascii=False, indent=2) if args.json
+              else result["display_text"])
+        return
     if args.command == "market-observation":
         from investor_core.market_observation import load_report
 

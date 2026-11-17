@@ -1,5 +1,7 @@
 # 投资价值优先：研究交付契约
 
+2026-11-17新增主动取数入口：`investor-assistant research-brief`，自动读取指数历史与关注基金净值；使用方式及限制见 [RESEARCH_BRIEF.md](RESEARCH_BRIEF.md)，实际运行证据见 [RESEARCH_BRIEF_LIVE_ACCEPTANCE.md](RESEARCH_BRIEF_LIVE_ACCEPTANCE.md)。
+
 这是研究入口的产品行为改革，不是投资策略、资金比例或模型晋级批准。具体阶段状态和结束条件只维护 LAUNCH_CHECKLIST.md 当前入口。
 
 ## 产品目标
