@@ -381,6 +381,11 @@ def render(report: Json) -> str:
     portfolio = report.get("portfolio")
     if portfolio:
         lines.append("持仓连接: 已按 Core 当前持仓选择基金; 不以旧聊天记录补持仓。")
+        if portfolio.get("display_text"):
+            lines.extend(["Core事实原文:", portfolio["display_text"]])
+        else:
+            quality = portfolio.get("valuation", {}).get("data_quality", "UNKNOWN")
+            lines.append(f"Core估值质量: {quality}; 详见结构化原始事实, 未重算组合收益。")
     else:
         lines.append("未连接当前持仓; 上述基金仅为关注清单, 未计算组合收益或资金方案。")
     for row in indices + report["funds"]:
